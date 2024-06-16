@@ -860,7 +860,9 @@ impl Message {
         if algorithm == IntegrityAlgorithm::Sha1 && self.has_attribute(MessageIntegrity::TYPE) {
             return Err(StunWriteError::AlreadyExists);
         }
-        if algorithm == IntegrityAlgorithm::Sha256 && self.has_attribute(MessageIntegritySha256::TYPE) {
+        if algorithm == IntegrityAlgorithm::Sha256
+            && self.has_attribute(MessageIntegritySha256::TYPE)
+        {
             return Err(StunWriteError::AlreadyExists);
         }
         if self.has_attribute(Fingerprint::TYPE) {
@@ -1035,9 +1037,7 @@ impl Message {
             attribute_type = %A::TYPE,
         )
     )]
-    pub fn attribute<A: AttributeFromRaw<StunParseError>>(
-        &self,
-    ) -> Option<A> {
+    pub fn attribute<A: AttributeFromRaw<StunParseError>>(&self) -> Option<A> {
         let atype = A::TYPE;
         self.attributes
             .iter()
@@ -1140,15 +1140,15 @@ impl Message {
     /// let unknown = error_msg.attribute::<UnknownAttributes>().unwrap();
     /// assert!(unknown.has_attribute(Username::TYPE));
     /// ```
-    pub fn unknown_attributes(
-        src: &Message,
-        attributes: &[AttributeType],
-    ) -> Message {
+    pub fn unknown_attributes(src: &Message, attributes: &[AttributeType]) -> Message {
         let mut out = Message::new_error(src);
-        out.add_attribute(Software::new("stun-types").unwrap()).unwrap();
-        out.add_attribute(ErrorCode::new(420, "Unknown Attributes").unwrap()).unwrap();
+        out.add_attribute(Software::new("stun-types").unwrap())
+            .unwrap();
+        out.add_attribute(ErrorCode::new(420, "Unknown Attributes").unwrap())
+            .unwrap();
         if !attributes.is_empty() {
-            out.add_attribute(UnknownAttributes::new(attributes)).unwrap();
+            out.add_attribute(UnknownAttributes::new(attributes))
+                .unwrap();
         }
         out
     }
@@ -1169,8 +1169,10 @@ impl Message {
     /// ```
     pub fn bad_request(src: &Message) -> Message {
         let mut out = Message::new_error(src);
-        out.add_attribute(Software::new("stun-types").unwrap()).unwrap();
-        out.add_attribute(ErrorCode::new(400, "Bad Request").unwrap()).unwrap();
+        out.add_attribute(Software::new("stun-types").unwrap())
+            .unwrap();
+        out.add_attribute(ErrorCode::new(400, "Bad Request").unwrap())
+            .unwrap();
         out
     }
 
@@ -1256,9 +1258,7 @@ mod tests {
         assert_eq!(msg.method(), src.method());
         let err = msg.attribute::<ErrorCode>().unwrap();
         assert_eq!(err.code(), 420);
-        let unknown_attrs = msg
-            .attribute::<UnknownAttributes>()
-            .unwrap();
+        let unknown_attrs = msg.attribute::<UnknownAttributes>().unwrap();
         assert!(unknown_attrs.has_attribute(Software::TYPE));
     }
 
@@ -1309,11 +1309,9 @@ mod tests {
             let bytes: Vec<_> = msg.clone().into();
             msg.validate_integrity(&bytes, &credentials).unwrap();
             let orig_hmac = match algorithm {
-                IntegrityAlgorithm::Sha1 => msg
-                    .attribute::<MessageIntegrity>()
-                    .unwrap()
-                    .hmac()
-                    .to_vec(),
+                IntegrityAlgorithm::Sha1 => {
+                    msg.attribute::<MessageIntegrity>().unwrap().hmac().to_vec()
+                }
                 IntegrityAlgorithm::Sha256 => msg
                     .attribute::<MessageIntegritySha256>()
                     .unwrap()
@@ -1349,11 +1347,19 @@ mod tests {
         src.add_attribute(Priority::new(123)).unwrap();
 
         // success case
-        let res = Message::check_attribute_types(&src, &[Username::TYPE, Priority::TYPE], &[Username::TYPE]);
+        let res = Message::check_attribute_types(
+            &src,
+            &[Username::TYPE, Priority::TYPE],
+            &[Username::TYPE],
+        );
         assert!(res.is_none());
 
         // fingerprint required but not present
-        let res = Message::check_attribute_types(&src, &[Username::TYPE, Priority::TYPE], &[Fingerprint::TYPE]);
+        let res = Message::check_attribute_types(
+            &src,
+            &[Username::TYPE, Priority::TYPE],
+            &[Fingerprint::TYPE],
+        );
         assert!(res.is_some());
         let res = res.unwrap();
         assert!(res.has_class(MessageClass::Error));
@@ -1369,9 +1375,7 @@ mod tests {
         assert!(res.has_method(src.method()));
         let err = res.attribute::<ErrorCode>().unwrap();
         assert_eq!(err.code(), 420);
-        let unknown = res
-            .attribute::<UnknownAttributes>()
-            .unwrap();
+        let unknown = res.attribute::<UnknownAttributes>().unwrap();
         assert!(unknown.has_attribute(Priority::TYPE));
     }
 

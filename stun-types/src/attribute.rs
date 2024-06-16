@@ -20,7 +20,7 @@ use std::convert::TryInto;
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use crate::message::{TransactionId, MAGIC_COOKIE, StunParseError, StunWriteError};
+use crate::message::{StunParseError, StunWriteError, TransactionId, MAGIC_COOKIE};
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -261,7 +261,9 @@ impl std::fmt::Display for RawAttribute {
             UnknownAttributes::TYPE => display_attr!(self, UnknownAttributes, malformed_str),
             Realm::TYPE => display_attr!(self, Realm, malformed_str),
             Nonce::TYPE => display_attr!(self, Nonce, malformed_str),
-            MessageIntegritySha256::TYPE => display_attr!(self, MessageIntegritySha256, malformed_str),
+            MessageIntegritySha256::TYPE => {
+                display_attr!(self, MessageIntegritySha256, malformed_str)
+            }
             PasswordAlgorithm::TYPE => display_attr!(self, PasswordAlgorithm, malformed_str),
             //UserHash::TYPE => display_attr!(self, UserHash, malformed_str),
             XorMappedAddress::TYPE => display_attr!(self, XorMappedAddress, malformed_str),
@@ -1424,8 +1426,8 @@ impl MessageIntegrity {
     )]
     pub fn compute(data: &[u8], key: &[u8]) -> Result<[u8; 20], StunParseError> {
         use hmac::{Hmac, Mac};
-        let mut hmac = Hmac::<sha1::Sha1>::new_from_slice(key)
-            .map_err(|_| StunParseError::InvalidData)?;
+        let mut hmac =
+            Hmac::<sha1::Sha1>::new_from_slice(key).map_err(|_| StunParseError::InvalidData)?;
         hmac.update(data);
         Ok(hmac.finalize().into_bytes().into())
     }
@@ -1759,8 +1761,8 @@ impl MessageIntegritySha256 {
     )]
     pub fn compute(data: &[u8], key: &[u8]) -> Result<[u8; 32], StunParseError> {
         use hmac::{Hmac, Mac};
-        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(key)
-            .map_err(|_| StunParseError::InvalidData)?;
+        let mut hmac =
+            Hmac::<sha2::Sha256>::new_from_slice(key).map_err(|_| StunParseError::InvalidData)?;
         hmac.update(data);
         let ret = hmac.finalize().into_bytes();
         Ok(ret.into())
