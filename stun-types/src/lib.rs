@@ -60,7 +60,7 @@ impl std::fmt::Display for TransportType {
 }
 
 pub mod prelude {
-    pub use crate::attribute::{AttributeToRaw, AttributeFromRaw};
+    pub use crate::attribute::{AttributeFromRaw, AttributeToRaw};
 }
 
 #[cfg(test)]
@@ -78,4 +78,3 @@ pub(crate) mod tests {
         });
     }
 }
-

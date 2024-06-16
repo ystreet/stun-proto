@@ -234,7 +234,11 @@ impl StunAgent {
 
     /// Create a new [`StunRequest`] for encapsulating the state required for handling a
     /// [`MessageClass::Request`]
-    pub fn stun_request_transaction(&self, msg: &Message, addr: SocketAddr) -> Result<StunRequest, StunError> {
+    pub fn stun_request_transaction(
+        &self,
+        msg: &Message,
+        addr: SocketAddr,
+    ) -> Result<StunRequest, StunError> {
         if !msg.has_class(MessageClass::Request) {
             return Err(StunError::WrongImplementation);
         }
@@ -679,11 +683,7 @@ impl StunAgentState {
                     }
                 };
                 // only validate response if the original request had credentials
-                if request
-                    .msg
-                    .attribute::<MessageIntegrity>()
-                    .is_some()
-                {
+                if request.msg.attribute::<MessageIntegrity>().is_some() {
                     if let Some(remote_creds) = &self.remote_credentials {
                         match msg.validate_integrity(orig_data, remote_creds) {
                             Ok(_) => {
@@ -754,9 +754,7 @@ pub(crate) mod tests {
             .remote_addr(remote_addr)
             .build();
         let msg = Message::new_request(BINDING);
-        let request = agent
-            .stun_request_transaction(&msg, remote_addr)
-            .unwrap();
+        let request = agent.stun_request_transaction(&msg, remote_addr).unwrap();
         let now = Instant::now();
         let ret = request.poll(now).unwrap();
         assert!(matches!(ret, StunRequestPollRet::SendData(_)));
@@ -791,9 +789,7 @@ pub(crate) mod tests {
             .remote_addr(remote_addr)
             .build();
         let msg = Message::new_request(BINDING);
-        let request = agent
-            .stun_request_transaction(&msg, remote_addr)
-            .unwrap();
+        let request = agent.stun_request_transaction(&msg, remote_addr).unwrap();
         let mut now = Instant::now();
         loop {
             match request.poll(now) {
@@ -816,9 +812,7 @@ pub(crate) mod tests {
             .remote_addr(remote_addr)
             .build();
         let msg = Message::new_request(BINDING);
-        let request = agent
-            .stun_request_transaction(&msg, remote_addr)
-            .unwrap();
+        let request = agent.stun_request_transaction(&msg, remote_addr).unwrap();
         let now = Instant::now();
         let ret = request.poll(now).unwrap();
         if let StunRequestPollRet::SendData(Transmit {
