@@ -1,0 +1,45 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        toolchain: ['1.65', stable]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install ${{ matrix.toolchain }}
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: ${{ matrix.toolchain }}
+        override: true
+    - name: Use MSRV Cargo.lock
+      run: cp Cargo.lock.msrv Cargo.lock
+      if: matrix.toolchain == '1.65'
+    - name: Build
+      run: cargo build --verbose
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Run tests
+      run: cargo test --verbose
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: clippy
+      run: cargo clippy --verbose

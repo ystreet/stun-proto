@@ -1,0 +1,17 @@
+[workspace]
+members = ["stun-types", "stun-proto", "fuzz"]
+default-members = ["stun-types", "stun-proto"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.1"
+repository = "https://github.com/ystreet/stun-proto"
+edition = "2021"
+rust-version = "1.65.0"
+
+[workspace.dependencies]
+arbitrary = "1"
+byteorder = "1"
+rand = "0.8"
+tracing = "0.1"
+

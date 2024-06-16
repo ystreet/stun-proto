@@ -1,0 +1,20 @@
+[package]
+name = "stun-proto"
+description = "STUN protocol in a sans-IO fashion"
+version.workspace = true
+authors = ["Matthew Waters <matthew@centricular.com>"]
+license = "MIT OR Apache-2.0"
+keywords = ["STUN"]
+categories = ["network-programming", ]
+documentation = "https://docs.rs/stun-proto"
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+stun-types = { path = "../stun-types", version = "0.0.1" }
+byteorder.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"]}

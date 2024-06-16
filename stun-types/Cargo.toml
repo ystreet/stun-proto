@@ -1,0 +1,26 @@
+[package]
+name = "stun-types"
+description = "STUN parsing and writing"
+version.workspace = true
+authors = ["Matthew Waters <matthew@centricular.com>"]
+license = "MIT OR Apache-2.0"
+keywords = ["STUN"]
+categories = ["network-programming", ]
+documentation = "https://docs.rs/stun-types"
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+byteorder.workspace = true
+crc = "3"
+hmac = "0.12"
+md-5 = "0.10"
+rand.workspace = true
+sha-1 = "0.10"
+sha2 = "0.10"
+tracing.workspace = true
+arbitrary ={ workspace = true, optional = true }
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"]}
