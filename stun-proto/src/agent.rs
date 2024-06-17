@@ -677,7 +677,7 @@ impl StunAgentState {
                     }
                 };
                 // only validate response if the original request had credentials
-                if request.msg.attribute::<MessageIntegrity>().is_some() {
+                if request.msg.has_attribute(MessageIntegrity::TYPE) {
                     if let Some(remote_creds) = &self.remote_credentials {
                         match msg.validate_integrity(orig_data, remote_creds) {
                             Ok(_) => {

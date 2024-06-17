@@ -6,7 +6,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! STUN
+//! # stun-types
+//!
+//! An implementation of parsing and writing STUN messages and attributes. This implementation is
+//! trait based and supports definitions of [`Attribute`](attribute::Attribute)s that are external
+//! to this crate.
+//!
+//! This is based on the following standards:
+//! - [RFC8489]
+//! - [RFC5389]
+//! - [RFC3489]
+//!
+//! [RFC8489]: https://tools.ietf.org/html/rfc8489
+//! [RFC5389]: https://tools.ietf.org/html/rfc5389
+//! [RFC3489]: https://tools.ietf.org/html/rfc3489
+//!
+//! ## Examples
+//!
+//! See the [`message`] and [`attribute`] module documentation for examples on use.
 
 use std::error::Error;
 use std::str::FromStr;

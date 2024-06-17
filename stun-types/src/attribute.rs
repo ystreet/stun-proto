@@ -8,12 +8,87 @@
 
 //! STUN Attributes
 //!
-//! Provides for generating, parsing and manipulating STUN attributes as specified in one of
-//! [RFC8489], [RFC5389], or [RFC3489].
+//! Provides implementations for generating, parsing and manipulating STUN attributes as specified
+//! in one of [RFC8489], [RFC5389], or [RFC3489].
 //!
 //! [RFC8489]: https://tools.ietf.org/html/rfc8489
 //! [RFC5389]: https://tools.ietf.org/html/rfc5389
 //! [RFC3489]: https://tools.ietf.org/html/rfc3489
+//!
+//! # Examples
+//!
+//! ### Parse and write an already defined [`Attribute`]
+//!
+//! ```
+//! # use stun_types::prelude::*;
+//! use stun_types::attribute::{RawAttribute, Software};
+//! let software_name = "stun-types";
+//! let software = Software::new(software_name).unwrap();
+//! assert_eq!(software.software(), software_name);
+//!
+//! let attribute_data = [
+//!     0x80, 0x22, 0x00, 0x0a, // Attribute type (0x8022: Software) and length (0x000a)
+//!     0x73, 0x74, 0x75, 0x6E, // s t u n
+//!     0x2D, 0x74, 0x79, 0x70, // - t y p
+//!     0x65, 0x73, 0x00, 0x00  // e s
+//! ];
+//!
+//! let raw: RawAttribute = software.into();
+//! assert_eq!(raw.to_bytes(), attribute_data);
+//!
+//! // Can also parse data into a typed attribute as needed
+//! let software = Software::from_raw(&raw).unwrap();
+//! assert_eq!(software.software(), software_name);
+//! ```
+//!
+//! ### Defining your own [`Attribute`]
+//!
+//! ```
+//! # use stun_types::prelude::*;
+//! use byteorder::{BigEndian, ByteOrder};
+//! use stun_types::attribute::{Attribute, AttributeType, RawAttribute};
+//! use stun_types::message::StunParseError;
+//! #[derive(Debug)]
+//! struct MyAttribute {
+//!    value: u32,
+//! }
+//! impl Attribute for MyAttribute {
+//!    const TYPE: AttributeType = AttributeType::new(0x8851);
+//!
+//!    fn length(&self) -> u16 {
+//!        4
+//!    }
+//! }
+//! impl From<MyAttribute> for RawAttribute {
+//!     fn from(value: MyAttribute) -> RawAttribute {
+//!         let mut ret = vec![0; 4];
+//!         BigEndian::write_u32(&mut ret, value.value);
+//!         RawAttribute::new(MyAttribute::TYPE, &ret)
+//!     }
+//! }
+//! impl TryFrom<&RawAttribute> for MyAttribute {
+//!     type Error = StunParseError;
+//!     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
+//!         raw.check_type_and_len(Self::TYPE, 4..=4)?;
+//!         let value = BigEndian::read_u32(&raw.value);
+//!         Ok(Self {
+//!             value,
+//!         })
+//!     }
+//! }
+//!
+//! let my_attr = MyAttribute { value: 0x4729 };
+//! let raw: RawAttribute = my_attr.into();
+//!
+//! let attribute_data = [
+//!     0x88, 0x51, 0x00, 0x04,
+//!     0x00, 0x00, 0x47, 0x29,
+//! ];
+//! assert_eq!(raw.to_bytes(), attribute_data);
+//!
+//! let my_attr = MyAttribute::from_raw(&raw).unwrap();
+//! assert_eq!(my_attr.value, 0x4729);
+//! ```
 
 use std::convert::TryFrom;
 use std::convert::TryInto;
