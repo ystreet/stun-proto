@@ -30,42 +30,96 @@ pub const MAGIC_COOKIE: u32 = 0x2112A442;
 /// message.
 pub const BINDING: u16 = 0x0001;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum StunParseError {
-    Failed,
-    WrongImplementation,
-    NotEnoughData,
-    TooBig,
-    InvalidData,
-    OutOfRange,
+    /// Not a STUN message.
+    #[error("The provided data is not a STUN message")]
+    NotStun,
+    /// The message has been truncated
+    #[error("Not enough data available to parse the packet, expected {}, actual {}", .expected, .actual)]
+    Truncated {
+        /// The expeced number of bytes
+        expected: usize,
+        /// The encountered number of bytes
+        actual: usize,
+    },
+    /// The message has been truncated
+    #[error("Too many bytes for this data, expected {}, actual {}", .expected, .actual)]
+    TooLarge {
+        /// The expeced number of bytes
+        expected: usize,
+        /// The encountered number of bytes
+        actual: usize,
+    },
+    /// Integrity value does not match computed value
+    #[error("Integrity value does not match")]
     IntegrityCheckFailed,
-    NoIntegrity,
+    /// An attribute was not found in the message
+    #[error("Missing attribute {:?}", .0)]
+    MissingAttribute(AttributeType),
+    /// An attribute was found after the message integrity attribute
+    #[error("An attribute {:?} was encountered after a message integrity attribute", .0)]
+    AttributeAfterIntegrity(AttributeType),
+    /// Fingerprint does not match the data.
+    #[error("Fingerprint does not match")]
+    FingerprintMismatch,
+    /// The provided data does not match the message
+    #[error("The provided data does not match the message")]
+    DataMismatch,
+    /// The message has multiple integrity attributes
+    #[error("Multiple integrity types are used in this message")]
+    DuplicateIntegrity,
+    /// The attribute contains invalid data
+    #[error("The attribute contains invalid data")]
+    InvalidAttributeData,
+    /// The attribute does not parse this data
+    #[error("Cannot parse with this attribute")]
+    WrongAttributeImplementation,
 }
 
-impl std::error::Error for StunParseError {}
-
-impl std::fmt::Display for StunParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Debug)]
+/// Errors produced when writing a STUN message
+#[derive(Debug, thiserror::Error)]
 pub enum StunWriteError {
-    AlreadyExists,
-    NotPermitted,
-    WrongImplementation,
-    NotEnoughData,
-    TooBig,
-    WrongPaddedSize,
-}
-
-impl std::error::Error for StunWriteError {}
-
-impl std::fmt::Display for StunWriteError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+    /// The message already has this attribute
+    #[error("The attribute already exists in the message")]
+    AttributeExists(AttributeType),
+    /// The fingerprint attribute already exists. Cannot write any further attributes
+    #[error("The message already contains a fingerprint attribute")]
+    FingerprintExists,
+    /// A message integrity attribute already exists. Cannot write any further attributes
+    #[error("The message already contains a message intregrity attribute")]
+    MessageIntegrityExists,
+    /// The message has been truncated
+    #[error("Too many bytes for this data, expected {}, actual {}", .expected, .actual)]
+    TooLarge {
+        /// The expeced number of bytes
+        expected: usize,
+        /// The encountered number of bytes
+        actual: usize,
+    },
+    /// The message has been truncated
+    #[error("Not enough data available to parse the packet, expected {}, actual {}", .expected, .actual)]
+    TooSmall {
+        /// The expected number of bytes
+        expected: usize,
+        /// The encountered number of bytes
+        actual: usize,
+    },
+    /// Failed to compute integrity
+    #[error("Failed to compute integrity")]
+    IntegrityFailed,
+    /// Out of range input provided
+    #[error("Out of range input provided")]
+    OutOfRange {
+        /// The value provided.
+        value: usize,
+        /// The minimum allowed value.
+        min: usize,
+        /// The maximum allowed value.
+        max: usize,
+    },
+    //NotEnoughData,
+    //WrongPaddedSize,
 }
 
 /// Structure for holding the required credentials for handling long-term STUN credentials
@@ -284,7 +338,7 @@ impl MessageType {
         let data = BigEndian::read_u16(data);
         if data & 0xc000 != 0x0 {
             /* not a stun packet */
-            return Err(StunParseError::WrongImplementation);
+            return Err(StunParseError::NotStun);
         }
         Ok(Self(data))
     }
@@ -633,7 +687,10 @@ impl Message {
         if data.len() < 20 {
             // always at least 20 bytes long
             debug!("messsage data is too short {} < 20", data.len());
-            return Err(StunParseError::NotEnoughData);
+            return Err(StunParseError::Truncated {
+                expected: 20,
+                actual: data.len(),
+            });
         }
         let mtype = MessageType::from_bytes(data)?;
         let mlength = BigEndian::read_u16(&data[2..]) as usize;
@@ -644,7 +701,10 @@ impl Message {
                 mlength + 20,
                 data.len()
             );
-            return Err(StunParseError::InvalidData);
+            return Err(StunParseError::Truncated {
+                expected: mlength + 20,
+                actual: data.len(),
+            });
         }
         let tid = BigEndian::read_u128(&data[4..]);
         let cookie = (tid >> 96) as u32;
@@ -653,7 +713,7 @@ impl Message {
                 "malformed cookie constant {:?} != stored data {:?}",
                 MAGIC_COOKIE, cookie
             );
-            return Err(StunParseError::InvalidData);
+            return Err(StunParseError::NotStun);
         }
         let mut ret = Self::new(mtype, tid.into());
 
@@ -672,7 +732,7 @@ impl Message {
                     "unexpected attribute {} after MESSAGE_INTEGRITY",
                     attr.get_type()
                 );
-                return Err(StunParseError::InvalidData);
+                return Err(StunParseError::AttributeAfterIntegrity(attr.get_type()));
             }
 
             if attr.get_type() == MessageIntegrity::TYPE {
@@ -685,7 +745,10 @@ impl Message {
                     "attribute {:?} extends past the end of the data",
                     attr.get_type()
                 );
-                return Err(StunParseError::NotEnoughData);
+                return Err(StunParseError::Truncated {
+                    expected: padded_len,
+                    actual: data.len(),
+                });
             }
             if attr.get_type() == Fingerprint::TYPE {
                 let f = Fingerprint::from_raw(&attr)?;
@@ -701,7 +764,7 @@ impl Message {
                         "fingerprint mismatch {:?} != {:?}",
                         calculated_fingerprint, msg_fingerprint
                     );
-                    return Err(StunParseError::InvalidData);
+                    return Err(StunParseError::FingerprintMismatch);
                 }
             }
             ret.attributes.push(attr);
@@ -732,7 +795,7 @@ impl Message {
         let raw_sha1 = self.raw_attribute(MessageIntegrity::TYPE);
         let raw_sha256 = self.raw_attribute(MessageIntegritySha256::TYPE);
         let (algo, msg_hmac) = match (raw_sha1, raw_sha256) {
-            (Some(_), Some(_)) => return Err(StunParseError::InvalidData),
+            (Some(_), Some(_)) => return Err(StunParseError::DuplicateIntegrity),
             (Some(sha1), None) => {
                 let integrity = MessageIntegrity::try_from(sha1)?;
                 (IntegrityAlgorithm::Sha1, integrity.hmac().to_vec())
@@ -741,7 +804,7 @@ impl Message {
                 let integrity = MessageIntegritySha256::try_from(sha256)?;
                 (IntegrityAlgorithm::Sha256, integrity.hmac().to_vec())
             }
-            (None, None) => return Err(StunParseError::NoIntegrity),
+            (None, None) => return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE)),
         };
 
         // find the location of the original MessageIntegrity attribute: XXX: maybe encode this into
@@ -750,7 +813,10 @@ impl Message {
         if data.len() < 20 {
             // always at least 20 bytes long
             debug!("not enough data in message");
-            return Err(StunParseError::NotEnoughData);
+            return Err(StunParseError::Truncated {
+                expected: 20,
+                actual: data.len(),
+            });
         }
         let mut data = &data[20..];
         let mut data_offset = 20;
@@ -761,7 +827,7 @@ impl Message {
                 if msg.hmac().as_slice() != msg_hmac {
                     // data hmac is different from message hmac -> wrong data for this message.
                     warn!("hmac from data does not match message hmac");
-                    return Err(StunParseError::InvalidData);
+                    return Err(StunParseError::DataMismatch);
                 }
 
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
@@ -781,7 +847,7 @@ impl Message {
                 if msg.hmac() != msg_hmac {
                     // data hmac is different from message hmac -> wrong data for this message.
                     warn!("hmac from data does not match message hmac");
-                    return Err(StunParseError::InvalidData);
+                    return Err(StunParseError::DataMismatch);
                 }
 
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
@@ -800,14 +866,17 @@ impl Message {
                     "attribute {:?} extends past the end of the data",
                     attr.get_type()
                 );
-                return Err(StunParseError::InvalidData);
+                return Err(StunParseError::Truncated {
+                    expected: padded_len,
+                    actual: data.len(),
+                });
             }
             data = &data[padded_len..];
             data_offset += padded_len;
         }
         // no hmac in data but there was in the message? -> incompatible data for this message
         warn!("no message integrity attribute in data");
-        Err(StunParseError::InvalidData)
+        Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE))
     }
 
     // message-integrity is computed using all the data up to (exclusive of) the
@@ -858,30 +927,30 @@ impl Message {
         algorithm: IntegrityAlgorithm,
     ) -> Result<(), StunWriteError> {
         if algorithm == IntegrityAlgorithm::Sha1 && self.has_attribute(MessageIntegrity::TYPE) {
-            return Err(StunWriteError::AlreadyExists);
+            return Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE));
         }
         if algorithm == IntegrityAlgorithm::Sha256
             && self.has_attribute(MessageIntegritySha256::TYPE)
         {
-            return Err(StunWriteError::AlreadyExists);
+            return Err(StunWriteError::AttributeExists(
+                MessageIntegritySha256::TYPE,
+            ));
         }
         if self.has_attribute(Fingerprint::TYPE) {
-            return Err(StunWriteError::NotPermitted);
+            return Err(StunWriteError::FingerprintExists);
         }
 
         let key = credentials.make_hmac_key();
         match algorithm {
             IntegrityAlgorithm::Sha1 => {
                 let bytes = self.integrity_bytes_from_message(24);
-                let integrity = MessageIntegrity::compute(&bytes, &key)
-                    .map_err(|_| StunWriteError::NotPermitted)?;
+                let integrity = MessageIntegrity::compute(&bytes, &key).unwrap();
                 self.attributes
                     .push(MessageIntegrity::new(integrity).into());
             }
             IntegrityAlgorithm::Sha256 => {
                 let bytes = self.integrity_bytes_from_message(36);
-                let integrity = MessageIntegritySha256::compute(&bytes, &key)
-                    .map_err(|_| StunWriteError::NotPermitted)?;
+                let integrity = MessageIntegritySha256::compute(&bytes, &key).unwrap();
                 self.attributes
                     .push(MessageIntegritySha256::new(integrity.as_slice())?.into());
             }
@@ -915,7 +984,7 @@ impl Message {
     )]
     pub fn add_fingerprint(&mut self) -> Result<(), StunWriteError> {
         if self.has_attribute(Fingerprint::TYPE) {
-            return Err(StunWriteError::AlreadyExists);
+            return Err(StunWriteError::AttributeExists(Fingerprint::TYPE));
         }
         // fingerprint is computed using all the data up to (exclusive of) the FINGERPRINT
         // but with a length field including the FINGERPRINT attribute...
@@ -966,20 +1035,26 @@ impl Message {
         let raw = attr.into();
         //trace!("adding attribute {:?}", attr);
         if raw.get_type() == MessageIntegrity::TYPE {
-            return Err(StunWriteError::WrongImplementation);
+            panic!("Cannot write MessageIntegrity with `add_attribute`.  Use add_message_integrity() instead");
+        }
+        if raw.get_type() == MessageIntegritySha256::TYPE {
+            panic!("Cannot write MessageIntegritySha256 with `add_attribute`.  Use add_message_integrity() instead");
         }
         if raw.get_type() == Fingerprint::TYPE {
-            return Err(StunWriteError::WrongImplementation);
+            panic!("Cannot write Fingerprint with `add_attribute`.  Use add_fingerprint() instead");
         }
         if self.has_attribute(raw.get_type()) {
-            return Err(StunWriteError::AlreadyExists);
+            return Err(StunWriteError::AttributeExists(raw.get_type()));
         }
         // can't validly add generic attributes after message integrity or fingerprint
         if self.has_attribute(MessageIntegrity::TYPE) {
-            return Err(StunWriteError::NotPermitted);
+            return Err(StunWriteError::MessageIntegrityExists);
+        }
+        if self.has_attribute(MessageIntegritySha256::TYPE) {
+            return Err(StunWriteError::MessageIntegrityExists);
         }
         if self.has_attribute(Fingerprint::TYPE) {
-            return Err(StunWriteError::NotPermitted);
+            return Err(StunWriteError::FingerprintExists);
         }
         self.attributes.push(raw);
         Ok(())
