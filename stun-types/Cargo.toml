@@ -21,6 +21,7 @@ sha-1 = "0.10"
 sha2 = "0.10"
 tracing.workspace = true
 arbitrary ={ workspace = true, optional = true }
+thiserror.workspace = true
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}

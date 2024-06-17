@@ -240,7 +240,7 @@ impl StunAgent {
         addr: SocketAddr,
     ) -> Result<StunRequest, StunError> {
         if !msg.has_class(MessageClass::Request) {
-            return Err(StunError::WrongImplementation);
+            panic!("Cannot perform a request with a non-Request message");
         }
         let timeouts_ms = if self.transport == TransportType::Tcp {
             vec![39500]
@@ -588,46 +588,40 @@ pub enum HandleStunReply {
 }
 
 /// STUN errors
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum StunError {
-    Failed,
-    WrongImplementation,
-    AlreadyExists,
+    /// The operation is already in progress.
+    #[error("The operation is already in progress")]
     AlreadyInProgress,
+    /// A resource was not found.
+    #[error("A required resource could not be found")]
     ResourceNotFound,
+    /// An operation timed out without a response.
+    #[error("An operation timed out")]
     TimedOut,
-    IntegrityCheckFailed,
+    /// Unexpected data was received or an operation is not allowed at this time.
+    #[error("Unexpected data was received")]
     ProtocolViolation,
-    ParseError(StunParseError),
-    WriteError(StunWriteError),
+    /// An operation was cancelled.
+    #[error("Operation was aborted")]
     Aborted,
-}
-
-impl std::error::Error for StunError {}
-
-impl std::fmt::Display for StunError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+    /// A parsing error. The contained error contains more details.
+    #[error("{}", .0)]
+    ParseError(StunParseError),
+    /// A writing error. The contained error contains more details.
+    #[error("{}", .0)]
+    WriteError(StunWriteError),
 }
 
 impl From<StunParseError> for StunError {
     fn from(e: StunParseError) -> Self {
-        match e {
-            StunParseError::WrongImplementation => StunError::WrongImplementation,
-            StunParseError::NoIntegrity => StunError::ResourceNotFound,
-            StunParseError::IntegrityCheckFailed => StunError::IntegrityCheckFailed,
-            _ => StunError::ParseError(e),
-        }
+        StunError::ParseError(e)
     }
 }
 
 impl From<StunWriteError> for StunError {
     fn from(e: StunWriteError) -> Self {
-        match e {
-            StunWriteError::WrongImplementation => StunError::WrongImplementation,
-            _ => StunError::WriteError(e),
-        }
+        StunError::WriteError(e)
     }
 }
 
