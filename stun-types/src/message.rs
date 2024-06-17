@@ -14,6 +14,67 @@
 //! [RFC8489]: https://tools.ietf.org/html/rfc8489
 //! [RFC5389]: https://tools.ietf.org/html/rfc5389
 //! [RFC3489]: https://tools.ietf.org/html/rfc3489
+//!
+//! ## Examples
+//!
+//! ### Parse a STUN [`Message`]
+//!
+//! ```
+//! use stun_types::prelude::*;
+//! use stun_types::attribute::{RawAttribute, PasswordAlgorithm, PasswordAlgorithmValue};
+//! use stun_types::message::{Message, MessageType, MessageClass, BINDING};
+//!
+//! let msg_data = [
+//!     0x00, 0x01, 0x00, 0x08, // method, class and length
+//!     0x21, 0x12, 0xA4, 0x42, // Fixed STUN magic bytes
+//!     0x00, 0x00, 0x00, 0x00, // \
+//!     0x00, 0x00, 0x00, 0x00, // } transaction ID
+//!     0x00, 0x00, 0x73, 0x92, // /
+//!     0x00, 0x1D, 0x00, 0x04, // PasswordAlgorithm ttribute
+//!     0x00, 0x02, 0x00, 0x00 // PasswordAlgorithm attribute
+//! ];
+//! let msg = Message::from_bytes(&msg_data).unwrap();
+//!
+//! // the various parts of a message can be retreived
+//! assert_eq!(msg.get_type(), MessageType::from_class_method(MessageClass::Request, BINDING));
+//! assert_eq!(msg.transaction_id(), 0x7392.into());
+//!
+//! // Attributes can be retrieved as raw values.
+//! let msg_attr = msg.raw_attribute(0x1D.into()).unwrap();
+//! let attr = RawAttribute::new(0x1D.into(), &[0, 2, 0, 0]);
+//! assert_eq!(msg_attr, &attr);
+//!
+//! // Or as typed values
+//! let attr = msg.attribute::<PasswordAlgorithm>().unwrap();
+//! assert_eq!(attr.algorithm(), PasswordAlgorithmValue::SHA256);
+//! ```
+//! 
+//! ### Generating a [`Message`]
+//!
+//! ```
+//! use stun_types::prelude::*;
+//! use stun_types::attribute::Software;
+//! use stun_types::message::{Message, BINDING};
+//!
+//! // Automatically generates a transaction ID.
+//! let mut msg = Message::new_request(BINDING);
+//!
+//! let software_name = "stun-types";
+//! let software = Software::new(software_name).unwrap();
+//! assert_eq!(software.software(), software_name);
+//! msg.add_attribute(software).unwrap();
+//!
+//! let attribute_data = [
+//!     0x80, 0x22, 0x00, 0x0a, // attribute type (0x8022) and length (0x000a)
+//!     0x73, 0x74, 0x75, 0x6E, // s t u n
+//!     0x2D, 0x74, 0x79, 0x70, // - t y p
+//!     0x65, 0x73, 0x00, 0x00  // e s
+//! ];
+//!
+//! let msg_data = msg.to_bytes();
+//! // ignores the randomly generated transaction id
+//! assert_eq!(msg_data[20..], attribute_data);
+//! ```
 
 use std::convert::TryFrom;
 
@@ -666,7 +727,7 @@ impl Message {
     /// # use stun_types::attribute::{RawAttribute, Attribute};
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
     /// let msg_data = vec![0, 1, 0, 8, 33, 18, 164, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 232, 0, 1, 0, 1, 3, 0, 0, 0];
-    /// let mut message = Message::from_bytes(&msg_data).unwrap();
+    /// let message = Message::from_bytes(&msg_data).unwrap();
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// let msg_attr = message.raw_attribute(1.into()).unwrap();
     /// assert_eq!(msg_attr, &attr);
@@ -1112,12 +1173,12 @@ impl Message {
             attribute_type = %A::TYPE,
         )
     )]
-    pub fn attribute<A: AttributeFromRaw<StunParseError>>(&self) -> Option<A> {
-        let atype = A::TYPE;
+    pub fn attribute<A: AttributeFromRaw<StunParseError>>(&self) -> Result<A, StunParseError> {
         self.attributes
             .iter()
-            .find(|attr| attr.get_type() == atype)
-            .and_then(|raw| A::from_raw(raw).ok())
+            .find(|attr| attr.get_type() == A::TYPE)
+            .ok_or(StunParseError::MissingAttribute(A::TYPE))
+            .and_then(|raw| A::from_raw(raw))
     }
 
     /// Returns an iterator over the attributes in the [`Message`].
