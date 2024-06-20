@@ -953,4 +953,25 @@ pub(crate) mod tests {
         let ret = agent.poll(now);
         assert!(matches!(ret, StunAgentPollRet::WaitUntil(_)));
     }
+
+    #[test]
+    fn request_cancel() {
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+
+        let msg = Message::new_request(BINDING);
+        let transaction_id = msg.transaction_id();
+        let _transmit = agent.send(msg, remote_addr).unwrap();
+
+        let mut request = agent.mut_request_transaction(transaction_id).unwrap();
+        request.cancel();
+
+        let ret = agent.poll(Instant::now());
+        let StunAgentPollRet::TransactionCancelled(request) = ret else {
+            unreachable!();
+        };
+        assert_eq!(request.transaction_id(), transaction_id);
+    }
 }
