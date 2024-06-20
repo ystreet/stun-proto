@@ -974,4 +974,40 @@ pub(crate) mod tests {
         };
         assert_eq!(request.transaction_id(), transaction_id);
     }
+
+    #[test]
+    fn request_duplicate() {
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+
+        let msg = Message::new_request(BINDING);
+        let transaction_id = msg.transaction_id();
+        let transmit = agent.send(msg.clone(), remote_addr).unwrap();
+        let to = transmit.to;
+
+        let mut response = Message::new_success(&msg);
+        response
+            .add_attribute(XorMappedAddress::new(
+                transmit.from,
+                transaction_id,
+            ))
+            .unwrap();
+
+        assert!(matches!(agent.send(msg, remote_addr), Err(StunError::AlreadyInProgress)));
+
+        // the original transaction should still exist
+        let request = agent.request_transaction(transaction_id).unwrap();
+        assert_eq!(request.peer_address(), remote_addr);
+
+        let data = response.to_bytes();
+        let mut reply = agent.handle_incoming_data(&data, to).unwrap();
+
+        let HandleStunReply::StunResponse(request, response) = reply.remove(0) else {
+            unreachable!();
+        };
+        assert_eq!(request.transaction_id(), transaction_id);
+        assert_eq!(response.transaction_id(), transaction_id);
+    }
 }
