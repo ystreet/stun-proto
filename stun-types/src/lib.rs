@@ -85,6 +85,8 @@ pub(crate) mod tests {
     use std::sync::Once;
     use tracing_subscriber::EnvFilter;
 
+    use super::*;
+
     static TRACING: Once = Once::new();
 
     pub fn test_init_log() {
@@ -93,5 +95,21 @@ pub(crate) mod tests {
                 tracing_subscriber::fmt().with_env_filter(filter).init();
             }
         });
+    }
+
+    #[test]
+    fn parse_transport_type() {
+        assert!(matches!("UDP".parse(), Ok(TransportType::Udp)));
+        assert!(matches!("TCP".parse(), Ok(TransportType::Tcp)));
+        assert!(matches!(
+            TransportType::from_str("Random"),
+            Err(ParseTransportTypeError::UnknownTransport)
+        ));
+    }
+
+    #[test]
+    fn transport_type_str() {
+        assert_eq!(TransportType::Udp.to_string(), String::from("UDP"));
+        assert_eq!(TransportType::Tcp.to_string(), String::from("TCP"));
     }
 }
