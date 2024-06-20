@@ -821,47 +821,28 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn manual_request() {
-        init();
+    fn agent_getters_setters() {
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
+            .remote_addr(remote_addr)
+            .build();
 
-        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+        assert_eq!(agent.transport(), TransportType::Udp);
+        assert_eq!(agent.local_addr(), local_addr);
+        assert_eq!(agent.remote_addr(), Some(remote_addr));
 
-        let local_credentials = ShortTermCredentials::new(String::from("local_password"));
-        let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
-        agent.set_local_credentials(local_credentials.clone().into());
-        agent.set_remote_credentials(remote_credentials.clone().into());
+        assert_eq!(agent.local_credentials(), None);
+        assert_eq!(agent.remote_credentials(), None);
 
-        let mut msg = Message::new_request(BINDING);
-        msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
-            .unwrap();
-        let transmit = agent.send(msg, remote_addr).unwrap();
-
-        let request = Message::from_bytes(&transmit.data).unwrap();
-
-        let mut response = Message::new_success(&request);
-        response
-            .add_attribute(XorMappedAddress::new(
-                transmit.from,
-                request.transaction_id(),
-            ))
-            .unwrap();
-        response
-            .add_message_integrity(&remote_credentials.clone().into(), IntegrityAlgorithm::Sha1)
-            .unwrap();
-
-        let data = response.to_bytes();
-        let to = transmit.to;
-        let reply = agent.handle_incoming_data(&data, to).unwrap();
-
-        assert!(matches!(reply[0], HandleStunReply::StunResponse(_, _)));
-
-        let data = vec![42; 8];
-        let transmit = agent.send_data(&data, remote_addr);
-        assert_eq!(transmit.data(), &data);
-        assert_eq!(transmit.from, local_addr);
-        assert_eq!(transmit.to, remote_addr);
+        let local_credentials: MessageIntegrityCredentials =
+            ShortTermCredentials::new(String::from("local_password")).into();
+        let remote_credentials: MessageIntegrityCredentials =
+            ShortTermCredentials::new(String::from("remote_password")).into();
+        agent.set_local_credentials(local_credentials.clone());
+        agent.set_remote_credentials(remote_credentials.clone());
+        assert_eq!(agent.local_credentials(), Some(local_credentials));
+        assert_eq!(agent.remote_credentials(), Some(remote_credentials));
     }
 
     #[test]
