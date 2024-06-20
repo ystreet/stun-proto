@@ -48,7 +48,7 @@
 //! let attr = msg.attribute::<PasswordAlgorithm>().unwrap();
 //! assert_eq!(attr.algorithm(), PasswordAlgorithmValue::SHA256);
 //! ```
-//! 
+//!
 //! ### Generating a [`Message`]
 //!
 //! ```
@@ -179,24 +179,59 @@ pub enum StunWriteError {
         /// The maximum allowed value.
         max: usize,
     },
-    //NotEnoughData,
-    //WrongPaddedSize,
 }
 
 /// Structure for holding the required credentials for handling long-term STUN credentials
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct LongTermCredentials {
-    pub username: String,
-    pub password: String,
-    pub realm: String,
+    username: String,
+    password: String,
+    realm: String,
+}
+
+impl LongTermCredentials {
+    pub fn new(username: String, password: String, realm: String) -> Self {
+        Self {
+            username,
+            password,
+            realm,
+        }
+    }
+
+    /// The configured username
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
+    /// The configured password
+    pub fn password(&self) -> &str {
+        &self.password
+    }
+
+    /// The configured realm
+    pub fn realm(&self) -> &str {
+        &self.realm
+    }
 }
 
 /// Structure for holding the required credentials for handling short-term STUN credentials
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ShortTermCredentials {
-    pub password: String,
+    password: String,
+}
+
+impl ShortTermCredentials {
+    /// Create a new ShortTermCredentials
+    pub fn new(password: String) -> Self {
+        Self { password }
+    }
+
+    /// The configured password
+    pub fn password(&self) -> &str {
+        &self.password
+    }
 }
 
 /// Enum for holding the credentials used to sign or verify a [`Message`]
@@ -964,8 +999,7 @@ impl Message {
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING,
     ///     MessageIntegrityCredentials, ShortTermCredentials, IntegrityAlgorithm};
     /// let mut message = Message::new_request(BINDING);
-    /// let credentials = MessageIntegrityCredentials::ShortTerm(ShortTermCredentials { password:
-    ///     "pass".to_owned() });
+    /// let credentials = ShortTermCredentials::new("pass".to_owned()).into();
     /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1).is_ok());
     /// let data = message.to_bytes();
     /// assert!(message.validate_integrity(&data, &credentials).is_ok());
@@ -1436,9 +1470,7 @@ mod tests {
         for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
             let mut msg = Message::new_request(BINDING);
             let software_str = "s";
-            let credentials = MessageIntegrityCredentials::ShortTerm(ShortTermCredentials {
-                password: "secret".to_owned(),
-            });
+            let credentials = ShortTermCredentials::new("secret".to_owned()).into();
             msg.add_attribute(Software::new(software_str).unwrap())
                 .unwrap();
             msg.add_message_integrity(&credentials, algorithm).unwrap();
