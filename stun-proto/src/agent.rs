@@ -10,7 +10,6 @@
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, Weak};
 
 use std::time::{Duration, Instant};
 
@@ -30,26 +29,14 @@ use tracing::{debug, trace, warn};
 static STUN_AGENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Implementation of a STUN agent
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct StunAgent {
     id: usize,
     transport: TransportType,
     local_addr: SocketAddr,
     remote_addr: Option<SocketAddr>,
-    inner: DebugWrapper<Arc<StunAgentInner>>,
-}
-
-#[derive(Debug)]
-struct StunAgentInner {
-    state: Mutex<StunAgentState>,
-}
-
-#[derive(Debug)]
-struct StunAgentState {
-    #[allow(dead_code)]
-    id: usize,
     validated_peers: HashSet<SocketAddr>,
-    outstanding_requests: HashMap<TransactionId, Weak<StunRequestState>>,
+    outstanding_requests: HashMap<TransactionId, StunRequestState>,
     local_credentials: Option<MessageIntegrityCredentials>,
     remote_credentials: Option<MessageIntegrityCredentials>,
     tcp_buffer: Option<TcpBuffer>,
@@ -72,17 +59,20 @@ impl StunAgentBuilder {
     /// Build the [`StunAgent`]
     pub fn build(self) -> StunAgent {
         let id = STUN_AGENT_COUNT.fetch_add(1, Ordering::SeqCst);
+        let tcp_buffer = match self.transport {
+            TransportType::Udp => None,
+            TransportType::Tcp => Some(TcpBuffer::new()),
+        };
         StunAgent {
             id,
             transport: self.transport,
             local_addr: self.local_addr,
             remote_addr: self.remote_addr,
-            inner: DebugWrapper::wrap(
-                Arc::new(StunAgentInner {
-                    state: Mutex::new(StunAgentState::new(id, self.transport)),
-                }),
-                "...",
-            ),
+            validated_peers: Default::default(),
+            outstanding_requests: Default::default(),
+            local_credentials: None,
+            remote_credentials: None,
+            tcp_buffer,
         }
     }
 }
@@ -113,67 +103,66 @@ impl StunAgent {
     }
 
     /// Set the local credentials that all messages should be signed with
-    pub fn set_local_credentials(&self, credentials: MessageIntegrityCredentials) {
-        let mut state = self.inner.state.lock().unwrap();
-        state.local_credentials = Some(credentials)
+    pub fn set_local_credentials(&mut self, credentials: MessageIntegrityCredentials) {
+        self.local_credentials = Some(credentials)
     }
 
     /// The local credentials that all messages should be signed with
     pub fn local_credentials(&self) -> Option<MessageIntegrityCredentials> {
-        let state = self.inner.state.lock().unwrap();
-        state.local_credentials.clone()
+        self.local_credentials.clone()
     }
 
     /// Set the remote credentials that all messages should be signed with
-    pub fn set_remote_credentials(&self, credentials: MessageIntegrityCredentials) {
-        let mut state = self.inner.state.lock().unwrap();
-        state.remote_credentials = Some(credentials)
+    pub fn set_remote_credentials(&mut self, credentials: MessageIntegrityCredentials) {
+        self.remote_credentials = Some(credentials)
     }
 
     /// The remote credentials that all messages should be signed with
     pub fn remote_credentials(&self) -> Option<MessageIntegrityCredentials> {
-        let state = self.inner.state.lock().unwrap();
-        state.remote_credentials.clone()
+        self.remote_credentials.clone()
     }
 
     /// Perform any operations needed to be able to send data to a peer
     pub fn send_data<'a>(&self, bytes: &'a [u8], to: SocketAddr) -> Transmit<'a> {
-        match self.transport {
-            TransportType::Udp => Transmit::new(bytes, self.transport, self.local_addr, to),
-            TransportType::Tcp => {
-                let mut data = Vec::with_capacity(bytes.len() + 2);
-                data.resize(2, 0);
-                BigEndian::write_u16(&mut data, bytes.len() as u16);
-                data.extend(bytes);
-                Transmit::new_owned(data.into_boxed_slice(), self.transport, self.local_addr, to)
-            }
-        }
+        send_data(self.transport, bytes, self.local_addr, to)
     }
 
     /// Perform any operations needed to be able to send a [`Message`] to a peer
-    pub fn send(&self, msg: Message, to: SocketAddr) -> Result<Transmit<'_>, StunError> {
+    pub fn send(&mut self, msg: Message, to: SocketAddr) -> Result<Transmit<'_>, StunError> {
         let data = msg.to_bytes();
+        if msg.has_class(MessageClass::Request) {
+            if self
+                .outstanding_requests
+                .contains_key(&msg.transaction_id())
+            {
+                return Err(StunError::AlreadyInProgress);
+            }
+            let transaction_id = msg.transaction_id();
+            let mut state = StunRequestState::new(msg, self.transport, self.local_addr, to);
+            let StunRequestPollRet::SendData(transmit) = state.poll(Instant::now()) else {
+                return Err(StunError::ProtocolViolation);
+            };
+            let transmit = transmit.into_owned();
+            self.outstanding_requests.insert(transaction_id, state);
+            return Ok(transmit);
+        }
         Ok(self.send_data(&data, to).into_owned())
     }
 
     fn parse_chunk(
-        &self,
+        &mut self,
         data: &[u8],
         from: SocketAddr,
     ) -> Result<Option<HandleStunReply>, StunError> {
         match Message::from_bytes(data) {
             Ok(stun_msg) => {
                 debug!("received stun {}", stun_msg);
-                let mut state = self.inner.state.lock().unwrap();
-                state.handle_stun(stun_msg, data, from)
+                self.handle_stun(stun_msg, data, from)
             }
             Err(_) => {
-                let peer_validated = {
-                    let state = self.inner.state.lock().unwrap();
-                    state.validated_peers.contains(&from)
-                };
+                let peer_validated = { self.validated_peers.contains(&from) };
                 if peer_validated {
-                    Ok(Some(HandleStunReply::Data(data.to_vec(), from)))
+                    Ok(Some(HandleStunReply::Data(data.to_vec())))
                 } else if self.transport == TransportType::Tcp {
                     // close the tcp channel
                     warn!("stun message not the first message sent over TCP channel, closing");
@@ -200,7 +189,7 @@ impl StunAgent {
         )
     )]
     pub fn handle_incoming_data(
-        &self,
+        &mut self,
         data: &[u8],
         from: SocketAddr,
     ) -> Result<Vec<HandleStunReply>, StunError> {
@@ -214,14 +203,12 @@ impl StunAgent {
             }
             TransportType::Tcp => {
                 let mut ret = vec![];
-                let mut state = self.inner.state.lock().unwrap();
-                let tcp = state.tcp_buffer.as_mut().unwrap();
+                let tcp = self.tcp_buffer.as_mut().unwrap();
                 tcp.push_data(data);
                 let mut datas = vec![];
                 while let Some(data) = tcp.pull_data() {
                     datas.push(data);
                 }
-                drop(state);
                 for data in datas {
                     if let Some(reply) = self.parse_chunk(&data, from)? {
                         ret.push(reply);
@@ -232,35 +219,198 @@ impl StunAgent {
         }
     }
 
-    /// Create a new [`StunRequest`] for encapsulating the state required for handling a
-    /// [`MessageClass::Request`]
-    pub fn stun_request_transaction(
-        &self,
-        msg: &Message,
-        addr: SocketAddr,
-    ) -> Result<StunRequest, StunError> {
-        if !msg.has_class(MessageClass::Request) {
-            panic!("Cannot perform a request with a non-Request message");
+    #[tracing::instrument(
+        name = "stun_validated_peer"
+        skip(self),
+        fields(stun_id = self.id)
+    )]
+    fn validated_peer(&mut self, addr: SocketAddr) {
+        if self.validated_peers.get(&addr).is_none() {
+            debug!("validated peer {:?}", addr);
+            self.validated_peers.insert(addr);
         }
-        let timeouts_ms = if self.transport == TransportType::Tcp {
-            vec![39500]
-        } else {
-            vec![500, 1000, 2000, 4000, 8000, 16000]
-        };
-        Ok(StunRequest(Arc::new(StunRequestState {
-            msg: msg.clone(),
-            to: addr,
-            timeouts: timeouts_ms,
-            agent: self.clone(),
-            inner: Mutex::new(StunRequestInner {
-                timeout_i: 0,
-                recv_cancelled: false,
-                send_cancelled: false,
-                last_send_time: None,
-                response: None,
-            }),
-        })))
     }
+
+    #[tracing::instrument(
+        name = "stun_handle_message"
+        skip(self, msg, orig_data, from),
+        fields(
+            transaction_id = %msg.transaction_id(),
+        )
+    )]
+    fn handle_stun(
+        &mut self,
+        msg: Message,
+        orig_data: &[u8],
+        from: SocketAddr,
+    ) -> Result<Option<HandleStunReply>, StunError> {
+        if msg.is_response() {
+            let Some(request) = self.take_outstanding_request(&msg.transaction_id()) else {
+                trace!("original request disappeared -> ignoring response");
+                return Ok(None);
+            };
+            // only validate response if the original request had credentials
+            if request.msg.has_attribute(MessageIntegrity::TYPE) {
+                if let Some(remote_creds) = &self.remote_credentials {
+                    match msg.validate_integrity(orig_data, remote_creds) {
+                        Ok(_) => {
+                            self.validated_peer(from);
+                            Ok(Some(HandleStunReply::StunResponse(request.msg, msg)))
+                        }
+                        Err(e) => {
+                            debug!("message failed integrity check: {:?}", e);
+                            self.outstanding_requests
+                                .insert(msg.transaction_id(), request);
+                            Ok(None)
+                        }
+                    }
+                } else {
+                    debug!("no remote credentials, ignoring");
+                    self.outstanding_requests
+                        .insert(msg.transaction_id(), request);
+                    Ok(None)
+                }
+            } else {
+                // original message didn't have integrity, reply doesn't need to either
+                self.validated_peer(from);
+                Ok(Some(HandleStunReply::StunResponse(request.msg, msg)))
+            }
+        } else {
+            self.validated_peer(from);
+            Ok(Some(HandleStunReply::IncomingStun(msg)))
+        }
+    }
+
+    #[tracing::instrument(skip(self, transaction_id),
+        fields(transaction_id = %transaction_id))]
+    fn take_outstanding_request(
+        &mut self,
+        transaction_id: &TransactionId,
+    ) -> Option<StunRequestState> {
+        if let Some(request) = self.outstanding_requests.remove(transaction_id) {
+            trace!("removing request");
+            Some(request)
+        } else {
+            trace!("no outstanding request");
+            None
+        }
+    }
+
+    /// Retrieve a reference to an outstanding STUN request
+    pub fn request_transaction(&self, transaction_id: TransactionId) -> Option<StunRequest> {
+        if self.outstanding_requests.contains_key(&transaction_id) {
+            Some(StunRequest {
+                agent: self,
+                transaction_id,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Retrieve a mutable reference to an outstanding STUN request
+    pub fn mut_request_transaction(
+        &mut self,
+        transaction_id: TransactionId,
+    ) -> Option<StunRequestMut> {
+        if self.outstanding_requests.contains_key(&transaction_id) {
+            Some(StunRequestMut {
+                agent: self,
+                transaction_id,
+            })
+        } else {
+            None
+        }
+    }
+
+    fn mut_request_state(
+        &mut self,
+        transaction_id: TransactionId,
+    ) -> Option<&mut StunRequestState> {
+        self.outstanding_requests.get_mut(&transaction_id)
+    }
+
+    fn request_state(&self, transaction_id: TransactionId) -> Option<&StunRequestState> {
+        self.outstanding_requests.get(&transaction_id)
+    }
+
+    /// Poll the agent for making further progress on any outstanding requests.  The returned value
+    /// indicates the current state and anything the caller needs to perform.
+    #[tracing::instrument(
+        name = "stun_request_poll"
+        level = "info",
+        ret,
+        skip(self),
+    )]
+    pub fn poll<'a>(&mut self, now: Instant) -> StunAgentPollRet<'a> {
+        let mut lowest_wait = now + Duration::from_secs(3600);
+        let mut timeout = None;
+        let mut cancelled = None;
+        for request in self.outstanding_requests.values_mut() {
+            let transaction_id = request.msg.transaction_id();
+            match request.poll(now) {
+                StunRequestPollRet::Cancelled => {
+                    cancelled = Some(transaction_id);
+                    break;
+                }
+                StunRequestPollRet::SendData(transmit) => {
+                    return StunAgentPollRet::SendData(transmit.into_owned())
+                }
+                StunRequestPollRet::WaitUntil(wait_until) => {
+                    if wait_until < lowest_wait {
+                        lowest_wait = wait_until;
+                    }
+                }
+                StunRequestPollRet::TimedOut => {
+                    timeout = Some(transaction_id);
+                    break;
+                }
+            }
+        }
+        if let Some(transaction) = timeout {
+            if let Some(state) = self.outstanding_requests.remove(&transaction) {
+                return StunAgentPollRet::TransactionTimedOut(state.msg);
+            }
+        }
+        if let Some(transaction) = cancelled {
+            if let Some(state) = self.outstanding_requests.remove(&transaction) {
+                return StunAgentPollRet::TransactionCancelled(state.msg);
+            }
+        }
+        StunAgentPollRet::WaitUntil(lowest_wait)
+    }
+}
+
+/// Return value for [`StunAgent::poll`]
+#[derive(Debug)]
+pub enum StunAgentPollRet<'a> {
+    /// An oustanding transaction timed out.
+    TransactionTimedOut(Message),
+    /// An oustanding transaction was cancelled.
+    TransactionCancelled(Message),
+    /// Send data using the specified 5-tuple
+    SendData(Transmit<'a>),
+    /// Wait until the specified time has passed
+    WaitUntil(Instant),
+}
+
+fn send_data(
+    transport: TransportType,
+    bytes: &[u8],
+    from: SocketAddr,
+    to: SocketAddr,
+) -> Transmit<'static> {
+    match transport {
+        TransportType::Udp => Transmit::new(bytes, transport, from, to),
+        TransportType::Tcp => {
+            let mut data = Vec::with_capacity(bytes.len() + 2);
+            data.resize(2, 0);
+            BigEndian::write_u16(&mut data, bytes.len() as u16);
+            data.extend(bytes);
+            Transmit::new_owned(data.into_boxed_slice(), transport, from, to)
+        }
+    }
+    .into_owned()
 }
 
 #[derive(Debug)]
@@ -466,125 +616,155 @@ impl<'a> Transmit<'a> {
             to: self.to,
         }
     }
+
+    /// The bytes to transmit
+    pub fn data(&self) -> &[u8] {
+        match &self.data {
+            Data::Owned(owned) => owned,
+            Data::Borrowed(borrowed) => borrowed,
+        }
+    }
 }
 
 /// Return value for [`StunRequest::poll`]
 #[derive(Debug)]
-pub enum StunRequestPollRet<'a> {
+enum StunRequestPollRet<'a> {
     /// Wait until the specified time has passed
     WaitUntil(Instant),
     /// The request has been cancelled and will not make further progress
     Cancelled,
     /// Send data using the specified 5-tuple
     SendData(Transmit<'a>),
-    /// A response for this request has been received.  No further progress will be made.
-    Response(Message),
+    /// The request timed out.
+    TimedOut,
 }
 
 #[derive(Debug)]
-struct StunRequestInner {
-    response: Option<Message>,
+struct StunRequestState {
+    msg: Message,
+    bytes: Vec<u8>,
+    transport: TransportType,
+    from: SocketAddr,
+    to: SocketAddr,
+    timeouts_ms: Vec<u64>,
     recv_cancelled: bool,
     send_cancelled: bool,
     timeout_i: usize,
     last_send_time: Option<Instant>,
 }
 
-#[derive(Debug)]
-pub(crate) struct StunRequestState {
-    msg: Message,
-    to: SocketAddr,
-    timeouts: Vec<u64>,
-    agent: StunAgent,
-    inner: Mutex<StunRequestInner>,
-}
-
-/// A STUN Request
-#[derive(Debug, Clone)]
-pub struct StunRequest(Arc<StunRequestState>);
-
-impl StunRequest {
-    /// The request [`Message`]
-    pub fn request(&self) -> &Message {
-        &self.0.msg
+impl StunRequestState {
+    fn new(request: Message, transport: TransportType, from: SocketAddr, to: SocketAddr) -> Self {
+        let data = request.to_bytes();
+        let timeouts_ms = if transport == TransportType::Tcp {
+            vec![39500]
+        } else {
+            vec![500, 1000, 2000, 4000, 8000, 16000]
+        };
+        Self {
+            msg: request,
+            bytes: data,
+            transport,
+            from,
+            to,
+            timeouts_ms,
+            timeout_i: 0,
+            recv_cancelled: false,
+            send_cancelled: false,
+            last_send_time: None,
+        }
     }
 
-    /// The remote address the request is sent to
-    pub fn peer_address(&self) -> SocketAddr {
-        self.0.to
-    }
-
-    /// Do not retransmit further
-    pub fn cancel_retransmissions(&self) {
-        let mut inner = self.0.inner.lock().unwrap();
-        inner.send_cancelled = true;
-    }
-
-    /// Do not wait for any kind of response
-    pub fn cancel(&self) {
-        let mut inner = self.0.inner.lock().unwrap();
-        inner.send_cancelled = true;
-        inner.recv_cancelled = true;
-    }
-
-    /// Poll the request for further progress.  The returned value indicates the current state and
-    /// anything the caller needs to perform.
     #[tracing::instrument(
         name = "stun_request_poll"
         level = "info",
         ret,
-        err,
         skip(self),
-        fields(transaction_id = %self.0.msg.transaction_id()),
+        fields(transaction_id = %self.msg.transaction_id()),
     )]
-    pub fn poll(&self, now: Instant) -> Result<StunRequestPollRet, StunError> {
-        let weak_inner = Arc::downgrade(&self.0);
-        let mut inner = self.0.inner.lock().unwrap();
-        if let Some(response) = inner.response.clone() {
-            return Ok(StunRequestPollRet::Response(response));
-        }
-        if inner.recv_cancelled {
-            return Ok(StunRequestPollRet::Cancelled);
+    fn poll(&mut self, now: Instant) -> StunRequestPollRet {
+        if self.recv_cancelled {
+            return StunRequestPollRet::Cancelled;
         }
         // TODO: account for TCP connect in timeout
-        if let Some(last_send) = inner.last_send_time {
-            if inner.timeout_i >= self.0.timeouts.len() {
-                return Err(StunError::TimedOut);
+        if let Some(last_send) = self.last_send_time {
+            if self.timeout_i >= self.timeouts_ms.len() {
+                return StunRequestPollRet::TimedOut;
             }
-            let next_send = last_send + Duration::from_millis(self.0.timeouts[inner.timeout_i]);
+            let next_send = last_send + Duration::from_millis(self.timeouts_ms[self.timeout_i]);
             if next_send > now {
-                return Ok(StunRequestPollRet::WaitUntil(next_send));
+                return StunRequestPollRet::WaitUntil(next_send);
             }
-            inner.timeout_i += 1;
+            self.timeout_i += 1;
         }
-        if inner.send_cancelled {
-            return Ok(StunRequestPollRet::Cancelled);
+        if self.send_cancelled {
+            // this calcelaltion may need a different value
+            return StunRequestPollRet::Cancelled;
         }
-        inner.last_send_time = Some(now);
-        drop(inner);
-        let mut agent_inner = self.0.agent.inner.state.lock().unwrap();
-        agent_inner
-            .outstanding_requests
-            .insert(self.0.msg.transaction_id(), weak_inner);
-        drop(agent_inner);
-        Ok(StunRequestPollRet::SendData(
-            self.0.agent.send(self.0.msg.clone(), self.0.to)?,
-        ))
+        self.last_send_time = Some(now);
+        StunRequestPollRet::SendData(send_data(self.transport, &self.bytes, self.from, self.to))
+    }
+}
+
+/// A STUN Request
+#[derive(Debug, Clone)]
+pub struct StunRequest<'a> {
+    transaction_id: TransactionId,
+    agent: &'a StunAgent,
+}
+
+impl<'a> StunRequest<'a> {
+    /// The request [`Message`]
+    pub fn request(&self) -> &Message {
+        let state = self.agent.request_state(self.transaction_id).unwrap();
+        &state.msg
+    }
+
+    /// The remote address the request is sent to
+    pub fn peer_address(&self) -> SocketAddr {
+        let state = self.agent.request_state(self.transaction_id).unwrap();
+        state.to
+    }
+}
+
+/// A STUN Request
+#[derive(Debug)]
+pub struct StunRequestMut<'a> {
+    agent: &'a mut StunAgent,
+    transaction_id: TransactionId,
+}
+
+impl<'a> StunRequestMut<'a> {
+    /// Do not retransmit further
+    pub fn cancel_retransmissions(&mut self) {
+        if let Some(state) = self.agent.mut_request_state(self.transaction_id) {
+            state.send_cancelled = true;
+        }
+    }
+
+    /// Do not wait for any kind of response
+    pub fn cancel(&mut self) {
+        if let Some(state) = self.agent.mut_request_state(self.transaction_id) {
+            state.send_cancelled = true;
+            state.recv_cancelled = true;
+        }
     }
 
     /// The [`StunAgent`] this request is being sent with.
     pub fn agent(&self) -> &StunAgent {
-        &self.0.agent
+        self.agent
     }
 }
 
 /// Return value when handling possible STUN data
 #[derive(Debug)]
 pub enum HandleStunReply {
+    /// The provided data could be parsed as a response to an outstanding request
+    StunResponse(Message, Message),
     /// The provided data could be parsed as a STUN message
-    Stun(Message, SocketAddr),
+    IncomingStun(Message),
     /// The provided data could not be parsed as a STUN message
-    Data(Vec<u8>, SocketAddr),
+    Data(Vec<u8>),
 }
 
 /// STUN errors
@@ -625,112 +805,6 @@ impl From<StunWriteError> for StunError {
     }
 }
 
-impl StunAgentState {
-    fn new(id: usize, transport: TransportType) -> Self {
-        let tcp_buffer = match transport {
-            TransportType::Udp => None,
-            TransportType::Tcp => Some(TcpBuffer::new()),
-        };
-
-        Self {
-            id,
-            outstanding_requests: HashMap::new(),
-            validated_peers: HashSet::new(),
-            local_credentials: None,
-            remote_credentials: None,
-            tcp_buffer,
-        }
-    }
-
-    #[tracing::instrument(
-        name = "stun_validated_peer"
-        skip(self),
-        fields(stun_id = self.id)
-    )]
-    fn validated_peer(&mut self, addr: SocketAddr) {
-        if self.validated_peers.get(&addr).is_none() {
-            debug!("validated peer {:?}", addr);
-            self.validated_peers.insert(addr);
-        }
-    }
-
-    #[tracing::instrument(
-        name = "stun_handle_message"
-        skip(self, msg, orig_data, from),
-        fields(
-            transaction_id = %msg.transaction_id(),
-        )
-    )]
-    fn handle_stun(
-        &mut self,
-        msg: Message,
-        orig_data: &[u8],
-        from: SocketAddr,
-    ) -> Result<Option<HandleStunReply>, StunError> {
-        if msg.is_response() {
-            if let Some(weak_request) = self.take_outstanding_request(&msg.transaction_id()) {
-                let request = match weak_request.upgrade() {
-                    Some(request) => request,
-                    None => {
-                        trace!("original request disappeared -> ignoring response");
-                        return Ok(None);
-                    }
-                };
-                // only validate response if the original request had credentials
-                if request.msg.has_attribute(MessageIntegrity::TYPE) {
-                    if let Some(remote_creds) = &self.remote_credentials {
-                        match msg.validate_integrity(orig_data, remote_creds) {
-                            Ok(_) => {
-                                self.validated_peer(from);
-                                request.inner.lock().unwrap().response = Some(msg.clone());
-                                Ok(Some(HandleStunReply::Stun(msg, from)))
-                            }
-                            Err(e) => {
-                                debug!("message failed integrity check: {:?}", e);
-                                self.outstanding_requests
-                                    .insert(msg.transaction_id(), weak_request);
-                                Ok(None)
-                            }
-                        }
-                    } else {
-                        debug!("no remote credentials, ignoring");
-                        self.outstanding_requests
-                            .insert(msg.transaction_id(), weak_request);
-                        Ok(None)
-                    }
-                } else {
-                    // original message didn't have integrity, reply doesn't need to either
-                    self.validated_peer(from);
-                    request.inner.lock().unwrap().response = Some(msg.clone());
-                    Ok(Some(HandleStunReply::Stun(msg, from)))
-                }
-            } else {
-                debug!("unmatched stun response, dropping {}", msg);
-                // unmatched response -> drop
-                Ok(None)
-            }
-        } else {
-            self.validated_peer(from);
-            Ok(Some(HandleStunReply::Stun(msg, from)))
-        }
-    }
-
-    #[tracing::instrument(skip(self, transaction_id),
-        fields(transaction_id = %transaction_id))]
-    fn take_outstanding_request(
-        &mut self,
-        transaction_id: &TransactionId,
-    ) -> Option<Weak<StunRequestState>> {
-        if let Some(request) = self.outstanding_requests.remove(transaction_id) {
-            trace!("removing request");
-            Some(request)
-        } else {
-            trace!("no outstanding request");
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -740,38 +814,71 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn manual_request() {
+        init();
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+
+        let local_credentials = ShortTermCredentials::new(String::from("local_password"));
+        let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
+        agent.set_local_credentials(local_credentials.clone().into());
+        agent.set_remote_credentials(remote_credentials.clone().into());
+
+        let mut msg = Message::new_request(BINDING);
+        msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
+            .unwrap();
+        let transmit = agent.send(msg, remote_addr).unwrap();
+
+        let request = Message::from_bytes(&transmit.data).unwrap();
+
+        let mut response = Message::new_success(&request);
+        response
+            .add_attribute(XorMappedAddress::new(
+                transmit.from,
+                request.transaction_id(),
+            ))
+            .unwrap();
+        response
+            .add_message_integrity(&remote_credentials.clone().into(), IntegrityAlgorithm::Sha1)
+            .unwrap();
+
+        let data = response.to_bytes();
+        let to = transmit.to;
+        let reply = agent.handle_incoming_data(&data, to).unwrap();
+
+        assert!(matches!(reply[0], HandleStunReply::StunResponse(_, _)));
+
+        let data = vec![42; 8];
+        let transmit = agent.send_data(&data, remote_addr);
+        assert_eq!(transmit.data(), &data);
+        assert_eq!(transmit.from, local_addr);
+        assert_eq!(transmit.to, remote_addr);
+    }
+
+    #[test]
     fn request() {
         init();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
-        let agent = StunAgent::builder(TransportType::Udp, local_addr)
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
         let msg = Message::new_request(BINDING);
-        let request = agent.stun_request_transaction(&msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr).unwrap();
         let now = Instant::now();
-        let ret = request.poll(now).unwrap();
-        assert!(matches!(ret, StunRequestPollRet::SendData(_)));
-        if let StunRequestPollRet::SendData(Transmit {
-            data,
-            transport,
-            from,
-            to,
-        }) = ret
-        {
-            assert_eq!(transport, TransportType::Udp);
-            assert_eq!(from, local_addr);
-            assert_eq!(to, remote_addr);
-            let request = Message::from_bytes(&data).unwrap();
-            let response = Message::new_error(&request);
-            let resp_data = response.to_bytes();
-            let ret = agent.handle_incoming_data(&resp_data, remote_addr).unwrap();
-            assert!(matches!(ret[0], HandleStunReply::Stun(_, _)));
-        } else {
-            unreachable!();
-        }
-        let ret = request.poll(now).unwrap();
-        assert!(matches!(ret, StunRequestPollRet::Response(_)));
+        assert_eq!(transmit.transport, TransportType::Udp);
+        assert_eq!(transmit.from, local_addr);
+        assert_eq!(transmit.to, remote_addr);
+        let request = Message::from_bytes(&transmit.data).unwrap();
+        let response = Message::new_error(&request);
+        let resp_data = response.to_bytes();
+        let ret = agent.handle_incoming_data(&resp_data, remote_addr).unwrap();
+        assert!(matches!(ret[0], HandleStunReply::StunResponse(_, _)));
+
+        let ret = agent.poll(now);
+        assert!(matches!(ret, StunAgentPollRet::WaitUntil(_)));
     }
 
     #[test]
@@ -779,19 +886,19 @@ pub(crate) mod tests {
         init();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
-        let agent = StunAgent::builder(TransportType::Udp, local_addr)
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
         let msg = Message::new_request(BINDING);
-        let request = agent.stun_request_transaction(&msg, remote_addr).unwrap();
+        agent.send(msg, remote_addr).unwrap();
         let mut now = Instant::now();
         loop {
-            match request.poll(now) {
-                Ok(StunRequestPollRet::WaitUntil(new_now)) => {
+            match agent.poll(now) {
+                StunAgentPollRet::WaitUntil(new_now) => {
                     now = new_now;
                 }
-                Ok(StunRequestPollRet::SendData(_)) => (),
-                Err(StunError::TimedOut) => break,
+                StunAgentPollRet::SendData(_) => (),
+                StunAgentPollRet::TransactionTimedOut(_) => break,
                 _ => unreachable!(),
             }
         }
@@ -802,36 +909,26 @@ pub(crate) mod tests {
         init();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
-        let agent = StunAgent::builder(TransportType::Tcp, local_addr)
+        let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
             .remote_addr(remote_addr)
             .build();
         let msg = Message::new_request(BINDING);
-        let request = agent.stun_request_transaction(&msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr).unwrap();
         let now = Instant::now();
-        let ret = request.poll(now).unwrap();
-        if let StunRequestPollRet::SendData(Transmit {
-            data,
-            transport,
-            from,
-            to,
-        }) = ret
-        {
-            assert_eq!(transport, TransportType::Tcp);
-            assert_eq!(from, local_addr);
-            assert_eq!(to, remote_addr);
-            let request = Message::from_bytes(&data[2..]).unwrap();
-            let response = Message::new_error(&request);
-            let resp_data = response.to_bytes();
-            let mut data = Vec::with_capacity(resp_data.len() + 2);
-            data.resize(2, 0);
-            BigEndian::write_u16(&mut data[..2], resp_data.len() as u16);
-            data.extend(resp_data);
-            let ret = agent.handle_incoming_data(&data, remote_addr).unwrap();
-            assert!(matches!(ret[0], HandleStunReply::Stun(_, _)));
-        } else {
-            unreachable!();
-        }
-        let ret = request.poll(now).unwrap();
-        assert!(matches!(ret, StunRequestPollRet::Response(_)));
+        assert_eq!(transmit.transport, TransportType::Tcp);
+        assert_eq!(transmit.from, local_addr);
+        assert_eq!(transmit.to, remote_addr);
+        let request = Message::from_bytes(&transmit.data[2..]).unwrap();
+        let response = Message::new_error(&request);
+        let resp_data = response.to_bytes();
+        let mut data = Vec::with_capacity(resp_data.len() + 2);
+        data.resize(2, 0);
+        BigEndian::write_u16(&mut data[..2], resp_data.len() as u16);
+        data.extend(resp_data);
+        let ret = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        assert!(matches!(ret[0], HandleStunReply::StunResponse(_, _)));
+
+        let ret = agent.poll(now);
+        assert!(matches!(ret, StunAgentPollRet::WaitUntil(_)));
     }
 }
