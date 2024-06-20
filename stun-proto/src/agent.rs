@@ -716,8 +716,8 @@ impl StunRequestState {
 /// A STUN Request
 #[derive(Debug, Clone)]
 pub struct StunRequest<'a> {
-    transaction_id: TransactionId,
     agent: &'a StunAgent,
+    transaction_id: TransactionId,
 }
 
 impl<'a> StunRequest<'a> {
@@ -742,6 +742,18 @@ pub struct StunRequestMut<'a> {
 }
 
 impl<'a> StunRequestMut<'a> {
+    /// The request [`Message`]
+    pub fn request(&self) -> &Message {
+        let state = self.agent.request_state(self.transaction_id).unwrap();
+        &state.msg
+    }
+
+    /// The remote address the request is sent to
+    pub fn peer_address(&self) -> SocketAddr {
+        let state = self.agent.request_state(self.transaction_id).unwrap();
+        state.to
+    }
+
     /// Do not retransmit further
     pub fn cancel_retransmissions(&mut self) {
         if let Some(state) = self.agent.mut_request_state(self.transaction_id) {
@@ -759,6 +771,11 @@ impl<'a> StunRequestMut<'a> {
 
     /// The [`StunAgent`] this request is being sent with.
     pub fn agent(&self) -> &StunAgent {
+        self.agent
+    }
+
+    /// The mutable [`StunAgent`] this request is being sent with.
+    pub fn mut_agent(&mut self) -> &mut StunAgent {
         self.agent
     }
 }
@@ -966,6 +983,10 @@ pub(crate) mod tests {
         let _transmit = agent.send(msg, remote_addr).unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
+        assert_eq!(request.request().transaction_id(), transaction_id);
+        assert_eq!(request.agent().local_addr(), local_addr);
+        assert_eq!(request.mut_agent().local_addr(), local_addr);
+        assert_eq!(request.peer_address(), remote_addr);
         request.cancel();
 
         let ret = agent.poll(Instant::now());
@@ -989,16 +1010,17 @@ pub(crate) mod tests {
 
         let mut response = Message::new_success(&msg);
         response
-            .add_attribute(XorMappedAddress::new(
-                transmit.from,
-                transaction_id,
-            ))
+            .add_attribute(XorMappedAddress::new(transmit.from, transaction_id))
             .unwrap();
 
-        assert!(matches!(agent.send(msg, remote_addr), Err(StunError::AlreadyInProgress)));
+        assert!(matches!(
+            agent.send(msg, remote_addr),
+            Err(StunError::AlreadyInProgress)
+        ));
 
         // the original transaction should still exist
         let request = agent.request_transaction(transaction_id).unwrap();
+        assert_eq!(request.request().transaction_id(), transaction_id);
         assert_eq!(request.peer_address(), remote_addr);
 
         let data = response.to_bytes();
