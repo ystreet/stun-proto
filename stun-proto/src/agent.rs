@@ -952,11 +952,11 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
         let local_credentials = ShortTermCredentials::new(String::from("local_password"));
         let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
-        agent.set_local_credentials(local_credentials.into());
+        agent.set_local_credentials(local_credentials.clone().into());
         agent.set_remote_credentials(remote_credentials.clone().into());
 
         let mut msg = Message::new_request(BINDING);
-        msg.add_message_integrity(&remote_credentials.into(), IntegrityAlgorithm::Sha1)
+        msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent.send(msg, remote_addr).unwrap();
 
@@ -968,6 +968,44 @@ pub(crate) mod tests {
                 transmit.from,
                 request.transaction_id(),
             ))
+            .unwrap();
+
+        let data = response.to_bytes();
+        let to = transmit.to;
+        let reply = agent.handle_incoming_data(&data, to).unwrap();
+        // reply is ignored as it does not have credentials
+        assert!(reply.is_empty());
+    }
+
+    #[test]
+    fn response_with_incorrect_credentials() {
+        init();
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+        let local_credentials = ShortTermCredentials::new(String::from("local_password"));
+        let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
+        agent.set_local_credentials(local_credentials.clone().into());
+        agent.set_remote_credentials(remote_credentials.into());
+
+        let mut msg = Message::new_request(BINDING);
+        msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
+            .unwrap();
+        let transmit = agent.send(msg, remote_addr).unwrap();
+
+        let request = Message::from_bytes(&transmit.data).unwrap();
+
+        let mut response = Message::new_success(&request);
+        response
+            .add_attribute(XorMappedAddress::new(
+                transmit.from,
+                request.transaction_id(),
+            ))
+            .unwrap();
+        // wrong credentials, should be `remote_credentials`
+        response
+            .add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
 
         let data = response.to_bytes();
