@@ -6,9 +6,68 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! # stun-proto
+//!
+//! A sans-IO implementation of a STUN agent as specified in [RFC5389] and [RFC8489].
+//!
+//! [RFC8489]: https://tools.ietf.org/html/rfc8489
+//! [RFC5389]: https://tools.ietf.org/html/rfc5389
+//!
+//! ## Example
+//!
+//! ```
+//! # use std::net::SocketAddr;
+//! use stun_proto::types::TransportType;
+//! use stun_proto::types::attribute::{MessageIntegrity, XorMappedAddress};
+//! use stun_proto::types::message::{
+//!     BINDING, IntegrityAlgorithm, Message, MessageIntegrityCredentials, ShortTermCredentials
+//! };
+//! use stun_proto::agent::{HandleStunReply, StunAgent};
+//! let local_addr = "10.0.0.1:12345".parse().unwrap();
+//! let remote_addr = "10.0.0.2:3478".parse().unwrap();
+//!
+//! let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+//!
+//! // short term or short term credentials may optionally be configured on the agent.
+//! let local_credentials = ShortTermCredentials::new(String::from("local_password"));
+//! let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
+//! agent.set_local_credentials(local_credentials.clone().into());
+//! agent.set_remote_credentials(remote_credentials.clone().into());
+//!
+//! // and we can send a Message
+//! let mut msg = Message::new_request(BINDING);
+//! msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
+//! let transmit = agent.send(msg, remote_addr).unwrap();
+//!
+//! // The transmit struct indicates what data and where to send it.
+//! let request = Message::from_bytes(&transmit.data).unwrap();
+//!
+//! let mut response = Message::new_success(&request);
+//! let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
+//! response.add_attribute(xor_addr).unwrap();
+//! response.add_message_integrity(&remote_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
+//!
+//! // when receiving data on the associated socket, we should pass it through the Agent so it can
+//! // parse and handle any STUN messages.
+//! let data = response.to_bytes();
+//! let to = transmit.to;
+//! let reply = agent.handle_incoming_data(&data, to).unwrap();
+//!
+//! // If running over TCP then there may be multiple messages parsed. However UDP will only ever
+//! // have a single message per datagram.
+//! assert!(matches!(reply[0], HandleStunReply::StunResponse(_, _)));
+//!
+//! // Once valid STUN data has been sent and received, then data can be sent and received from the
+//! // peer.
+//! let data = vec![42; 8];
+//! let transmit = agent.send_data(&data, remote_addr);
+//! assert_eq!(transmit.data(), &data);
+//! assert_eq!(transmit.from, local_addr);
+//! assert_eq!(transmit.to, remote_addr);
+//! ```
+
 pub mod agent;
 
-// reexport stun_types;
 pub use stun_types as types;
 
 #[derive(Clone)]

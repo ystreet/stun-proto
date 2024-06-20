@@ -7,6 +7,13 @@
 // except according to those terms.
 
 //! STUN agent
+//!
+//! A STUN Agent that follows the procedures of [RFC5389] and [RFC8489] and is implemented with the
+//! sans-IO pattern. This agent does no IO processing and operates solely on inputs it is
+//! provided.
+//!
+//! [RFC8489]: https://tools.ietf.org/html/rfc8489
+//! [RFC5389]: https://tools.ietf.org/html/rfc5389
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
