@@ -25,3 +25,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tracing-subscriber = { version = "0.3", features = ["env-filter"]}
+
+[features]
+arbitrary = ["dep:arbitrary"]
