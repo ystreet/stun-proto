@@ -887,6 +887,35 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn indication_with_invalid_response() {
+        init();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
+            .remote_addr(remote_addr)
+            .build();
+        let transaction_id = Message::generate_transaction();
+        let msg = Message::new(
+            MessageType::from_class_method(MessageClass::Indication, BINDING),
+            transaction_id,
+        );
+        let transmit = agent.send(msg, remote_addr).unwrap();
+        assert_eq!(transmit.transport, TransportType::Udp);
+        assert_eq!(transmit.from, local_addr);
+        assert_eq!(transmit.to, remote_addr);
+        let _indication = Message::from_bytes(&transmit.data).unwrap();
+        // you should definitely never do this ;). Indications should never get replies.
+        let response = Message::new(
+            MessageType::from_class_method(MessageClass::Error, BINDING),
+            transaction_id,
+        );
+        let resp_data = response.to_bytes();
+        // response without a request is dropped.
+        let ret = agent.handle_incoming_data(&resp_data, remote_addr).unwrap();
+        assert!(ret.is_empty());
+    }
+
+    #[test]
     fn request_with_credentials() {
         init();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
