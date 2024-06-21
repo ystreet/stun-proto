@@ -898,6 +898,11 @@ pub(crate) mod tests {
         agent.set_local_credentials(local_credentials.clone().into());
         agent.set_remote_credentials(remote_credentials.clone().into());
 
+        // unvalidated peer data should be dropped
+        let data = vec![20; 4];
+        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        assert!(replies.is_empty());
+
         let mut msg = Message::new_request(BINDING);
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
@@ -926,6 +931,13 @@ pub(crate) mod tests {
 
         assert_eq!(request.transaction_id(), transaction_id);
         assert_eq!(response.transaction_id(), transaction_id);
+
+        let data = vec![20; 4];
+        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        let HandleStunReply::Data(received) = replies.remove(0) else {
+            unreachable!();
+        };
+        assert_eq!(data, received);
     }
 
     #[test]
@@ -949,6 +961,11 @@ pub(crate) mod tests {
                 _ => unreachable!(),
             }
         }
+
+        // unvalidated peer data should be dropped
+        let data = vec![20; 4];
+        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        assert!(replies.is_empty());
     }
 
     #[test]
@@ -958,6 +975,11 @@ pub(crate) mod tests {
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+
+        // unvalidated peer data should be dropped
+        let data = vec![20; 4];
+        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        assert!(replies.is_empty());
 
         let msg = Message::new_request(BINDING);
         let transmit = agent.send(msg, remote_addr).unwrap();
@@ -983,6 +1005,13 @@ pub(crate) mod tests {
         assert_eq!(transmit.data(), &data);
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
+
+        let data = vec![20; 4];
+        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        let HandleStunReply::Data(received) = replies.remove(0) else {
+            unreachable!();
+        };
+        assert_eq!(data, received);
     }
 
     #[test]
@@ -1017,6 +1046,11 @@ pub(crate) mod tests {
         let reply = agent.handle_incoming_data(&data, to).unwrap();
         // reply is ignored as it does not have credentials
         assert!(reply.is_empty());
+
+        // unvalidated peer data should be dropped
+        let data = vec![20; 4];
+        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        assert!(replies.is_empty());
     }
 
     #[test]
@@ -1055,6 +1089,11 @@ pub(crate) mod tests {
         let reply = agent.handle_incoming_data(&data, to).unwrap();
         // reply is ignored as it does not have credentials
         assert!(reply.is_empty());
+
+        // unvalidated peer data should be dropped
+        let data = vec![20; 4];
+        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        assert!(replies.is_empty());
     }
 
     #[test]
@@ -1145,5 +1184,12 @@ pub(crate) mod tests {
         };
         assert_eq!(request.transaction_id(), transaction_id);
         assert_eq!(response.transaction_id(), transaction_id);
+
+        let data = vec![20; 4];
+        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        let HandleStunReply::Data(received) = replies.remove(0) else {
+            unreachable!();
+        };
+        assert_eq!(data, received);
     }
 }
