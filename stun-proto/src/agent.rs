@@ -1249,6 +1249,28 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn tcp_split_recv() {
+        init();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
+            .remote_addr(remote_addr)
+            .build();
+        let msg = Message::new_request(BINDING);
+
+        let msg_data = msg.to_bytes();
+        let mut data = Vec::with_capacity(msg_data.len() + 2);
+        data.resize(2, 0);
+        BigEndian::write_u16(&mut data[..2], msg_data.len() as u16);
+        data.extend(msg_data);
+
+        let ret = agent.handle_incoming_data(&data[..8], remote_addr).unwrap();
+        assert!(ret.is_empty());
+        let ret = agent.handle_incoming_data(&data[8..], remote_addr).unwrap();
+        assert!(matches!(ret[0], HandleStunReply::IncomingStun(_)));
+    }
+
+    #[test]
     fn request_cancel() {
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
