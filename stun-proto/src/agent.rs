@@ -1247,6 +1247,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn request_cancel_send() {
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+
+        let msg = Message::new_request(BINDING);
+        let transaction_id = msg.transaction_id();
+        let _transmit = agent.send(msg, remote_addr).unwrap();
+
+        let mut request = agent.mut_request_transaction(transaction_id).unwrap();
+        assert_eq!(request.request().transaction_id(), transaction_id);
+        assert_eq!(request.agent().local_addr(), local_addr);
+        assert_eq!(request.mut_agent().local_addr(), local_addr);
+        assert_eq!(request.peer_address(), remote_addr);
+        request.cancel_retransmissions();
+
+        let mut now = Instant::now();
+        loop {
+            match agent.poll(now) {
+                StunAgentPollRet::WaitUntil(new_now) => {
+                    now = new_now;
+                }
+                StunAgentPollRet::TransactionCancelled(_) => break,
+                _ => unreachable!(),
+            }
+        }
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
+    }
+
+    #[test]
     fn request_duplicate() {
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
