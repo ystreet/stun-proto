@@ -1391,4 +1391,22 @@ pub(crate) mod tests {
         };
         assert_eq!(msg.transaction_id(), request.transaction_id());
     }
+
+    #[test]
+    fn data_access() {
+        let array = [0, 1, 2, 3];
+        let borrowed_data = Data::from(array.as_slice());
+        assert_eq!(array.as_slice(), &*borrowed_data);
+        let owned_data = borrowed_data.into_owned();
+        assert_eq!(array.as_slice(), &*owned_data);
+        let Data::Owned(owned) = owned_data else {
+            unreachable!();
+        };
+        let owned = DataOwned::take(owned);
+        assert_eq!(array.as_slice(), &*owned);
+        let data = Data::from(owned);
+        assert_eq!(array.as_slice(), &*data);
+        let borrowed = DataSlice::from(&*data);
+        assert_eq!(array.as_slice(), &*borrowed);
+    }
 }
