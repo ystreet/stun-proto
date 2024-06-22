@@ -871,6 +871,7 @@ pub(crate) mod tests {
             .remote_addr(remote_addr)
             .build();
         let msg = Message::new_request(BINDING);
+        let transaction_id = msg.transaction_id();
         let transmit = agent.send(msg, remote_addr).unwrap();
         let now = Instant::now();
         assert_eq!(transmit.transport, TransportType::Udp);
@@ -881,6 +882,8 @@ pub(crate) mod tests {
         let resp_data = response.to_bytes();
         let ret = agent.handle_incoming_data(&resp_data, remote_addr).unwrap();
         assert!(matches!(ret[0], HandleStunReply::StunResponse(_, _)));
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
 
         let ret = agent.poll(now);
         assert!(matches!(ret, StunAgentPollRet::WaitUntil(_)));
@@ -904,6 +907,8 @@ pub(crate) mod tests {
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
         let _indication = Message::from_bytes(&transmit.data).unwrap();
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
         // you should definitely never do this ;). Indications should never get replies.
         let response = Message::new(
             MessageType::from_class_method(MessageClass::Error, BINDING),
@@ -960,6 +965,8 @@ pub(crate) mod tests {
 
         assert_eq!(request.transaction_id(), transaction_id);
         assert_eq!(response.transaction_id(), transaction_id);
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
 
         let data = vec![20; 4];
         let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
@@ -978,6 +985,7 @@ pub(crate) mod tests {
             .remote_addr(remote_addr)
             .build();
         let msg = Message::new_request(BINDING);
+        let transaction_id = msg.transaction_id();
         agent.send(msg, remote_addr).unwrap();
         let mut now = Instant::now();
         loop {
@@ -990,6 +998,8 @@ pub(crate) mod tests {
                 _ => unreachable!(),
             }
         }
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
 
         // unvalidated peer data should be dropped
         let data = vec![20; 4];
@@ -1011,6 +1021,7 @@ pub(crate) mod tests {
         assert!(replies.is_empty());
 
         let msg = Message::new_request(BINDING);
+        let transaction_id = msg.transaction_id();
         let transmit = agent.send(msg, remote_addr).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
@@ -1028,6 +1039,8 @@ pub(crate) mod tests {
         let reply = agent.handle_incoming_data(&data, to).unwrap();
 
         assert!(matches!(reply[0], HandleStunReply::StunResponse(_, _)));
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
 
         let data = vec![42; 8];
         let transmit = agent.send_data(&data, remote_addr);
@@ -1056,6 +1069,7 @@ pub(crate) mod tests {
         agent.set_remote_credentials(remote_credentials.clone().into());
 
         let mut msg = Message::new_request(BINDING);
+        let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent.send(msg, remote_addr).unwrap();
@@ -1075,6 +1089,8 @@ pub(crate) mod tests {
         let reply = agent.handle_incoming_data(&data, to).unwrap();
         // reply is ignored as it does not have credentials
         assert!(reply.is_empty());
+        assert!(agent.request_transaction(transaction_id).is_some());
+        assert!(agent.mut_request_transaction(transaction_id).is_some());
 
         // unvalidated peer data should be dropped
         let data = vec![20; 4];
@@ -1226,6 +1242,8 @@ pub(crate) mod tests {
             unreachable!();
         };
         assert_eq!(request.transaction_id(), transaction_id);
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
     }
 
     #[test]
