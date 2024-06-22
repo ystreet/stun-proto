@@ -1233,6 +1233,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn tcp_data_before_request() {
+        init();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
+            .remote_addr(remote_addr)
+            .build();
+        let data = [0, 2, 42, 42];
+
+        assert!(matches!(
+            agent.handle_incoming_data(&data, remote_addr),
+            Err(StunError::ProtocolViolation)
+        ));
+    }
+
+    #[test]
     fn request_cancel() {
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
