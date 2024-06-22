@@ -1126,6 +1126,56 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn duplicate_response_ignored() {
+        init();
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+
+        // unvalidated peer data should be dropped
+        let data = vec![20; 4];
+        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        assert!(replies.is_empty());
+
+        let msg = Message::new_request(BINDING);
+        let transmit = agent.send(msg, remote_addr).unwrap();
+
+        let request = Message::from_bytes(&transmit.data).unwrap();
+
+        let mut response = Message::new_success(&request);
+        response
+            .add_attribute(XorMappedAddress::new(
+                transmit.from,
+                request.transaction_id(),
+            ))
+            .unwrap();
+
+        let data = response.to_bytes();
+        let to = transmit.to;
+        let reply = agent.handle_incoming_data(&data, to).unwrap();
+
+        assert!(matches!(reply[0], HandleStunReply::StunResponse(_, _)));
+
+        let data = vec![42; 8];
+        let transmit = agent.send_data(&data, remote_addr);
+        assert_eq!(transmit.data(), &data);
+        assert_eq!(transmit.from, local_addr);
+        assert_eq!(transmit.to, remote_addr);
+
+        let data = vec![20; 4];
+        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        let HandleStunReply::Data(received) = replies.remove(0) else {
+            unreachable!();
+        };
+        assert_eq!(data, received);
+
+        let data = response.to_bytes();
+        let reply = agent.handle_incoming_data(&data, to).unwrap();
+        assert!(reply.is_empty());
+    }
+
+    #[test]
     fn tcp_request() {
         init();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
