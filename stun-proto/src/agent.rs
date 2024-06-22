@@ -1321,4 +1321,23 @@ pub(crate) mod tests {
         };
         assert_eq!(data, received);
     }
+
+    #[test]
+    fn incoming_request() {
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+
+        let msg = Message::new_request(BINDING);
+        let data = msg.to_bytes();
+        let HandleStunReply::IncomingStun(request) = agent
+            .handle_incoming_data(&data, remote_addr)
+            .unwrap()
+            .remove(0)
+        else {
+            unreachable!()
+        };
+        assert_eq!(msg.transaction_id(), request.transaction_id());
+    }
 }
