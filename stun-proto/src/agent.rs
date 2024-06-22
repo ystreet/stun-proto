@@ -1217,6 +1217,19 @@ pub(crate) mod tests {
 
         let ret = agent.poll(now);
         assert!(matches!(ret, StunAgentPollRet::WaitUntil(_)));
+
+        let data = vec![42; 8];
+        let transmit = agent.send_data(&data, remote_addr);
+        assert_eq!(&transmit.data()[2..], &data);
+        assert_eq!(transmit.from, local_addr);
+        assert_eq!(transmit.to, remote_addr);
+
+        let data = vec![0, 2, 4, 8];
+        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
+        let HandleStunReply::Data(received) = replies.remove(0) else {
+            unreachable!();
+        };
+        assert_eq!(&data[2..], received);
     }
 
     #[test]
