@@ -897,7 +897,7 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
-        let transaction_id = Message::generate_transaction();
+        let transaction_id = TransactionId::generate();
         let msg = Message::new(
             MessageType::from_class_method(MessageClass::Indication, BINDING),
             transaction_id,
