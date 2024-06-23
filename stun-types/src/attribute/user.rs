@@ -205,6 +205,36 @@ mod tests {
     }
 
     #[test]
+    fn username_not_utf8() {
+        init();
+        let attr = Username::new("user").unwrap();
+        let raw: RawAttribute = attr.into();
+        let mut data = raw.to_bytes();
+        data[6] = 0x88;
+        assert!(matches!(
+            Username::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
+        ));
+    }
+
+    #[test]
+    fn username_new_too_large() {
+        init();
+        let mut large = String::new();
+        for _i in 0..64 {
+            large.push_str("abcdefgh");
+        }
+        large.push_str("ab");
+        assert!(matches!(
+            Username::new(&large),
+            Err(StunWriteError::TooLarge {
+                expected: 513,
+                actual: 514
+            })
+        ));
+    }
+
+    #[test]
     fn userhash() {
         init();
         let hash = Userhash::compute("username", "realm1");
