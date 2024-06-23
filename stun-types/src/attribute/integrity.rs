@@ -27,19 +27,19 @@ impl Attribute for MessageIntegrity {
         20
     }
 }
-impl From<MessageIntegrity> for RawAttribute {
-    fn from(value: MessageIntegrity) -> RawAttribute {
+impl<'a> From<&'a MessageIntegrity> for RawAttribute<'a> {
+    fn from(value: &'a MessageIntegrity) -> RawAttribute<'a> {
         RawAttribute::new(MessageIntegrity::TYPE, &value.hmac)
     }
 }
-impl TryFrom<&RawAttribute> for MessageIntegrity {
+impl<'a> TryFrom<&RawAttribute<'a>> for MessageIntegrity {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
         raw.check_type_and_len(Self::TYPE, 20..=20)?;
         // sized checked earlier
-        let boxed: Box<[u8; 20]> = raw.value.clone().into_boxed_slice().try_into().unwrap();
-        Ok(Self { hmac: *boxed })
+        let hmac: [u8; 20] = (&*raw.value).try_into().unwrap();
+        Ok(Self { hmac })
     }
 }
 
@@ -153,12 +153,12 @@ impl Attribute for MessageIntegritySha256 {
         self.hmac.len() as u16
     }
 }
-impl From<MessageIntegritySha256> for RawAttribute {
-    fn from(value: MessageIntegritySha256) -> RawAttribute {
+impl<'a> From<&'a MessageIntegritySha256> for RawAttribute<'a> {
+    fn from(value: &'a MessageIntegritySha256) -> RawAttribute<'a> {
         RawAttribute::new(MessageIntegritySha256::TYPE, &value.hmac)
     }
 }
-impl TryFrom<&RawAttribute> for MessageIntegritySha256 {
+impl<'a> TryFrom<&RawAttribute<'a>> for MessageIntegritySha256 {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -303,7 +303,7 @@ mod tests {
         let attr = MessageIntegrity::new(val);
         assert_eq!(attr.hmac(), &val);
         assert_eq!(attr.length(), 20);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), MessageIntegrity::TYPE);
         let mapped2 = MessageIntegrity::try_from(&raw).unwrap();
         assert_eq!(mapped2.hmac(), &val);
@@ -336,7 +336,7 @@ mod tests {
         let attr = MessageIntegritySha256::new(&val).unwrap();
         assert_eq!(attr.hmac(), &val);
         assert_eq!(attr.length(), 32);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), MessageIntegritySha256::TYPE);
         let mapped2 = MessageIntegritySha256::try_from(&raw).unwrap();
         assert_eq!(mapped2.hmac(), &val);
@@ -346,7 +346,7 @@ mod tests {
         BigEndian::write_u16(&mut data[2..4], len as u16 - 4 - 1);
         assert!(matches!(
             MessageIntegritySha256::try_from(
-                &RawAttribute::try_from(data[..len - 1].as_ref()).unwrap()
+                &RawAttribute::from_bytes(data[..len - 1].as_ref()).unwrap()
             ),
             Err(StunParseError::InvalidAttributeData)
         ));

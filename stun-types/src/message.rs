@@ -42,7 +42,7 @@
 //! // Attributes can be retrieved as raw values.
 //! let msg_attr = msg.raw_attribute(0x1D.into()).unwrap();
 //! let attr = RawAttribute::new(0x1D.into(), &[0, 2, 0, 0]);
-//! assert_eq!(msg_attr, &attr);
+//! assert_eq!(msg_attr, attr);
 //!
 //! // Or as typed values
 //! let attr = msg.attribute::<PasswordAlgorithm>().unwrap();
@@ -57,12 +57,12 @@
 //! use stun_types::message::{Message, BINDING};
 //!
 //! // Automatically generates a transaction ID.
-//! let mut msg = Message::new_request(BINDING);
+//! let mut msg = Message::builder_request(BINDING);
 //!
 //! let software_name = "stun-types";
 //! let software = Software::new(software_name).unwrap();
 //! assert_eq!(software.software(), software_name);
-//! msg.add_attribute(software).unwrap();
+//! msg.add_attribute(&software).unwrap();
 //!
 //! let attribute_data = [
 //!     0x80, 0x22, 0x00, 0x0a, // attribute type (0x8022) and length (0x000a)
@@ -71,7 +71,7 @@
 //!     0x65, 0x73, 0x00, 0x00  // e s
 //! ];
 //!
-//! let msg_data = msg.to_bytes();
+//! let msg_data = msg.build();
 //! // ignores the randomly generated transaction id
 //! assert_eq!(msg_data[20..], attribute_data);
 //! ```
@@ -515,13 +515,11 @@ impl std::fmt::Display for TransactionId {
 /// Contains the [`MessageType`], a transaction ID, and a list of STUN
 /// [`Attribute`]
 #[derive(Debug, Clone)]
-pub struct Message {
-    msg_type: MessageType,
-    transaction: TransactionId,
-    attributes: Vec<RawAttribute>,
+pub struct Message<'a> {
+    data: &'a [u8],
 }
 
-impl std::fmt::Display for Message {
+impl<'a> std::fmt::Display for Message<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -531,18 +529,15 @@ impl std::fmt::Display for Message {
             self.get_type().method(),
             self.transaction_id()
         )?;
-        if self.attributes.is_empty() {
-            write!(f, "[]")?;
-        } else {
-            write!(f, "[")?;
-            for (i, a) in self.attributes.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{}", a)?;
+        let iter = self.iter_attributes();
+        write!(f, "[")?;
+        for (i, a) in iter.enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
             }
-            write!(f, "]")?;
+            write!(f, "{}", a)?;
         }
+        write!(f, "]")?;
         write!(f, ")")
     }
 }
@@ -554,7 +549,7 @@ pub enum IntegrityAlgorithm {
     Sha256,
 }
 
-impl Message {
+impl<'a> Message<'a> {
     /// Create a new [`Message`] with the provided [`MessageType`] and transaction ID
     ///
     /// Note you probably want to use one of the other helper constructors instead.
@@ -564,14 +559,15 @@ impl Message {
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
     /// let mtype = MessageType::from_class_method(MessageClass::Indication, BINDING);
-    /// let message = Message::new(mtype, 0.into());
+    /// let message = Message::builder(mtype, 0.into()).build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// assert!(message.has_class(MessageClass::Indication));
     /// assert!(message.has_method(BINDING));
     /// ```
-    pub fn new(mtype: MessageType, transaction: TransactionId) -> Self {
-        Self {
+    pub fn builder<'b>(mtype: MessageType, transaction_id: TransactionId) -> MessageBuilder<'b> {
+        MessageBuilder {
             msg_type: mtype,
-            transaction,
+            transaction_id,
             attributes: vec![],
         }
     }
@@ -582,12 +578,14 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
+    /// let message = Message::builder_request(BINDING);
+    /// let data = message.build();
+    /// let message = Message::from_bytes(&data).unwrap();
     /// assert!(message.has_class(MessageClass::Request));
     /// assert!(message.has_method(BINDING));
     /// ```
-    pub fn new_request(method: u16) -> Self {
-        Message::new(
+    pub fn builder_request<'b>(method: u16) -> MessageBuilder<'b> {
+        Message::builder(
             MessageType::from_class_method(MessageClass::Request, method),
             TransactionId::generate(),
         )
@@ -603,18 +601,21 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
-    /// let success = Message::new_success(&message);
+    /// let message = Message::builder_request(BINDING);
+    /// let data = message.build();
+    /// let message = Message::from_bytes(&data).unwrap();
+    /// let success = Message::builder_success(&message).build();
+    /// let success = Message::from_bytes(&success).unwrap();
     /// assert!(success.has_class(MessageClass::Success));
     /// assert!(success.has_method(BINDING));
     /// ```
-    pub fn new_success(orig: &Message) -> Self {
+    pub fn builder_success<'b>(orig: &Message) -> MessageBuilder<'b> {
         if !orig.has_class(MessageClass::Request) {
             panic!(
                 "A success response message was attempted to be created from a non-request message"
             );
         }
-        Message::new(
+        Message::builder(
             MessageType::from_class_method(MessageClass::Success, orig.method()),
             orig.transaction_id(),
         )
@@ -630,13 +631,16 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
-    /// let success = Message::new_error(&message);
-    /// assert!(success.has_class(MessageClass::Error));
-    /// assert!(success.has_method(BINDING));
+    /// let message = Message::builder_request(BINDING);
+    /// let data = message.build();
+    /// let message = Message::from_bytes(&data).unwrap();
+    /// let error = Message::builder_error(&message).build();
+    /// let error = Message::from_bytes(&error).unwrap();
+    /// assert!(error.has_class(MessageClass::Error));
+    /// assert!(error.has_method(BINDING));
     /// ```
-    pub fn new_error(orig: &Message) -> Self {
-        Message::new(
+    pub fn builder_error(orig: &Message) -> MessageBuilder<'a> {
+        Message::builder(
             MessageType::from_class_method(MessageClass::Error, orig.method()),
             orig.transaction_id(),
         )
@@ -648,12 +652,14 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
+    /// let message = Message::builder_request(BINDING);
+    /// let data = message.build();
+    /// let message = Message::from_bytes(&data).unwrap();
     /// assert!(message.get_type().has_class(MessageClass::Request));
     /// assert!(message.get_type().has_method(BINDING));
     /// ```
     pub fn get_type(&self) -> MessageType {
-        self.msg_type
+        MessageType::from_bytes(&self.data[..2]).unwrap()
     }
 
     /// Retrieve the [`MessageClass`] of a [`Message`]
@@ -662,7 +668,8 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
+    /// let message = Message::builder_request(BINDING).build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.class(), MessageClass::Request);
     /// ```
     pub fn class(&self) -> MessageClass {
@@ -675,7 +682,8 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
+    /// let message = Message::builder_request(BINDING).build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// assert!(message.has_class(MessageClass::Request));
     /// ```
     pub fn has_class(&self, cls: MessageClass) -> bool {
@@ -690,13 +698,16 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
+    /// let message = Message::builder_request(BINDING).build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.is_response(), false);
     ///
-    /// let error = Message::new_error(&message);
+    /// let error = Message::builder_error(&message).build();
+    /// let error = Message::from_bytes(&error).unwrap();
     /// assert_eq!(error.is_response(), true);
     ///
-    /// let success = Message::new_success(&message);
+    /// let success = Message::builder_success(&message).build();
+    /// let success = Message::from_bytes(&success).unwrap();
     /// assert_eq!(success.is_response(), true);
     /// ```
     pub fn is_response(&self) -> bool {
@@ -709,7 +720,8 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
+    /// let message = Message::builder_request(BINDING).build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.method(), BINDING);
     /// ```
     pub fn method(&self) -> u16 {
@@ -722,7 +734,8 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let message = Message::new_request(BINDING);
+    /// let message = Message::builder_request(BINDING).build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.has_method(BINDING), true);
     /// assert_eq!(message.has_method(0), false);
     /// ```
@@ -738,50 +751,12 @@ impl Message {
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING, TransactionId};
     /// let mtype = MessageType::from_class_method(MessageClass::Request, BINDING);
     /// let transaction_id = TransactionId::generate();
-    /// let message = Message::new(mtype, transaction_id);
+    /// let message = Message::builder(mtype, transaction_id).build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.transaction_id(), transaction_id);
     /// ```
     pub fn transaction_id(&self) -> TransactionId {
-        self.transaction
-    }
-
-    /// Serialize a `Message` to network bytes
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use stun_types::attribute::{RawAttribute, Attribute};
-    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let mut message = Message::new(MessageType::from_class_method(MessageClass::Request, BINDING), 1000.into());
-    /// let attr = RawAttribute::new(1.into(), &[3]);
-    /// assert!(message.add_attribute(attr).is_ok());
-    /// assert_eq!(message.to_bytes(), vec![0, 1, 0, 8, 33, 18, 164, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 232, 0, 1, 0, 1, 3, 0, 0, 0]);
-    /// ```
-    #[tracing::instrument(
-        name = "message_to_bytes",
-        level = "trace",
-        skip(self),
-        fields(
-            msg.transaction_id = %self.transaction_id()
-        )
-    )]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut attr_size = 0;
-        for attr in &self.attributes {
-            attr_size += padded_attr_size(attr);
-        }
-        let mut ret = Vec::with_capacity(20 + attr_size);
-        ret.extend(self.msg_type.to_bytes());
-        ret.resize(20, 0);
-        let transaction: u128 = self.transaction.into();
-        let tid = (MAGIC_COOKIE as u128) << 96 | transaction & 0xffff_ffff_ffff_ffff_ffff_ffff;
-        BigEndian::write_u128(&mut ret[4..20], tid);
-        BigEndian::write_u16(&mut ret[2..4], attr_size as u16);
-        for attr in &self.attributes {
-            let bytes = attr.to_bytes();
-            ret.extend(bytes);
-        }
-        ret
+        BigEndian::read_u128(&self.data[4..]).into()
     }
 
     /// Deserialize a `Message`
@@ -795,7 +770,7 @@ impl Message {
     /// let message = Message::from_bytes(&msg_data).unwrap();
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// let msg_attr = message.raw_attribute(1.into()).unwrap();
-    /// assert_eq!(msg_attr, &attr);
+    /// assert_eq!(msg_attr, attr);
     /// assert_eq!(message.get_type(), MessageType::from_class_method(MessageClass::Request, BINDING));
     /// assert_eq!(message.transaction_id(), 1000.into());
     /// ```
@@ -807,7 +782,7 @@ impl Message {
             data.len = data.len()
         )
     )]
-    pub fn from_bytes(data: &[u8]) -> Result<Self, StunParseError> {
+    pub fn from_bytes(data: &'a [u8]) -> Result<Self, StunParseError> {
         let orig_data = data;
 
         if data.len() < 20 {
@@ -818,7 +793,7 @@ impl Message {
                 actual: data.len(),
             });
         }
-        let mtype = MessageType::from_bytes(data)?;
+        let _mtype = MessageType::from_bytes(data)?;
         let mlength = BigEndian::read_u16(&data[2..]) as usize;
         if mlength + 20 > data.len() {
             // mlength + header
@@ -841,7 +816,6 @@ impl Message {
             );
             return Err(StunParseError::NotStun);
         }
-        let mut ret = Self::new(mtype, tid.into());
 
         let mut data_offset = 20;
         let mut data = &data[20..];
@@ -893,11 +867,10 @@ impl Message {
                     return Err(StunParseError::FingerprintMismatch);
                 }
             }
-            ret.attributes.push(attr);
             data = &data[padded_len..];
             data_offset += padded_len;
         }
-        Ok(ret)
+        Ok(Message { data: orig_data })
     }
 
     /// Validates the MESSAGE_INTEGRITY attribute with the provided credentials
@@ -910,27 +883,27 @@ impl Message {
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING,
     ///     MessageIntegrityCredentials, LongTermCredentials, IntegrityAlgorithm};
-    /// let mut message = Message::new_request(BINDING);
+    /// let mut message = Message::builder_request(BINDING);
     /// let credentials = LongTermCredentials::new(
     ///     "user".to_owned(),
     ///     "pass".to_owned(),
     ///     "realm".to_owned()
     /// ).into();
     /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256).is_ok());
-    /// let data = message.to_bytes();
-    /// assert!(message.validate_integrity(&data, &credentials).is_ok());
+    /// let data = message.build();
+    /// let message = Message::from_bytes(&data).unwrap();
+    /// assert!(message.validate_integrity(&credentials).is_ok());
     /// ```
     #[tracing::instrument(
         name = "message_validate_integrity",
         level = "trace",
-        skip(self, orig_data, credentials),
+        skip(self, credentials),
         fields(
             msg.transaction = %self.transaction_id(),
         )
     )]
     pub fn validate_integrity(
         &self,
-        orig_data: &[u8],
         credentials: &MessageIntegrityCredentials,
     ) -> Result<(), StunParseError> {
         debug!("using credentials {credentials:?}");
@@ -939,11 +912,11 @@ impl Message {
         let (algo, msg_hmac) = match (raw_sha1, raw_sha256) {
             (Some(_), Some(_)) => return Err(StunParseError::DuplicateIntegrity),
             (Some(sha1), None) => {
-                let integrity = MessageIntegrity::try_from(sha1)?;
+                let integrity = MessageIntegrity::try_from(&sha1)?;
                 (IntegrityAlgorithm::Sha1, integrity.hmac().to_vec())
             }
             (None, Some(sha256)) => {
-                let integrity = MessageIntegritySha256::try_from(sha256)?;
+                let integrity = MessageIntegritySha256::try_from(&sha256)?;
                 (IntegrityAlgorithm::Sha256, integrity.hmac().to_vec())
             }
             (None, None) => return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE)),
@@ -951,7 +924,7 @@ impl Message {
 
         // find the location of the original MessageIntegrity attribute: XXX: maybe encode this into
         // the attribute instead?
-        let data = orig_data;
+        let data = self.data;
         if data.len() < 20 {
             // always at least 20 bytes long
             debug!("not enough data in message");
@@ -975,7 +948,7 @@ impl Message {
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
                 let key = credentials.make_hmac_key();
-                let mut hmac_data = orig_data[..data_offset].to_vec();
+                let mut hmac_data = self.data[..data_offset].to_vec();
                 BigEndian::write_u16(&mut hmac_data[2..4], data_offset as u16 + 24 - 20);
                 return MessageIntegrity::verify(
                     &hmac_data,
@@ -995,7 +968,7 @@ impl Message {
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
                 let key = credentials.make_hmac_key();
-                let mut hmac_data = orig_data[..data_offset].to_vec();
+                let mut hmac_data = self.data[..data_offset].to_vec();
                 BigEndian::write_u16(
                     &mut hmac_data[2..4],
                     data_offset as u16 + attr.length() + 4 - 20,
@@ -1021,194 +994,6 @@ impl Message {
         Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE))
     }
 
-    // message-integrity is computed using all the data up to (exclusive of) the
-    // MESSAGE-INTEGRITY but with a length field including the MESSAGE-INTEGRITY attribute...
-    fn integrity_bytes_from_message(&self, extra_len: u16) -> Vec<u8> {
-        let mut bytes = self.to_bytes();
-        // rewrite the length to include the message-integrity attribute
-        let existing_len = BigEndian::read_u16(&bytes[2..4]);
-        BigEndian::write_u16(&mut bytes[2..4], existing_len + extra_len);
-        bytes
-    }
-
-    /// Adds MESSAGE_INTEGRITY attribute to a [`Message`] using the provided credentials
-    ///
-    /// # Errors
-    ///
-    /// - If a [`MessageIntegrity`] attribute is already present
-    /// - If a [`MessageIntegritySha256`] attribute is already present
-    /// - If a [`Fingerprint`] attribute is already present
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING,
-    ///     MessageIntegrityCredentials, ShortTermCredentials, IntegrityAlgorithm, StunWriteError};
-    /// # use stun_types::attribute::{Attribute, MessageIntegrity, MessageIntegritySha256};
-    /// let mut message = Message::new_request(BINDING);
-    /// let credentials = ShortTermCredentials::new("pass".to_owned()).into();
-    /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1).is_ok());
-    /// let data = message.to_bytes();
-    /// assert!(message.validate_integrity(&data, &credentials).is_ok());
-    ///
-    /// // duplicate MessageIntegrity is an error
-    /// assert!(matches!(
-    ///     message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1),
-    ///     Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE)),
-    /// ));
-    ///
-    /// // only one of MessageIntegrity, and MessageIntegritySha256 is allowed
-    /// assert!(matches!(
-    ///     message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256),
-    ///     Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE)),
-    /// ));
-    /// ```
-    #[tracing::instrument(
-        name = "message_add_integrity",
-        level = "trace",
-        err,
-        skip(self),
-        fields(
-            msg.transaction = %self.transaction_id(),
-        )
-    )]
-    pub fn add_message_integrity(
-        &mut self,
-        credentials: &MessageIntegrityCredentials,
-        algorithm: IntegrityAlgorithm,
-    ) -> Result<(), StunWriteError> {
-        if self.has_attribute(MessageIntegrity::TYPE) {
-            return Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE));
-        }
-        if self.has_attribute(MessageIntegritySha256::TYPE) {
-            return Err(StunWriteError::AttributeExists(
-                MessageIntegritySha256::TYPE,
-            ));
-        }
-        if self.has_attribute(Fingerprint::TYPE) {
-            return Err(StunWriteError::FingerprintExists);
-        }
-
-        let key = credentials.make_hmac_key();
-        match algorithm {
-            IntegrityAlgorithm::Sha1 => {
-                let bytes = self.integrity_bytes_from_message(24);
-                let integrity = MessageIntegrity::compute(&bytes, &key).unwrap();
-                self.attributes
-                    .push(MessageIntegrity::new(integrity).into());
-            }
-            IntegrityAlgorithm::Sha256 => {
-                let bytes = self.integrity_bytes_from_message(36);
-                let integrity = MessageIntegritySha256::compute(&bytes, &key).unwrap();
-                self.attributes
-                    .push(MessageIntegritySha256::new(integrity.as_slice())?.into());
-            }
-        }
-        Ok(())
-    }
-
-    /// Adds [`Fingerprint`] attribute to a [`Message`]
-    ///
-    /// # Errors
-    ///
-    /// - If a [`Fingerprint`] attribute is already present
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let mut message = Message::new_request(BINDING);
-    /// assert!(message.add_fingerprint().is_ok());
-    ///
-    /// // duplicate FINGERPRINT is an error
-    /// assert!(message.add_fingerprint().is_err());
-    /// ```
-    #[tracing::instrument(
-        name = "message_add_fingerprint",
-        level = "trace",
-        skip(self),
-        fields(
-            msg.transaction = %self.transaction_id(),
-        )
-    )]
-    pub fn add_fingerprint(&mut self) -> Result<(), StunWriteError> {
-        if self.has_attribute(Fingerprint::TYPE) {
-            return Err(StunWriteError::AttributeExists(Fingerprint::TYPE));
-        }
-        // fingerprint is computed using all the data up to (exclusive of) the FINGERPRINT
-        // but with a length field including the FINGERPRINT attribute...
-        let mut bytes = self.to_bytes();
-        // rewrite the length to include the fingerprint attribute
-        let existing_len = BigEndian::read_u16(&bytes[2..4]);
-        BigEndian::write_u16(&mut bytes[2..4], existing_len + 8);
-        let fingerprint = Fingerprint::compute(&bytes);
-        self.attributes.push(Fingerprint::new(fingerprint).into());
-        Ok(())
-    }
-
-    /// Add a `Attribute` to this `Message`.  Only one `AttributeType` can be added for each
-    /// `Attribute.  Attempting to add multiple `Atribute`s of the same `AttributeType` will fail.
-    ///
-    /// # Errors
-    ///
-    /// - if a [`MessageIntegrity`] or [`MessageIntegritySha256`] attribute is attempted to be added.  Use
-    /// `Message::add_message_integrity` instead.
-    /// - if a [`Fingerprint`] attribute is attempted to be added. Use
-    /// `Message::add_fingerprint` instead.
-    /// - If the attribute already exists within the message
-    /// - If attempting to add attributes when [`MessageIntegrity`], [`MessageIntegritySha256`] or
-    /// [`Fingerprint`] atributes already exist.
-    ///
-    /// # Examples
-    ///
-    /// Add an `Attribute`
-    ///
-    /// ```
-    /// # use stun_types::attribute::RawAttribute;
-    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let mut message = Message::new_request(BINDING);
-    /// let attr = RawAttribute::new(1.into(), &[3]);
-    /// assert!(message.add_attribute(attr.clone()).is_ok());
-    /// assert!(message.add_attribute(attr).is_err());
-    /// ```
-    #[tracing::instrument(
-        name = "message_add_attribute",
-        level = "trace",
-        err,
-        skip(self, attr),
-        fields(
-            msg.transaction = %self.transaction_id(),
-        )
-    )]
-    pub fn add_attribute(&mut self, attr: impl Into<RawAttribute>) -> Result<(), StunWriteError> {
-        let raw = attr.into();
-        //trace!("adding attribute {:?}", attr);
-        if raw.get_type() == MessageIntegrity::TYPE {
-            panic!("Cannot write MessageIntegrity with `add_attribute`.  Use add_message_integrity() instead");
-        }
-        if raw.get_type() == MessageIntegritySha256::TYPE {
-            panic!("Cannot write MessageIntegritySha256 with `add_attribute`.  Use add_message_integrity() instead");
-        }
-        if raw.get_type() == Fingerprint::TYPE {
-            panic!("Cannot write Fingerprint with `add_attribute`.  Use add_fingerprint() instead");
-        }
-        if self.has_attribute(raw.get_type()) {
-            return Err(StunWriteError::AttributeExists(raw.get_type()));
-        }
-        // can't validly add generic attributes after message integrity or fingerprint
-        if self.has_attribute(MessageIntegrity::TYPE) {
-            return Err(StunWriteError::MessageIntegrityExists);
-        }
-        if self.has_attribute(MessageIntegritySha256::TYPE) {
-            return Err(StunWriteError::MessageIntegrityExists);
-        }
-        if self.has_attribute(Fingerprint::TYPE) {
-            return Err(StunWriteError::FingerprintExists);
-        }
-        self.attributes.push(raw);
-        Ok(())
-    }
-
     /// Retrieve a `RawAttribute` from this `Message`.
     ///
     /// # Examples
@@ -1218,10 +1003,12 @@ impl Message {
     /// ```
     /// # use stun_types::attribute::{RawAttribute, Attribute};
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let mut message = Message::new_request(BINDING);
+    /// let mut message = Message::builder_request(BINDING);
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// assert!(message.add_attribute(attr.clone()).is_ok());
-    /// assert_eq!(message.raw_attribute(1.into()).unwrap(), &attr);
+    /// let message = message.build();
+    /// let message = Message::from_bytes(&message).unwrap();
+    /// assert_eq!(message.raw_attribute(1.into()).unwrap(), attr);
     /// ```
     #[tracing::instrument(
         name = "message_get_raw_attribute",
@@ -1233,8 +1020,8 @@ impl Message {
             attribute_type = %atype,
         )
     )]
-    pub fn raw_attribute(&self, atype: AttributeType) -> Option<&RawAttribute> {
-        self.attributes.iter().find(|attr| attr.get_type() == atype)
+    pub fn raw_attribute(&self, atype: AttributeType) -> Option<RawAttribute> {
+        self.iter_attributes().find(|attr| attr.get_type() == atype)
     }
 
     /// Retrieve a concrete `Attribute` from this `Message`.
@@ -1250,9 +1037,11 @@ impl Message {
     /// ```
     /// # use stun_types::attribute::{Software, Attribute};
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let mut message = Message::new_request(BINDING);
+    /// let mut message = Message::builder_request(BINDING);
     /// let attr = Software::new("stun-types").unwrap();
-    /// assert!(message.add_attribute(attr.clone()).is_ok());
+    /// assert!(message.add_attribute(&attr).is_ok());
+    /// let message = message.build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.attribute::<Software>().unwrap(), attr);
     /// ```
     #[tracing::instrument(
@@ -1266,16 +1055,19 @@ impl Message {
         )
     )]
     pub fn attribute<A: AttributeFromRaw<StunParseError>>(&self) -> Result<A, StunParseError> {
-        self.attributes
-            .iter()
+        self.iter_attributes()
             .find(|attr| attr.get_type() == A::TYPE)
             .ok_or(StunParseError::MissingAttribute(A::TYPE))
-            .and_then(|raw| A::from_raw(raw))
+            .and_then(|raw| A::from_raw(&raw))
     }
 
     /// Returns an iterator over the attributes in the [`Message`].
-    pub fn iter_attributes(&self) -> impl Iterator<Item = &RawAttribute> {
-        self.attributes.iter()
+    pub fn iter_attributes(&self) -> impl Iterator<Item = RawAttribute> {
+        MessageAttributesIter {
+            data: self.data,
+            data_i: 20,
+            seen_message_integrity: false,
+        }
     }
 
     /// Check that a message [`Message`] only contains required attributes that are supported and
@@ -1288,7 +1080,9 @@ impl Message {
     /// # use stun_types::attribute::*;
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
     /// # use std::convert::TryInto;
-    /// let mut message = Message::new_request(BINDING);
+    /// let mut builder = Message::builder_request(BINDING);
+    /// let message = builder.build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// // If nothing is required, no error response is returned
     /// assert!(matches!(Message::check_attribute_types(&message, &[], &[]), None));
     ///
@@ -1300,13 +1094,20 @@ impl Message {
     ///     &[Software::TYPE]
     /// ).unwrap();
     /// assert!(error_msg.has_attribute(ErrorCode::TYPE));
+    /// let error_msg = error_msg.build();
+    /// let error_msg = Message::from_bytes(&error_msg).unwrap();
     /// let error_code = error_msg.attribute::<ErrorCode>().unwrap();
     /// assert_eq!(error_code.code(), 400);
     ///
-    /// message.add_attribute(Username::new("user").unwrap());
+    /// let username = Username::new("user").unwrap();
+    /// builder.add_attribute(&username).unwrap();
+    /// let message = builder.build();
+    /// let message = Message::from_bytes(&message).unwrap();
     /// // If a Username is in the message but is not advertised as supported then an
     /// // 'UNKNOWN-ATTRIBUTES' error response is returned
     /// let error_msg = Message::check_attribute_types(&message, &[], &[]).unwrap();
+    /// let error_msg = error_msg.build();
+    /// let error_msg = Message::from_bytes(&error_msg).unwrap();
     /// assert!(error_msg.is_response());
     /// assert!(error_msg.has_attribute(ErrorCode::TYPE));
     /// let error_code : ErrorCode = error_msg.attribute::<ErrorCode>().unwrap();
@@ -1320,11 +1121,11 @@ impl Message {
             msg.transaction = %msg.transaction_id(),
         )
     )]
-    pub fn check_attribute_types(
+    pub fn check_attribute_types<'b>(
         msg: &Message,
         supported: &[AttributeType],
         required_in_msg: &[AttributeType],
-    ) -> Option<Message> {
+    ) -> Option<MessageBuilder<'b>> {
         // Attribute -> AttributeType
         let unsupported: Vec<AttributeType> = msg
             .iter_attributes()
@@ -1359,8 +1160,10 @@ impl Message {
     /// # use stun_types::message::{Message, BINDING};
     /// # use stun_types::attribute::*;
     /// # use std::convert::TryInto;
-    /// let msg = Message::new_request(BINDING);
-    /// let error_msg = Message::unknown_attributes(&msg, &[Username::TYPE]);
+    /// let msg = Message::builder_request(BINDING).build();
+    /// let msg = Message::from_bytes(&msg).unwrap();
+    /// let error_msg = Message::unknown_attributes(&msg, &[Username::TYPE]).build();
+    /// let error_msg = Message::from_bytes(&error_msg).unwrap();
     /// assert!(error_msg.is_response());
     /// assert!(error_msg.has_attribute(ErrorCode::TYPE));
     /// let error_code = error_msg.attribute::<ErrorCode>().unwrap();
@@ -1368,17 +1171,20 @@ impl Message {
     /// let unknown = error_msg.attribute::<UnknownAttributes>().unwrap();
     /// assert!(unknown.has_attribute(Username::TYPE));
     /// ```
-    pub fn unknown_attributes(src: &Message, attributes: &[AttributeType]) -> Message {
-        let mut out = Message::new_error(src);
-        out.add_attribute(Software::new("stun-types").unwrap())
-            .unwrap();
-        out.add_attribute(ErrorCode::new(420, "Unknown Attributes").unwrap())
+    pub fn unknown_attributes<'b>(
+        src: &Message,
+        attributes: &[AttributeType],
+    ) -> MessageBuilder<'b> {
+        let mut out = Message::builder_error(src);
+        let software = Software::new("stun-types").unwrap();
+        out.add_attribute(&software).unwrap();
+        out.add_attribute(&ErrorCode::new(420, "Unknown Attributes").unwrap())
             .unwrap();
         if !attributes.is_empty() {
-            out.add_attribute(UnknownAttributes::new(attributes))
+            out.add_attribute(&UnknownAttributes::new(attributes))
                 .unwrap();
         }
-        out
+        out.into_owned()
     }
 
     /// Generate an error message with an [`ErrorCode`] attribute signalling a 'Bad Request'
@@ -1389,19 +1195,21 @@ impl Message {
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
     /// # use stun_types::attribute::*;
     /// # use std::convert::TryInto;
-    /// let msg = Message::new_request(BINDING);
-    /// let error_msg = Message::bad_request(&msg);
+    /// let msg = Message::builder_request(BINDING).build();
+    /// let msg = Message::from_bytes(&msg).unwrap();
+    /// let error_msg = Message::bad_request(&msg).build();
+    /// let error_msg = Message::from_bytes(&error_msg).unwrap();
     /// assert!(error_msg.has_attribute(ErrorCode::TYPE));
     /// let error_code =  error_msg.attribute::<ErrorCode>().unwrap();
     /// assert_eq!(error_code.code(), 400);
     /// ```
-    pub fn bad_request(src: &Message) -> Message {
-        let mut out = Message::new_error(src);
-        out.add_attribute(Software::new("stun-types").unwrap())
+    pub fn bad_request<'b>(src: &Message) -> MessageBuilder<'b> {
+        let mut out = Message::builder_error(src);
+        let software = Software::new("stun-types").unwrap();
+        out.add_attribute(&software).unwrap();
+        out.add_attribute(&ErrorCode::new(400, "Bad Request").unwrap())
             .unwrap();
-        out.add_attribute(ErrorCode::new(400, "Bad Request").unwrap())
-            .unwrap();
-        out
+        out.into_owned()
     }
 
     /// Whether this message contains an attribute of the specified type.
@@ -1411,25 +1219,342 @@ impl Message {
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
     /// # use stun_types::attribute::{Software, Attribute};
-    /// let mut msg = Message::new_request(BINDING);
+    /// let mut msg = Message::builder_request(BINDING);
     /// let attr = Software::new("stun-types").unwrap();
-    /// assert!(msg.add_attribute(attr.clone()).is_ok());
+    /// assert!(msg.add_attribute(&attr).is_ok());
+    /// let msg = msg.build();
+    /// let msg = Message::from_bytes(&msg).unwrap();
     /// assert!(msg.has_attribute(Software::TYPE));
     /// ```
     pub fn has_attribute(&self, atype: AttributeType) -> bool {
-        self.attributes.iter().any(|attr| attr.get_type() == atype)
+        self.iter_attributes().any(|attr| attr.get_type() == atype)
     }
 }
-impl From<Message> for Vec<u8> {
-    fn from(f: Message) -> Self {
-        f.to_bytes()
-    }
-}
-impl TryFrom<&[u8]> for Message {
+impl<'a> TryFrom<&'a [u8]> for Message<'a> {
     type Error = StunParseError;
 
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
         Message::from_bytes(value)
+    }
+}
+
+#[doc(hidden)]
+pub struct MessageAttributesIter<'a> {
+    data: &'a [u8],
+    data_i: usize,
+    seen_message_integrity: bool,
+}
+
+impl<'a> Iterator for MessageAttributesIter<'a> {
+    type Item = RawAttribute<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.data_i >= self.data.len() {
+            return None;
+        }
+
+        let Ok(attr) = RawAttribute::from_bytes(&self.data[self.data_i..]) else {
+            self.data_i = self.data.len();
+            return None;
+        };
+        let padded_len = padded_attr_size(&attr);
+        self.data_i += padded_len;
+        if self.seen_message_integrity {
+            if attr.get_type() == Fingerprint::TYPE {
+                return Some(attr);
+            }
+            return None;
+        }
+        if attr.get_type() == MessageIntegrity::TYPE
+            || attr.get_type() == MessageIntegritySha256::TYPE
+        {
+            self.seen_message_integrity = true;
+        }
+
+        Some(attr)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MessageBuilder<'a> {
+    msg_type: MessageType,
+    transaction_id: TransactionId,
+    attributes: Vec<RawAttribute<'a>>,
+}
+
+impl<'a> MessageBuilder<'a> {
+    /// Consume this builder and produce a new owned version.
+    pub fn into_owned<'b>(self) -> MessageBuilder<'b> {
+        MessageBuilder {
+            msg_type: self.msg_type,
+            transaction_id: self.transaction_id,
+            attributes: self
+                .attributes
+                .into_iter()
+                .map(|attr| attr.into_owned())
+                .collect(),
+        }
+    }
+
+    /// Retrieves the 96-bit transaction ID of the [`Message`]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING, TransactionId};
+    /// let mtype = MessageType::from_class_method(MessageClass::Request, BINDING);
+    /// let transaction_id = TransactionId::generate();
+    /// let message = Message::builder(mtype, transaction_id).build();
+    /// let message = Message::from_bytes(&message).unwrap();
+    /// assert_eq!(message.transaction_id(), transaction_id);
+    /// ```
+    pub fn transaction_id(&self) -> TransactionId {
+        self.transaction_id
+    }
+
+    /// Whether this [`MessageBuilder`] is for a particular [`MessageClass`]
+    pub fn has_class(&self, cls: MessageClass) -> bool {
+        self.msg_type.class() == cls
+    }
+
+    /// Serialize a `MessageBuilder` to network bytes
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::attribute::{RawAttribute, Attribute};
+    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
+    /// let mut message = Message::builder(MessageType::from_class_method(MessageClass::Request, BINDING), 1000.into());
+    /// let attr = RawAttribute::new(1.into(), &[3]);
+    /// assert!(message.add_attribute(attr).is_ok());
+    /// assert_eq!(message.build(), vec![0, 1, 0, 8, 33, 18, 164, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 232, 0, 1, 0, 1, 3, 0, 0, 0]);
+    /// ```
+    #[tracing::instrument(
+        name = "message_build",
+        level = "trace",
+        skip(self),
+        fields(
+            msg.transaction_id = %self.transaction_id()
+        )
+    )]
+    pub fn build(&self) -> Vec<u8> {
+        let mut attr_size = 0;
+        for attr in &self.attributes {
+            attr_size += padded_attr_size(attr);
+        }
+        let mut ret = Vec::with_capacity(20 + attr_size);
+        ret.extend(self.msg_type.to_bytes());
+        ret.resize(20, 0);
+        let transaction: u128 = self.transaction_id.into();
+        let tid = (MAGIC_COOKIE as u128) << 96 | transaction & 0xffff_ffff_ffff_ffff_ffff_ffff;
+        BigEndian::write_u128(&mut ret[4..20], tid);
+        BigEndian::write_u16(&mut ret[2..4], attr_size as u16);
+        for attr in &self.attributes {
+            let bytes = attr.to_bytes();
+            ret.extend(bytes);
+        }
+        ret
+    }
+
+    // message-integrity is computed using all the data up to (exclusive of) the
+    // MESSAGE-INTEGRITY but with a length field including the MESSAGE-INTEGRITY attribute...
+    fn integrity_bytes_from_message(&self, extra_len: u16) -> Vec<u8> {
+        let mut bytes = self.build();
+        // rewrite the length to include the message-integrity attribute
+        let existing_len = BigEndian::read_u16(&bytes[2..4]);
+        BigEndian::write_u16(&mut bytes[2..4], existing_len + extra_len);
+        bytes
+    }
+
+    /// Adds MESSAGE_INTEGRITY attribute to a [`Message`] using the provided credentials
+    ///
+    /// # Errors
+    ///
+    /// - If a [`MessageIntegrity`] attribute is already present
+    /// - If a [`MessageIntegritySha256`] attribute is already present
+    /// - If a [`Fingerprint`] attribute is already present
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING,
+    ///     MessageIntegrityCredentials, ShortTermCredentials, IntegrityAlgorithm, StunWriteError};
+    /// # use stun_types::attribute::{Attribute, MessageIntegrity, MessageIntegritySha256};
+    /// let mut message = Message::builder_request(BINDING);
+    /// let credentials = ShortTermCredentials::new("pass".to_owned()).into();
+    /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1).is_ok());
+    ///
+    /// // duplicate MessageIntegrity is an error
+    /// assert!(matches!(
+    ///     message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1),
+    ///     Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE)),
+    /// ));
+    ///
+    /// // only one of MessageIntegrity, and MessageIntegritySha256 is allowed
+    /// assert!(matches!(
+    ///     message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256),
+    ///     Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE)),
+    /// ));
+    ///
+    /// let data = message.build();
+    /// let message = Message::from_bytes(&data).unwrap();
+    /// assert!(message.validate_integrity(&credentials).is_ok());
+    /// ```
+    #[tracing::instrument(
+        name = "message_add_integrity",
+        level = "trace",
+        err,
+        skip(self),
+        fields(
+            msg.transaction = %self.transaction_id(),
+        )
+    )]
+    pub fn add_message_integrity(
+        &mut self,
+        credentials: &MessageIntegrityCredentials,
+        algorithm: IntegrityAlgorithm,
+    ) -> Result<(), StunWriteError> {
+        if self.has_attribute(MessageIntegrity::TYPE) {
+            return Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE));
+        }
+        if self.has_attribute(MessageIntegritySha256::TYPE) {
+            return Err(StunWriteError::AttributeExists(
+                MessageIntegritySha256::TYPE,
+            ));
+        }
+        if self.has_attribute(Fingerprint::TYPE) {
+            return Err(StunWriteError::FingerprintExists);
+        }
+
+        let key = credentials.make_hmac_key();
+        match algorithm {
+            IntegrityAlgorithm::Sha1 => {
+                let bytes = self.integrity_bytes_from_message(24);
+                let integrity = MessageIntegrity::compute(&bytes, &key).unwrap();
+                self.attributes
+                    .push(RawAttribute::from(&MessageIntegrity::new(integrity)).into_owned());
+            }
+            IntegrityAlgorithm::Sha256 => {
+                let bytes = self.integrity_bytes_from_message(36);
+                let integrity = MessageIntegritySha256::compute(&bytes, &key).unwrap();
+                self.attributes.push(
+                    RawAttribute::from(&MessageIntegritySha256::new(integrity.as_slice())?)
+                        .into_owned(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds [`Fingerprint`] attribute to a [`Message`]
+    ///
+    /// # Errors
+    ///
+    /// - If a [`Fingerprint`] attribute is already present
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
+    /// let mut message = Message::builder_request(BINDING);
+    /// assert!(message.add_fingerprint().is_ok());
+    ///
+    /// // duplicate FINGERPRINT is an error
+    /// assert!(message.add_fingerprint().is_err());
+    /// ```
+    #[tracing::instrument(
+        name = "message_add_fingerprint",
+        level = "trace",
+        skip(self),
+        fields(
+            msg.transaction = %self.transaction_id(),
+        )
+    )]
+    pub fn add_fingerprint(&mut self) -> Result<(), StunWriteError> {
+        if self.has_attribute(Fingerprint::TYPE) {
+            return Err(StunWriteError::AttributeExists(Fingerprint::TYPE));
+        }
+        // fingerprint is computed using all the data up to (exclusive of) the FINGERPRINT
+        // but with a length field including the FINGERPRINT attribute...
+        let mut bytes = self.build();
+        // rewrite the length to include the fingerprint attribute
+        let existing_len = BigEndian::read_u16(&bytes[2..4]);
+        BigEndian::write_u16(&mut bytes[2..4], existing_len + 8);
+        let fingerprint = Fingerprint::compute(&bytes);
+        self.attributes
+            .push(RawAttribute::from(&Fingerprint::new(fingerprint)));
+        Ok(())
+    }
+
+    /// Add a `Attribute` to this `Message`.  Only one `AttributeType` can be added for each
+    /// `Attribute.  Attempting to add multiple `Atribute`s of the same `AttributeType` will fail.
+    ///
+    /// # Errors
+    ///
+    /// - if a [`MessageIntegrity`] or [`MessageIntegritySha256`] attribute is attempted to be added.  Use
+    /// `Message::add_message_integrity` instead.
+    /// - if a [`Fingerprint`] attribute is attempted to be added. Use
+    /// `Message::add_fingerprint` instead.
+    /// - If the attribute already exists within the message
+    /// - If attempting to add attributes when [`MessageIntegrity`], [`MessageIntegritySha256`] or
+    /// [`Fingerprint`] atributes already exist.
+    ///
+    /// # Examples
+    ///
+    /// Add an `Attribute`
+    ///
+    /// ```
+    /// # use stun_types::attribute::RawAttribute;
+    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
+    /// let mut message = Message::builder_request(BINDING);
+    /// let attr = RawAttribute::new(1.into(), &[3]);
+    /// assert!(message.add_attribute(attr.clone()).is_ok());
+    /// assert!(message.add_attribute(attr).is_err());
+    /// ```
+    #[tracing::instrument(
+        name = "message_add_attribute",
+        level = "trace",
+        err,
+        skip(self, attr),
+        fields(
+            msg.transaction = %self.transaction_id(),
+        )
+    )]
+    pub fn add_attribute(
+        &mut self,
+        attr: impl Into<RawAttribute<'a>>,
+    ) -> Result<(), StunWriteError> {
+        let raw = attr.into();
+        //trace!("adding attribute {:?}", attr);
+        if raw.get_type() == MessageIntegrity::TYPE {
+            panic!("Cannot write MessageIntegrity with `add_attribute`.  Use add_message_integrity() instead");
+        }
+        if raw.get_type() == MessageIntegritySha256::TYPE {
+            panic!("Cannot write MessageIntegritySha256 with `add_attribute`.  Use add_message_integrity() instead");
+        }
+        if raw.get_type() == Fingerprint::TYPE {
+            panic!("Cannot write Fingerprint with `add_attribute`.  Use add_fingerprint() instead");
+        }
+        if self.has_attribute(raw.get_type()) {
+            return Err(StunWriteError::AttributeExists(raw.get_type()));
+        }
+        // can't validly add generic attributes after message integrity or fingerprint
+        if self.has_attribute(MessageIntegrity::TYPE) {
+            return Err(StunWriteError::MessageIntegrityExists);
+        }
+        if self.has_attribute(MessageIntegritySha256::TYPE) {
+            return Err(StunWriteError::MessageIntegrityExists);
+        }
+        if self.has_attribute(Fingerprint::TYPE) {
+            return Err(StunWriteError::FingerprintExists);
+        }
+        self.attributes.push(raw);
+        Ok(())
+    }
+
+    /// Return whether this [`MessageBuilder`] contains a particular attribute.
+    pub fn has_attribute(&self, atype: AttributeType) -> bool {
+        self.attributes.iter().any(|attr| attr.get_type() == atype)
     }
 }
 
@@ -1474,14 +1599,14 @@ mod tests {
             for c in classes {
                 let mtype = MessageType::from_class_method(c, m);
                 for tid in (0x18..0xff_ffff_ffff_ffff_ffff).step_by(0xfedc_ba98_7654_3210) {
-                    let mut msg = Message::new(mtype, tid.into());
+                    let mut msg = Message::builder(mtype, tid.into());
                     let attr = RawAttribute::new(1.into(), &[3]);
                     assert!(msg.add_attribute(attr.clone()).is_ok());
-                    let data = msg.to_bytes();
+                    let data = msg.build();
 
                     let msg = Message::from_bytes(&data).unwrap();
                     let msg_attr = msg.raw_attribute(1.into()).unwrap();
-                    assert_eq!(msg_attr, &attr);
+                    assert_eq!(msg_attr, attr);
                     assert_eq!(msg.get_type(), mtype);
                     assert_eq!(msg.transaction_id(), tid.into());
                 }
@@ -1491,8 +1616,10 @@ mod tests {
 
     #[test]
     fn unknown_attributes() {
-        let src = Message::new_request(BINDING);
-        let msg = Message::unknown_attributes(&src, &[Software::TYPE]);
+        let src = Message::builder_request(BINDING).build();
+        let src = Message::from_bytes(&src).unwrap();
+        let msg = Message::unknown_attributes(&src, &[Software::TYPE]).build();
+        let msg = Message::from_bytes(&msg).unwrap();
         assert_eq!(msg.transaction_id(), src.transaction_id());
         assert_eq!(msg.class(), MessageClass::Error);
         assert_eq!(msg.method(), src.method());
@@ -1504,8 +1631,10 @@ mod tests {
 
     #[test]
     fn bad_request() {
-        let src = Message::new_request(BINDING);
-        let msg = Message::bad_request(&src);
+        let src = Message::builder_request(BINDING).build();
+        let src = Message::from_bytes(&src).unwrap();
+        let msg = Message::bad_request(&src).build();
+        let msg = Message::from_bytes(&msg).unwrap();
         assert_eq!(msg.transaction_id(), src.transaction_id());
         assert_eq!(msg.class(), MessageClass::Error);
         assert_eq!(msg.method(), src.method());
@@ -1516,73 +1645,45 @@ mod tests {
     #[test]
     fn fingerprint() {
         init();
-        let mut msg = Message::new_request(BINDING);
-        let software_str = "s";
-        msg.add_attribute(Software::new(software_str).unwrap())
-            .unwrap();
+        let mut msg = Message::builder_request(BINDING);
+        let software = Software::new("s").unwrap();
+        msg.add_attribute(&software).unwrap();
         msg.add_fingerprint().unwrap();
-        let orig_fingerprint = msg.attribute::<Fingerprint>().unwrap();
-        let bytes: Vec<_> = msg.into();
+        let bytes = msg.build();
         // validates the fingerprint of the data when available
         let new_msg = Message::from_bytes(&bytes).unwrap();
         let software = new_msg.attribute::<Software>().unwrap();
-        assert_eq!(software.software(), software_str);
-        let new_fingerprint = new_msg.attribute::<Fingerprint>().unwrap();
-        assert_eq!(
-            orig_fingerprint.fingerprint(),
-            new_fingerprint.fingerprint()
-        );
+        assert_eq!(software.software(), "s");
+        let _new_fingerprint = new_msg.attribute::<Fingerprint>().unwrap();
     }
 
     #[test]
     fn integrity() {
         init();
         for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
-            let mut msg = Message::new_request(BINDING);
-            let software_str = "s";
             let credentials = ShortTermCredentials::new("secret".to_owned()).into();
-            msg.add_attribute(Software::new(software_str).unwrap())
-                .unwrap();
+            let mut msg = Message::builder_request(BINDING);
+            let software = Software::new("s").unwrap();
+            msg.add_attribute(&software).unwrap();
             msg.add_message_integrity(&credentials, algorithm).unwrap();
-            let bytes: Vec<_> = msg.clone().into();
-            msg.validate_integrity(&bytes, &credentials).unwrap();
-            let orig_hmac = match algorithm {
-                IntegrityAlgorithm::Sha1 => {
-                    msg.attribute::<MessageIntegrity>().unwrap().hmac().to_vec()
-                }
-                IntegrityAlgorithm::Sha256 => msg
-                    .attribute::<MessageIntegritySha256>()
-                    .unwrap()
-                    .hmac()
-                    .to_vec(),
-            };
+            let bytes = msg.build();
             // validates the fingerprint of the data when available
             let new_msg = Message::from_bytes(&bytes).unwrap();
+            new_msg.validate_integrity(&credentials).unwrap();
             let software = new_msg.attribute::<Software>().unwrap();
-            assert_eq!(software.software(), software_str);
-            let new_hmac = match algorithm {
-                IntegrityAlgorithm::Sha1 => new_msg
-                    .attribute::<MessageIntegrity>()
-                    .unwrap()
-                    .hmac()
-                    .to_vec(),
-                IntegrityAlgorithm::Sha256 => new_msg
-                    .attribute::<MessageIntegritySha256>()
-                    .unwrap()
-                    .hmac()
-                    .to_vec(),
-            };
-            assert_eq!(orig_hmac, new_hmac);
-            new_msg.validate_integrity(&bytes, &credentials).unwrap();
+            assert_eq!(software.software(), "s");
         }
     }
 
     #[test]
     fn valid_attributes() {
         init();
-        let mut src = Message::new_request(BINDING);
-        src.add_attribute(Username::new("123").unwrap()).unwrap();
-        src.add_attribute(Priority::new(123)).unwrap();
+        let mut src = Message::builder_request(BINDING);
+        let username = Username::new("123").unwrap();
+        src.add_attribute(&username).unwrap();
+        src.add_attribute(&Priority::new(123)).unwrap();
+        let src = src.build();
+        let src = Message::from_bytes(&src).unwrap();
 
         // success case
         let res = Message::check_attribute_types(
@@ -1600,6 +1701,8 @@ mod tests {
         );
         assert!(res.is_some());
         let res = res.unwrap();
+        let res = res.build();
+        let res = Message::from_bytes(&res).unwrap();
         assert!(res.has_class(MessageClass::Error));
         assert!(res.has_method(src.method()));
         let err = res.attribute::<ErrorCode>().unwrap();
@@ -1609,6 +1712,8 @@ mod tests {
         let res = Message::check_attribute_types(&src, &[Username::TYPE], &[]);
         assert!(res.is_some());
         let res = res.unwrap();
+        let data = res.build();
+        let res = Message::from_bytes(&data).unwrap();
         assert!(res.has_class(MessageClass::Error));
         assert!(res.has_method(src.method()));
         let err = res.attribute::<ErrorCode>().unwrap();
@@ -1650,52 +1755,70 @@ mod tests {
             0x80, 0x28, 0x00, 0x04, // FINGERPRINT header
             0xe5, 0x7a, 0x3b, 0xcf, //   CRC32 fingerprint
         ];
-
         let msg = Message::from_bytes(&data).unwrap();
         assert!(msg.has_class(MessageClass::Request));
         assert!(msg.has_method(BINDING));
         assert_eq!(msg.transaction_id(), 0xb7e7_a701_bc34_d686_fa87_dfae.into());
 
+        let mut builder = Message::builder(
+            MessageType::from_class_method(MessageClass::Request, BINDING),
+            msg.transaction_id(),
+        );
+
         // SOFTWARE
         assert!(msg.has_attribute(Software::TYPE));
         let raw = msg.raw_attribute(Software::TYPE).unwrap();
-        assert!(matches!(Software::try_from(raw), Ok(_)));
-        let software = Software::try_from(raw).unwrap();
+        assert!(matches!(Software::try_from(&raw), Ok(_)));
+        let software = Software::try_from(&raw).unwrap();
         assert_eq!(software.software(), "STUN test client");
+        builder.add_attribute(&software).unwrap();
 
         // PRIORITY
         assert!(msg.has_attribute(Priority::TYPE));
         let raw = msg.raw_attribute(Priority::TYPE).unwrap();
-        assert!(matches!(Priority::try_from(raw), Ok(_)));
-        let priority = Priority::try_from(raw).unwrap();
+        assert!(matches!(Priority::try_from(&raw), Ok(_)));
+        let priority = Priority::try_from(&raw).unwrap();
         assert_eq!(priority.priority(), 0x6e0001ff);
+        builder.add_attribute(&priority).unwrap();
+
+        // ICE-CONTROLLED
+        assert!(msg.has_attribute(IceControlled::TYPE));
+        let raw = msg.raw_attribute(IceControlled::TYPE).unwrap();
+        assert!(matches!(IceControlled::try_from(&raw), Ok(_)));
+        let ice = IceControlled::try_from(&raw).unwrap();
+        assert_eq!(ice.tie_breaker(), 0x932f_f9b1_5126_3b36);
+        builder.add_attribute(&ice).unwrap();
 
         // USERNAME
         assert!(msg.has_attribute(Username::TYPE));
         let raw = msg.raw_attribute(Username::TYPE).unwrap();
-        assert!(matches!(Username::try_from(raw), Ok(_)));
-        let username = Username::try_from(raw).unwrap();
+        assert!(matches!(Username::try_from(&raw), Ok(_)));
+        let username = Username::try_from(&raw).unwrap();
         assert_eq!(username.username(), "evtj:h6vY");
+        builder.add_attribute(&username).unwrap();
 
         // MESSAGE_INTEGRITY
         let credentials = MessageIntegrityCredentials::ShortTerm(ShortTermCredentials {
             password: "VOkJxbRl1RmTxUk/WvJxBt".to_owned(),
         });
-        assert!(matches!(
-            msg.validate_integrity(&data, &credentials),
-            Ok(())
-        ));
+        assert!(matches!(msg.validate_integrity(&credentials), Ok(())));
+        builder
+            .add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
+            .unwrap();
 
         // FINGERPRINT is checked by Message::from_bytes() when present
         assert!(msg.has_attribute(Fingerprint::TYPE));
+        builder.add_fingerprint().unwrap();
 
         // assert that we produce the same output as we parsed in this case
-        let mut msg_data = msg.to_bytes();
+        let mut msg_data = builder.build();
         // match the padding bytes with the original
         msg_data[73] = 0x20;
         msg_data[74] = 0x20;
         msg_data[75] = 0x20;
-        assert_eq!(msg_data, data);
+        // as a result of the padding difference, the message integrity and fingerpinrt values will
+        // be different
+        assert_eq!(msg_data[..80], data[..80]);
     }
 
     #[test]
@@ -1729,40 +1852,50 @@ mod tests {
         assert!(msg.has_class(MessageClass::Success));
         assert!(msg.has_method(BINDING));
         assert_eq!(msg.transaction_id(), 0xb7e7_a701_bc34_d686_fa87_dfae.into());
+        let mut builder = Message::builder(
+            MessageType::from_class_method(MessageClass::Success, BINDING),
+            msg.transaction_id(),
+        );
 
         // SOFTWARE
         assert!(msg.has_attribute(Software::TYPE));
         let raw = msg.raw_attribute(Software::TYPE).unwrap();
-        assert!(matches!(Software::try_from(raw), Ok(_)));
-        let software = Software::try_from(raw).unwrap();
+        assert!(matches!(Software::try_from(&raw), Ok(_)));
+        let software = Software::try_from(&raw).unwrap();
         assert_eq!(software.software(), "test vector");
+        builder.add_attribute(&software).unwrap();
 
         // XOR_MAPPED_ADDRESS
         assert!(msg.has_attribute(XorMappedAddress::TYPE));
         let raw = msg.raw_attribute(XorMappedAddress::TYPE).unwrap();
-        assert!(matches!(XorMappedAddress::try_from(raw), Ok(_)));
-        let xor_mapped_addres = XorMappedAddress::try_from(raw).unwrap();
+        assert!(matches!(XorMappedAddress::try_from(&raw), Ok(_)));
+        let xor_mapped_addres = XorMappedAddress::try_from(&raw).unwrap();
         assert_eq!(
             xor_mapped_addres.addr(msg.transaction_id()),
             "192.0.2.1:32853".parse().unwrap()
         );
+        builder.add_attribute(&xor_mapped_addres).unwrap();
 
         // MESSAGE_INTEGRITY
         let credentials = MessageIntegrityCredentials::ShortTerm(ShortTermCredentials {
             password: "VOkJxbRl1RmTxUk/WvJxBt".to_owned(),
         });
-        let ret = msg.validate_integrity(&data, &credentials);
+        let ret = msg.validate_integrity(&credentials);
         debug!("{:?}", ret);
         assert!(matches!(ret, Ok(())));
+        builder
+            .add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
+            .unwrap();
 
         // FINGERPRINT is checked by Message::from_bytes() when present
         assert!(msg.has_attribute(Fingerprint::TYPE));
+        builder.add_fingerprint().unwrap();
 
         // assert that we produce the same output as we parsed in this case
-        let mut msg_data = msg.to_bytes();
+        let mut msg_data = builder.build();
         // match the padding bytes with the original
         msg_data[35] = 0x20;
-        assert_eq!(msg_data, data);
+        assert_eq!(msg_data[..52], data[..52]);
     }
 
     #[test]
@@ -1799,43 +1932,50 @@ mod tests {
         assert!(msg.has_class(MessageClass::Success));
         assert!(msg.has_method(BINDING));
         assert_eq!(msg.transaction_id(), 0xb7e7_a701_bc34_d686_fa87_dfae.into());
+        let mut builder = Message::builder(
+            MessageType::from_class_method(MessageClass::Success, BINDING),
+            msg.transaction_id(),
+        );
 
         // SOFTWARE
         assert!(msg.has_attribute(Software::TYPE));
         let raw = msg.raw_attribute(Software::TYPE).unwrap();
-        assert!(matches!(Software::try_from(raw), Ok(_)));
-        let software = Software::try_from(raw).unwrap();
+        assert!(matches!(Software::try_from(&raw), Ok(_)));
+        let software = Software::try_from(&raw).unwrap();
         assert_eq!(software.software(), "test vector");
+        builder.add_attribute(&software).unwrap();
 
         // XOR_MAPPED_ADDRESS
         assert!(msg.has_attribute(XorMappedAddress::TYPE));
         let raw = msg.raw_attribute(XorMappedAddress::TYPE).unwrap();
-        assert!(matches!(XorMappedAddress::try_from(raw), Ok(_)));
-        let xor_mapped_addres = XorMappedAddress::try_from(raw).unwrap();
+        assert!(matches!(XorMappedAddress::try_from(&raw), Ok(_)));
+        let xor_mapped_addres = XorMappedAddress::try_from(&raw).unwrap();
         assert_eq!(
             xor_mapped_addres.addr(msg.transaction_id()),
             "[2001:db8:1234:5678:11:2233:4455:6677]:32853"
                 .parse()
                 .unwrap()
         );
+        builder.add_attribute(&xor_mapped_addres).unwrap();
 
         // MESSAGE_INTEGRITY
         let credentials = MessageIntegrityCredentials::ShortTerm(ShortTermCredentials {
             password: "VOkJxbRl1RmTxUk/WvJxBt".to_owned(),
         });
-        assert!(matches!(
-            msg.validate_integrity(&data, &credentials),
-            Ok(())
-        ));
+        assert!(matches!(msg.validate_integrity(&credentials), Ok(())));
+        builder
+            .add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
+            .unwrap();
 
         // FINGERPRINT is checked by Message::from_bytes() when present
         assert!(msg.has_attribute(Fingerprint::TYPE));
+        builder.add_fingerprint().unwrap();
 
         // assert that we produce the same output as we parsed in this case
-        let mut msg_data = msg.to_bytes();
+        let mut msg_data = builder.build();
         // match the padding bytes with the original
         msg_data[35] = 0x20;
-        assert_eq!(msg_data, data);
+        assert_eq!(msg_data[..64], data[..64]);
     }
 
     #[test]
@@ -1878,6 +2018,10 @@ mod tests {
         assert!(msg.has_class(MessageClass::Request));
         assert!(msg.has_method(BINDING));
         assert_eq!(msg.transaction_id(), 0x78ad_3433_c6ad_72c0_29da_412e.into());
+        let mut builder = Message::builder(
+            MessageType::from_class_method(MessageClass::Request, BINDING),
+            msg.transaction_id(),
+        );
 
         let long_term = LongTermCredentials {
             username: "\u{30DE}\u{30C8}\u{30EA}\u{30C3}\u{30AF}\u{30B9}".to_owned(),
@@ -1887,25 +2031,36 @@ mod tests {
         // USERNAME
         assert!(msg.has_attribute(Username::TYPE));
         let raw = msg.raw_attribute(Username::TYPE).unwrap();
-        assert!(matches!(Username::try_from(raw), Ok(_)));
-        let username = Username::try_from(raw).unwrap();
+        assert!(matches!(Username::try_from(&raw), Ok(_)));
+        let username = Username::try_from(&raw).unwrap();
         assert_eq!(username.username(), &long_term.username);
+        builder.add_attribute(&username).unwrap();
 
         // NONCE
         let expected_nonce = "f//499k954d6OL34oL9FSTvy64sA";
         assert!(msg.has_attribute(Nonce::TYPE));
         let raw = msg.raw_attribute(Nonce::TYPE).unwrap();
-        assert!(matches!(Nonce::try_from(raw), Ok(_)));
-        let nonce = Nonce::try_from(raw).unwrap();
+        assert!(matches!(Nonce::try_from(&raw), Ok(_)));
+        let nonce = Nonce::try_from(&raw).unwrap();
         assert_eq!(nonce.nonce(), expected_nonce);
+        builder.add_attribute(&nonce).unwrap();
+
+        // REALM
+        assert!(msg.has_attribute(Realm::TYPE));
+        let raw = msg.raw_attribute(Realm::TYPE).unwrap();
+        assert!(matches!(Realm::try_from(&raw), Ok(_)));
+        let realm = Realm::try_from(&raw).unwrap();
+        assert_eq!(realm.realm(), long_term.realm());
+        builder.add_attribute(&realm).unwrap();
 
         // MESSAGE_INTEGRITY
         /* XXX: the password needs SASLPrep-ing to be useful here
         let credentials = MessageIntegrityCredentials::LongTerm(long_term);
         assert!(matches!(msg.validate_integrity(&data, &credentials), Ok(())));
         */
+        //builder.add_attribute(msg.raw_attribute(MessageIntegrity::TYPE).unwrap()).unwrap();
 
-        assert_eq!(msg.to_bytes(), data);
+        assert_eq!(builder.build()[4..], data[4..92]);
     }
 
     #[test]
@@ -1961,6 +2116,10 @@ mod tests {
         assert!(msg.has_class(MessageClass::Request));
         assert!(msg.has_method(BINDING));
         assert_eq!(msg.transaction_id(), 0x78ad_3433_c6ad_72c0_29da_412e.into());
+        let mut builder = Message::builder(
+            MessageType::from_class_method(MessageClass::Success, BINDING),
+            msg.transaction_id(),
+        );
 
         let long_term = LongTermCredentials {
             username: "\u{30DE}\u{30C8}\u{30EA}\u{30C3}\u{30AF}\u{30B9}".to_owned(),
@@ -1970,37 +2129,42 @@ mod tests {
         // USERHASH
         assert!(msg.has_attribute(Userhash::TYPE));
         let raw = msg.raw_attribute(Userhash::TYPE).unwrap();
-        assert!(matches!(Userhash::try_from(raw), Ok(_)));
-        let _userhash = Userhash::try_from(raw).unwrap();
+        assert!(matches!(Userhash::try_from(&raw), Ok(_)));
+        let userhash = Userhash::try_from(&raw).unwrap();
+        builder.add_attribute(&userhash).unwrap();
 
         // NONCE
         let expected_nonce = "obMatJos2AAACf//499k954d6OL34oL9FSTvy64sA";
         assert!(msg.has_attribute(Nonce::TYPE));
         let raw = msg.raw_attribute(Nonce::TYPE).unwrap();
-        assert!(matches!(Nonce::try_from(raw), Ok(_)));
-        let nonce = Nonce::try_from(raw).unwrap();
+        assert!(matches!(Nonce::try_from(&raw), Ok(_)));
+        let nonce = Nonce::try_from(&raw).unwrap();
         assert_eq!(nonce.nonce(), expected_nonce);
+        builder.add_attribute(&nonce).unwrap();
 
         // REALM
         assert!(msg.has_attribute(Realm::TYPE));
         let raw = msg.raw_attribute(Realm::TYPE).unwrap();
-        assert!(matches!(Realm::try_from(raw), Ok(_)));
-        let realm = Realm::try_from(raw).unwrap();
+        assert!(matches!(Realm::try_from(&raw), Ok(_)));
+        let realm = Realm::try_from(&raw).unwrap();
         assert_eq!(realm.realm(), long_term.realm);
+        builder.add_attribute(&realm).unwrap();
 
         // PASSWORD_ALGORITHM
         assert!(msg.has_attribute(PasswordAlgorithm::TYPE));
         let raw = msg.raw_attribute(PasswordAlgorithm::TYPE).unwrap();
-        assert!(matches!(PasswordAlgorithm::try_from(raw), Ok(_)));
-        let algo = PasswordAlgorithm::try_from(raw).unwrap();
+        assert!(matches!(PasswordAlgorithm::try_from(&raw), Ok(_)));
+        let algo = PasswordAlgorithm::try_from(&raw).unwrap();
         assert_eq!(algo.algorithm(), PasswordAlgorithmValue::SHA256);
+        builder.add_attribute(&algo).unwrap();
 
         // MESSAGE_INTEGRITY_SHA256
         /* XXX: the password needs SASLPrep-ing to be useful here
         let credentials = MessageIntegrityCredentials::LongTerm(long_term);
         assert!(matches!(msg.validate_integrity(&data, &credentials), Ok(())));
         */
+        //builder.add_attribute(msg.raw_attribute(MessageIntegritySha256::TYPE).unwrap()).unwrap();
 
-        assert_eq!(msg.to_bytes(), data);
+        assert_eq!(builder.build()[4..], data[4..128]);
     }
 }

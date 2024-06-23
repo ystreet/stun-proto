@@ -27,14 +27,14 @@ impl Attribute for Priority {
         4
     }
 }
-impl From<Priority> for RawAttribute {
-    fn from(value: Priority) -> RawAttribute {
+impl<'a> From<&Priority> for RawAttribute<'a> {
+    fn from(value: &Priority) -> RawAttribute<'a> {
         let mut buf = [0; 4];
         BigEndian::write_u32(&mut buf[0..4], value.priority);
-        RawAttribute::new(Priority::TYPE, &buf)
+        RawAttribute::new(Priority::TYPE, &buf).into_owned()
     }
 }
-impl TryFrom<&RawAttribute> for Priority {
+impl<'a> TryFrom<&RawAttribute<'a>> for Priority {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -90,13 +90,13 @@ impl Attribute for UseCandidate {
         0
     }
 }
-impl From<UseCandidate> for RawAttribute {
-    fn from(_value: UseCandidate) -> RawAttribute {
-        let buf = [0; 0];
-        RawAttribute::new(UseCandidate::TYPE, &buf)
+impl<'a> From<&UseCandidate> for RawAttribute<'a> {
+    fn from(_value: &UseCandidate) -> RawAttribute<'a> {
+        static BUF: [u8; 0] = [0; 0];
+        RawAttribute::new(UseCandidate::TYPE, &BUF)
     }
 }
-impl TryFrom<&RawAttribute> for UseCandidate {
+impl<'a> TryFrom<&RawAttribute<'a>> for UseCandidate {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -144,14 +144,14 @@ impl Attribute for IceControlled {
         8
     }
 }
-impl From<IceControlled> for RawAttribute {
-    fn from(value: IceControlled) -> RawAttribute {
+impl<'a> From<&IceControlled> for RawAttribute<'a> {
+    fn from(value: &IceControlled) -> RawAttribute<'a> {
         let mut buf = [0; 8];
         BigEndian::write_u64(&mut buf[..8], value.tie_breaker);
-        RawAttribute::new(IceControlled::TYPE, &buf)
+        RawAttribute::new(IceControlled::TYPE, &buf).into_owned()
     }
 }
-impl TryFrom<&RawAttribute> for IceControlled {
+impl<'a> TryFrom<&RawAttribute<'a>> for IceControlled {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -209,15 +209,15 @@ impl Attribute for IceControlling {
         8
     }
 }
-impl From<IceControlling> for RawAttribute {
-    fn from(value: IceControlling) -> RawAttribute {
+impl<'a> From<&IceControlling> for RawAttribute<'a> {
+    fn from(value: &IceControlling) -> RawAttribute<'a> {
         let mut buf = [0; 8];
 
         BigEndian::write_u64(&mut buf[..8], value.tie_breaker);
-        RawAttribute::new(IceControlling::TYPE, &buf)
+        RawAttribute::new(IceControlling::TYPE, &buf).into_owned()
     }
 }
-impl TryFrom<&RawAttribute> for IceControlling {
+impl<'a> TryFrom<&RawAttribute<'a>> for IceControlling {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -277,7 +277,7 @@ mod tests {
         let priority = Priority::new(val);
         assert_eq!(priority.priority(), val);
         assert_eq!(priority.length(), 4);
-        let raw: RawAttribute = priority.into();
+        let raw = RawAttribute::from(&priority);
         assert_eq!(raw.get_type(), Priority::TYPE);
         let mapped2 = Priority::try_from(&raw).unwrap();
         assert_eq!(mapped2.priority(), val);
@@ -306,7 +306,7 @@ mod tests {
         init();
         let use_candidate = UseCandidate::default();
         assert_eq!(use_candidate.length(), 0);
-        let raw: RawAttribute = use_candidate.into();
+        let raw = RawAttribute::from(&use_candidate);
         assert_eq!(raw.get_type(), UseCandidate::TYPE);
         let _mapped2 = UseCandidate::try_from(&raw).unwrap();
         // provide incorrectly typed data
@@ -325,7 +325,7 @@ mod tests {
         let attr = IceControlling::new(tb);
         assert_eq!(attr.tie_breaker(), tb);
         assert_eq!(attr.length(), 8);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), IceControlling::TYPE);
         let mapped2 = IceControlling::try_from(&raw).unwrap();
         assert_eq!(mapped2.tie_breaker(), tb);
@@ -356,7 +356,7 @@ mod tests {
         let attr = IceControlled::new(tb);
         assert_eq!(attr.tie_breaker(), tb);
         assert_eq!(attr.length(), 8);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), IceControlled::TYPE);
         let mapped2 = IceControlled::try_from(&raw).unwrap();
         assert_eq!(mapped2.tie_breaker(), tb);

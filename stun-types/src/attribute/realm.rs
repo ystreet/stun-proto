@@ -25,12 +25,12 @@ impl Attribute for Realm {
         self.realm.len() as u16
     }
 }
-impl From<Realm> for RawAttribute {
-    fn from(value: Realm) -> RawAttribute {
+impl<'a> From<&'a Realm> for RawAttribute<'a> {
+    fn from(value: &'a Realm) -> RawAttribute<'a> {
         RawAttribute::new(Realm::TYPE, value.realm.as_bytes())
     }
 }
-impl TryFrom<&RawAttribute> for Realm {
+impl<'a> TryFrom<&RawAttribute<'a>> for Realm {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -99,7 +99,7 @@ mod tests {
         let attr = Realm::new("realm").unwrap();
         assert_eq!(attr.realm(), "realm");
         assert_eq!(attr.length() as usize, "realm".len());
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), Realm::TYPE);
         let mapped2 = Realm::try_from(&raw).unwrap();
         assert_eq!(mapped2.realm(), "realm");
@@ -116,7 +116,7 @@ mod tests {
     fn realm_not_utf8() {
         init();
         let attr = Realm::new("realm").unwrap();
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
         data[6] = 0x88;
         assert!(matches!(

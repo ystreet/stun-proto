@@ -81,8 +81,8 @@ impl Attribute for PasswordAlgorithms {
         len as u16
     }
 }
-impl From<PasswordAlgorithms> for RawAttribute {
-    fn from(value: PasswordAlgorithms) -> RawAttribute {
+impl<'a> From<&PasswordAlgorithms> for RawAttribute<'a> {
+    fn from(value: &PasswordAlgorithms) -> RawAttribute<'a> {
         let len = value.length() as usize;
         let mut data = vec![0; len];
         let mut i = 0;
@@ -90,10 +90,10 @@ impl From<PasswordAlgorithms> for RawAttribute {
             algo.write(&mut data[i..]);
             i += 4 + padded_attr_len(algo.len() as usize);
         }
-        RawAttribute::new(PasswordAlgorithms::TYPE, &data)
+        RawAttribute::new(PasswordAlgorithms::TYPE, &data).into_owned()
     }
 }
-impl TryFrom<&RawAttribute> for PasswordAlgorithms {
+impl<'a> TryFrom<&RawAttribute<'a>> for PasswordAlgorithms {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -170,15 +170,15 @@ impl Attribute for PasswordAlgorithm {
     }
 }
 
-impl From<PasswordAlgorithm> for RawAttribute {
-    fn from(value: PasswordAlgorithm) -> RawAttribute {
+impl<'a> From<&PasswordAlgorithm> for RawAttribute<'a> {
+    fn from(value: &PasswordAlgorithm) -> RawAttribute<'a> {
         let len = value.length() as usize;
         let mut data = vec![0; len];
         value.algorithm.write(&mut data);
-        RawAttribute::new(PasswordAlgorithm::TYPE, &data)
+        RawAttribute::new(PasswordAlgorithm::TYPE, &data).into_owned()
     }
 }
-impl TryFrom<&RawAttribute> for PasswordAlgorithm {
+impl<'a> TryFrom<&RawAttribute<'a>> for PasswordAlgorithm {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -239,7 +239,7 @@ mod tests {
         let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
         let attr = PasswordAlgorithms::new(&vals);
         assert_eq!(attr.algorithms(), &vals);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), PasswordAlgorithms::TYPE);
         let mapped2 = PasswordAlgorithms::try_from(&raw).unwrap();
         assert_eq!(mapped2.algorithms(), &vals);
@@ -258,7 +258,7 @@ mod tests {
         let val = PasswordAlgorithmValue::SHA256;
         let attr = PasswordAlgorithm::new(val);
         assert_eq!(attr.algorithm(), val);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), PasswordAlgorithm::TYPE);
         let mapped2 = PasswordAlgorithm::try_from(&raw).unwrap();
         assert_eq!(mapped2.algorithm(), val);
@@ -276,7 +276,7 @@ mod tests {
         init();
         let val = PasswordAlgorithmValue::SHA256;
         let attr = PasswordAlgorithm::new(val);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
         data[7] = 100;
         assert!(matches!(
@@ -293,7 +293,7 @@ mod tests {
         init();
         let val = PasswordAlgorithmValue::SHA256;
         let attr = PasswordAlgorithm::new(val);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
         data[5] = 0x80;
         assert!(matches!(

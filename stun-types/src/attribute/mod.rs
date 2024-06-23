@@ -33,7 +33,7 @@
 //!     0x65, 0x73, 0x00, 0x00  // e s
 //! ];
 //!
-//! let raw: RawAttribute = software.into();
+//! let raw = RawAttribute::from(&software);
 //! assert_eq!(raw.to_bytes(), attribute_data);
 //!
 //! // Can also parse data into a typed attribute as needed
@@ -59,14 +59,14 @@
 //!        4
 //!    }
 //! }
-//! impl From<MyAttribute> for RawAttribute {
-//!     fn from(value: MyAttribute) -> RawAttribute {
+//! impl<'a> From<&MyAttribute> for RawAttribute<'a> {
+//!     fn from(value: &MyAttribute) -> RawAttribute<'a> {
 //!         let mut ret = vec![0; 4];
 //!         BigEndian::write_u32(&mut ret, value.value);
-//!         RawAttribute::new(MyAttribute::TYPE, &ret)
+//!         RawAttribute::new(MyAttribute::TYPE, &ret).into_owned()
 //!     }
 //! }
-//! impl TryFrom<&RawAttribute> for MyAttribute {
+//! impl<'a> TryFrom<&RawAttribute<'a>> for MyAttribute {
 //!     type Error = StunParseError;
 //!     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
 //!         raw.check_type_and_len(Self::TYPE, 4..=4)?;
@@ -78,7 +78,7 @@
 //! }
 //!
 //! let my_attr = MyAttribute { value: 0x4729 };
-//! let raw: RawAttribute = my_attr.into();
+//! let raw = RawAttribute::from(&my_attr);
 //!
 //! let attribute_data = [
 //!     0x88, 0x51, 0x00, 0x04,
@@ -125,7 +125,7 @@ pub use software::Software;
 mod xor_addr;
 pub use xor_addr::XorMappedAddress;
 
-use crate::message::StunParseError;
+use crate::{data::Data, message::StunParseError};
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -287,34 +287,36 @@ pub trait Attribute: std::fmt::Debug {
 
 /// Automatically implemented trait for converting from a concrete [`Attribute`] to a
 /// [`RawAttribute`]
-pub trait AttributeToRaw: Attribute + Into<RawAttribute>
+pub trait AttributeToRaw<'b>: Attribute + Into<RawAttribute<'b>>
 where
-    RawAttribute: for<'a> From<&'a Self>,
+    RawAttribute<'b>: for<'a> From<&'a Self>,
 {
     /// Convert an `Attribute` to a `RawAttribute`
-    fn to_raw(&self) -> RawAttribute;
+    fn to_raw(&self) -> RawAttribute<'b>;
 }
-impl<T: Attribute + Into<RawAttribute>> AttributeToRaw for T
+impl<'b, T: Attribute + Into<RawAttribute<'b>>> AttributeToRaw<'b> for T
 where
-    RawAttribute: for<'a> From<&'a Self>,
+    RawAttribute<'b>: for<'a> From<&'a Self>,
 {
-    fn to_raw(&self) -> RawAttribute
+    fn to_raw(&self) -> RawAttribute<'b>
     where
-        RawAttribute: for<'a> From<&'a Self>,
+        RawAttribute<'b>: for<'a> From<&'a Self>,
     {
         self.into()
     }
 }
 /// Automatically implemented trait for converting to a concrete [`Attribute`] from a
 /// [`RawAttribute`]
-pub trait AttributeFromRaw<E>: Attribute + for<'a> TryFrom<&'a RawAttribute, Error = E> {
+pub trait AttributeFromRaw<E>:
+    Attribute + for<'a> TryFrom<&'a RawAttribute<'a>, Error = E>
+{
     /// Convert an `Attribute` from a `RawAttribute`
     fn from_raw(raw: &RawAttribute) -> Result<Self, E>
     where
         Self: Sized;
 }
 
-impl<E, T: Attribute + for<'a> TryFrom<&'a RawAttribute, Error = E>> AttributeFromRaw<E> for T {
+impl<E, T: Attribute + for<'a> TryFrom<&'a RawAttribute<'a>, Error = E>> AttributeFromRaw<E> for T {
     fn from_raw(raw: &RawAttribute) -> Result<T, E> {
         Self::try_from(raw)
     }
@@ -334,11 +336,11 @@ pub(crate) fn padded_attr_size(attr: &RawAttribute) -> usize {
 
 /// The header and raw bytes of an unparsed [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawAttribute {
+pub struct RawAttribute<'a> {
     /// The [`AttributeHeader`] of this [`RawAttribute`]
     pub header: AttributeHeader,
     /// The raw bytes of this [`RawAttribute`]
-    pub value: Vec<u8>,
+    pub value: Data<'a>,
 }
 
 macro_rules! display_attr {
@@ -351,7 +353,7 @@ macro_rules! display_attr {
     }};
 }
 
-impl std::fmt::Display for RawAttribute {
+impl<'a> std::fmt::Display for RawAttribute<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // try to get a more specialised display
         let malformed_str = format!(
@@ -391,14 +393,15 @@ impl std::fmt::Display for RawAttribute {
     }
 }
 
-impl RawAttribute {
-    pub fn new(atype: AttributeType, data: &[u8]) -> Self {
+impl<'a> RawAttribute<'a> {
+    /// Create a new [`RawAttribute`]
+    pub fn new(atype: AttributeType, data: &'a [u8]) -> Self {
         Self {
             header: AttributeHeader {
                 atype,
                 length: data.len() as u16,
             },
-            value: data.to_vec(),
+            value: data.into(),
         }
     }
 
@@ -413,7 +416,7 @@ impl RawAttribute {
     /// assert_eq!(attr.get_type(), AttributeType::new(1));
     /// assert_eq!(attr.length(), 2);
     /// ```
-    pub fn from_bytes(data: &[u8]) -> Result<Self, StunParseError> {
+    pub fn from_bytes(data: &'a [u8]) -> Result<Self, StunParseError> {
         let header = AttributeHeader::parse(data)?;
         // the advertised length is larger than actual data -> error
         if header.length > (data.len() - 4) as u16 {
@@ -422,12 +425,9 @@ impl RawAttribute {
                 actual: data.len() - 4,
             });
         }
-        let mut data = data[4..].to_vec();
-        data.truncate(header.length as usize);
-        //trace!("parsed into {:?} {:?}", header, data);
         Ok(Self {
             header,
-            value: data,
+            value: Data::Borrowed(data[4..header.length as usize + 4].into()),
         })
     }
 
@@ -442,7 +442,7 @@ impl RawAttribute {
     /// ```
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut ret: Vec<u8> = self.header.into();
-        ret.extend(&self.value);
+        ret.extend(&*self.value);
         let len = ret.len();
         if len % 4 != 0 {
             // pad to 4 bytes
@@ -471,6 +471,14 @@ impl RawAttribute {
             return Err(StunParseError::WrongAttributeImplementation);
         }
         check_len(self.value.len(), allowed_range)
+    }
+
+    /// Consume this [`RawAttribute`] and return a new owned [`RawAttribute`]
+    pub fn into_owned<'b>(self) -> RawAttribute<'b> {
+        RawAttribute {
+            header: self.header,
+            value: self.value.into_owned(),
+        }
     }
 }
 
@@ -519,17 +527,9 @@ fn check_len(
     Ok(())
 }
 
-impl From<RawAttribute> for Vec<u8> {
+impl<'a> From<RawAttribute<'a>> for Vec<u8> {
     fn from(f: RawAttribute) -> Self {
         f.to_bytes()
-    }
-}
-
-impl TryFrom<&[u8]> for RawAttribute {
-    type Error = StunParseError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        RawAttribute::from_bytes(value)
     }
 }
 

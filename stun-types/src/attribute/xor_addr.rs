@@ -26,12 +26,12 @@ impl Attribute for XorMappedAddress {
         self.addr.length()
     }
 }
-impl From<XorMappedAddress> for RawAttribute {
-    fn from(value: XorMappedAddress) -> RawAttribute {
+impl<'a> From<&XorMappedAddress> for RawAttribute<'a> {
+    fn from(value: &XorMappedAddress) -> RawAttribute<'a> {
         value.addr.to_raw(XorMappedAddress::TYPE)
     }
 }
-impl TryFrom<&RawAttribute> for XorMappedAddress {
+impl<'a> TryFrom<&RawAttribute<'a>> for XorMappedAddress {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -102,7 +102,7 @@ mod tests {
         for addr in addrs {
             let mapped = XorMappedAddress::new(*addr, transaction_id);
             assert_eq!(mapped.addr(transaction_id), *addr);
-            let raw: RawAttribute = mapped.into();
+            let raw = RawAttribute::from(&mapped);
             assert_eq!(raw.get_type(), XorMappedAddress::TYPE);
             let mapped2 = XorMappedAddress::try_from(&raw).unwrap();
             assert_eq!(mapped2.addr(transaction_id), *addr);
@@ -112,7 +112,7 @@ mod tests {
             BigEndian::write_u16(&mut data[2..4], len as u16 - 4 - 1);
             assert!(matches!(
                 XorMappedAddress::try_from(
-                    &RawAttribute::try_from(data[..len - 1].as_ref()).unwrap()
+                    &RawAttribute::from_bytes(data[..len - 1].as_ref()).unwrap()
                 ),
                 Err(StunParseError::Truncated {
                     expected: _,
