@@ -99,6 +99,7 @@ mod tests {
         init();
         let attr = Nonce::new("nonce").unwrap();
         assert_eq!(attr.nonce(), "nonce");
+        assert_eq!(attr.length() as usize, "nonce".len());
         let raw: RawAttribute = attr.into();
         assert_eq!(raw.get_type(), Nonce::TYPE);
         let mapped2 = Nonce::try_from(&raw).unwrap();

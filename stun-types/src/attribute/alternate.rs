@@ -170,6 +170,10 @@ mod tests {
         for addr in addrs {
             let mapped = AlternateServer::new(*addr);
             assert_eq!(mapped.server(), *addr);
+            match addr {
+                SocketAddr::V4(_) => assert_eq!(mapped.length(), 8),
+                SocketAddr::V6(_) => assert_eq!(mapped.length(), 20),
+            }
             let raw: RawAttribute = mapped.into();
             assert_eq!(raw.get_type(), AlternateServer::TYPE);
             let mapped2 = AlternateServer::try_from(&raw).unwrap();
@@ -203,6 +207,7 @@ mod tests {
         let dns = "example.com";
         let attr = AlternateDomain::new(dns);
         assert_eq!(attr.domain(), dns);
+        assert_eq!(attr.length() as usize, dns.len());
         let raw: RawAttribute = attr.into();
         assert_eq!(raw.get_type(), AlternateDomain::TYPE);
         let mapped2 = AlternateDomain::try_from(&raw).unwrap();

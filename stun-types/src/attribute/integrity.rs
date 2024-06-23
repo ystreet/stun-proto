@@ -302,6 +302,7 @@ mod tests {
         let val = [1; 20];
         let attr = MessageIntegrity::new(val);
         assert_eq!(attr.hmac(), &val);
+        assert_eq!(attr.length(), 20);
         let raw: RawAttribute = attr.into();
         assert_eq!(raw.get_type(), MessageIntegrity::TYPE);
         let mapped2 = MessageIntegrity::try_from(&raw).unwrap();
@@ -334,6 +335,7 @@ mod tests {
         let val = [1; 32];
         let attr = MessageIntegritySha256::new(&val).unwrap();
         assert_eq!(attr.hmac(), &val);
+        assert_eq!(attr.length(), 32);
         let raw: RawAttribute = attr.into();
         assert_eq!(raw.get_type(), MessageIntegritySha256::TYPE);
         let mapped2 = MessageIntegritySha256::try_from(&raw).unwrap();

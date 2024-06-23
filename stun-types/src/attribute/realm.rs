@@ -98,6 +98,7 @@ mod tests {
         init();
         let attr = Realm::new("realm").unwrap();
         assert_eq!(attr.realm(), "realm");
+        assert_eq!(attr.length() as usize, "realm".len());
         let raw: RawAttribute = attr.into();
         assert_eq!(raw.get_type(), Realm::TYPE);
         let mapped2 = Realm::try_from(&raw).unwrap();
