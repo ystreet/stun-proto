@@ -1371,6 +1371,18 @@ impl Message {
         out
     }
 
+    /// Whether this message contains an attribute of the specified type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
+    /// # use stun_types::attribute::{Software, Attribute};
+    /// let mut msg = Message::new_request(BINDING);
+    /// let attr = Software::new("stun-types").unwrap();
+    /// assert!(msg.add_attribute(attr.clone()).is_ok());
+    /// assert!(msg.has_attribute(Software::TYPE));
+    /// ```
     pub fn has_attribute(&self, atype: AttributeType) -> bool {
         self.attributes.iter().any(|attr| attr.get_type() == atype)
     }
