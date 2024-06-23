@@ -899,6 +899,22 @@ impl Message {
     ///
     /// The Original data that was used to construct this [`Message`] must be provided in order
     /// to successfully validate the [`Message`]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING,
+    ///     MessageIntegrityCredentials, LongTermCredentials, IntegrityAlgorithm};
+    /// let mut message = Message::new_request(BINDING);
+    /// let credentials = LongTermCredentials::new(
+    ///     "user".to_owned(),
+    ///     "pass".to_owned(),
+    ///     "realm".to_owned()
+    /// ).into();
+    /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256).is_ok());
+    /// let data = message.to_bytes();
+    /// assert!(message.validate_integrity(&data, &credentials).is_ok());
+    /// ```
     #[tracing::instrument(
         name = "message_validate_integrity",
         level = "trace",
