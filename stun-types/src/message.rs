@@ -191,6 +191,21 @@ pub struct LongTermCredentials {
 }
 
 impl LongTermCredentials {
+    /// Create a new set of [`LongTermCredentials`]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::LongTermCredentials;
+    /// let credentials = LongTermCredentials::new(
+    ///     "user".to_string(),
+    ///     "pass".to_string(),
+    ///     "realm".to_string(),
+    /// );
+    /// assert_eq!(credentials.username(), "user");
+    /// assert_eq!(credentials.password(), "pass");
+    /// assert_eq!(credentials.realm(), "realm");
+    /// ```
     pub fn new(username: String, password: String, realm: String) -> Self {
         Self {
             username,
@@ -223,7 +238,15 @@ pub struct ShortTermCredentials {
 }
 
 impl ShortTermCredentials {
-    /// Create a new ShortTermCredentials
+    /// Create a new set of [`ShortTermCredentials`]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::ShortTermCredentials;
+    /// let credentials = ShortTermCredentials::new("password".to_string());
+    /// assert_eq!(credentials.password(), "password");
+    /// ```
     pub fn new(password: String) -> Self {
         Self { password }
     }
@@ -235,6 +258,8 @@ impl ShortTermCredentials {
 }
 
 /// Enum for holding the credentials used to sign or verify a [`Message`]
+///
+/// This can either be a set of [`ShortTermCredentials`] or [`LongTermCredentials`]`
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum MessageIntegrityCredentials {
