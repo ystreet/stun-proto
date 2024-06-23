@@ -483,6 +483,15 @@ pub struct TransactionId {
     id: u128,
 }
 
+impl TransactionId {
+    /// Generate a new STUN transaction identifier.
+    pub fn generate() -> TransactionId {
+        use rand::{thread_rng, Rng};
+        let mut rng = thread_rng();
+        rng.gen::<u128>().into()
+    }
+}
+
 impl From<u128> for TransactionId {
     fn from(id: u128) -> Self {
         Self {
@@ -580,7 +589,7 @@ impl Message {
     pub fn new_request(method: u16) -> Self {
         Message::new(
             MessageType::from_class_method(MessageClass::Request, method),
-            Message::generate_transaction(),
+            TransactionId::generate(),
         )
     }
 
@@ -726,20 +735,14 @@ impl Message {
     /// # Examples
     ///
     /// ```
-    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
+    /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING, TransactionId};
     /// let mtype = MessageType::from_class_method(MessageClass::Request, BINDING);
-    /// let transaction_id = Message::generate_transaction();
+    /// let transaction_id = TransactionId::generate();
     /// let message = Message::new(mtype, transaction_id);
     /// assert_eq!(message.transaction_id(), transaction_id);
     /// ```
     pub fn transaction_id(&self) -> TransactionId {
         self.transaction
-    }
-
-    pub fn generate_transaction() -> TransactionId {
-        use rand::{thread_rng, Rng};
-        let mut rng = thread_rng();
-        rng.gen::<u128>().into()
     }
 
     /// Serialize a `Message` to network bytes
