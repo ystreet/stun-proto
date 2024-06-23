@@ -410,12 +410,7 @@ pub enum StunAgentPollRet<'a> {
     WaitUntil(Instant),
 }
 
-fn send_data(
-    transport: TransportType,
-    bytes: &[u8],
-    from: SocketAddr,
-    to: SocketAddr,
-) -> Transmit<'static> {
+fn send_data(transport: TransportType, bytes: &[u8], from: SocketAddr, to: SocketAddr) -> Transmit {
     match transport {
         TransportType::Udp => Transmit::new(bytes, transport, from, to),
         TransportType::Tcp => {
@@ -426,7 +421,6 @@ fn send_data(
             Transmit::new_owned(data.into_boxed_slice(), transport, from, to)
         }
     }
-    .into_owned()
 }
 
 #[derive(Debug)]
@@ -718,7 +712,9 @@ impl StunRequestState {
             return StunRequestPollRet::Cancelled;
         }
         self.last_send_time = Some(now);
-        StunRequestPollRet::SendData(send_data(self.transport, &self.bytes, self.from, self.to))
+        StunRequestPollRet::SendData(
+            send_data(self.transport, &self.bytes, self.from, self.to).into_owned(),
+        )
     }
 }
 
