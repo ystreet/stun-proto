@@ -210,6 +210,7 @@ mod tests {
         let hash = Userhash::compute("username", "realm1");
         let attr = Userhash::new(hash);
         assert_eq!(attr.hash(), &hash);
+        assert_eq!(attr.length(), 32);
         let raw: RawAttribute = attr.into();
         assert_eq!(raw.get_type(), Userhash::TYPE);
         let mapped2 = Userhash::try_from(&raw).unwrap();

@@ -276,6 +276,7 @@ mod tests {
         let val = 100;
         let priority = Priority::new(val);
         assert_eq!(priority.priority(), val);
+        assert_eq!(priority.length(), 4);
         let raw: RawAttribute = priority.into();
         assert_eq!(raw.get_type(), Priority::TYPE);
         let mapped2 = Priority::try_from(&raw).unwrap();
@@ -303,7 +304,7 @@ mod tests {
     #[test]
     fn use_candidate() {
         init();
-        let use_candidate = UseCandidate::new();
+        let use_candidate = UseCandidate::default();
         assert_eq!(use_candidate.length(), 0);
         let raw: RawAttribute = use_candidate.into();
         assert_eq!(raw.get_type(), UseCandidate::TYPE);
@@ -323,6 +324,7 @@ mod tests {
         let tb = 100;
         let attr = IceControlling::new(tb);
         assert_eq!(attr.tie_breaker(), tb);
+        assert_eq!(attr.length(), 8);
         let raw: RawAttribute = attr.into();
         assert_eq!(raw.get_type(), IceControlling::TYPE);
         let mapped2 = IceControlling::try_from(&raw).unwrap();
@@ -353,6 +355,7 @@ mod tests {
         let tb = 100;
         let attr = IceControlled::new(tb);
         assert_eq!(attr.tie_breaker(), tb);
+        assert_eq!(attr.length(), 8);
         let raw: RawAttribute = attr.into();
         assert_eq!(raw.get_type(), IceControlled::TYPE);
         let mapped2 = IceControlled::try_from(&raw).unwrap();

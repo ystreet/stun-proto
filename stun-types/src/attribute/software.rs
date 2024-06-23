@@ -102,6 +102,7 @@ mod tests {
         init();
         let software = Software::new("software").unwrap();
         assert_eq!(software.software(), "software");
+        assert_eq!(software.length() as usize, "software".len());
         let raw: RawAttribute = software.into();
         assert_eq!(raw.get_type(), Software::TYPE);
         let software2 = Software::try_from(&raw).unwrap();
