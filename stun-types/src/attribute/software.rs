@@ -24,12 +24,12 @@ impl Attribute for Software {
         self.software.len() as u16
     }
 }
-impl From<Software> for RawAttribute {
-    fn from(value: Software) -> RawAttribute {
+impl<'a> From<&'a Software> for RawAttribute<'a> {
+    fn from(value: &'a Software) -> RawAttribute<'a> {
         RawAttribute::new(Software::TYPE, value.software.as_bytes())
     }
 }
-impl TryFrom<&RawAttribute> for Software {
+impl<'a> TryFrom<&RawAttribute<'a>> for Software {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -104,7 +104,7 @@ mod tests {
         let software = Software::new("software").unwrap();
         assert_eq!(software.software(), "software");
         assert_eq!(software.length() as usize, "software".len());
-        let raw: RawAttribute = software.into();
+        let raw = RawAttribute::from(&software);
         assert_eq!(raw.get_type(), Software::TYPE);
         let software2 = Software::try_from(&raw).unwrap();
         assert_eq!(software2.software(), "software");
@@ -121,7 +121,7 @@ mod tests {
     fn software_not_utf8() {
         init();
         let attr = Software::new("software").unwrap();
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
         data[6] = 0x88;
         assert!(matches!(

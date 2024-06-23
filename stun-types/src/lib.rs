@@ -29,6 +29,7 @@ use std::error::Error;
 use std::str::FromStr;
 
 pub mod attribute;
+pub mod data;
 pub mod message;
 
 /// The transport family

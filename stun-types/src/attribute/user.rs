@@ -24,12 +24,12 @@ impl Attribute for Username {
         self.user.len() as u16
     }
 }
-impl From<Username> for RawAttribute {
-    fn from(value: Username) -> RawAttribute {
+impl<'a> From<&'a Username> for RawAttribute<'a> {
+    fn from(value: &'a Username) -> RawAttribute<'a> {
         RawAttribute::new(Username::TYPE, value.user.as_bytes())
     }
 }
-impl TryFrom<&RawAttribute> for Username {
+impl<'a> TryFrom<&RawAttribute<'a>> for Username {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -104,13 +104,13 @@ impl Attribute for Userhash {
         32
     }
 }
-impl From<Userhash> for RawAttribute {
-    fn from(value: Userhash) -> RawAttribute {
+impl<'a> From<&'a Userhash> for RawAttribute<'a> {
+    fn from(value: &'a Userhash) -> RawAttribute<'a> {
         RawAttribute::new(Userhash::TYPE, &value.hash)
     }
 }
 
-impl TryFrom<&RawAttribute> for Userhash {
+impl<'a> TryFrom<&RawAttribute<'a>> for Userhash {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -191,7 +191,7 @@ mod tests {
         let user = Username::new(s).unwrap();
         assert_eq!(user.username(), s);
         assert_eq!(user.length() as usize, s.len());
-        let raw: RawAttribute = user.into();
+        let raw = RawAttribute::from(&user);
         assert_eq!(raw.get_type(), Username::TYPE);
         let user2 = Username::try_from(&raw).unwrap();
         assert_eq!(user2.username(), s);
@@ -208,7 +208,7 @@ mod tests {
     fn username_not_utf8() {
         init();
         let attr = Username::new("user").unwrap();
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
         data[6] = 0x88;
         assert!(matches!(
@@ -241,7 +241,7 @@ mod tests {
         let attr = Userhash::new(hash);
         assert_eq!(attr.hash(), &hash);
         assert_eq!(attr.length(), 32);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), Userhash::TYPE);
         let mapped2 = Userhash::try_from(&raw).unwrap();
         assert_eq!(mapped2.hash(), &hash);

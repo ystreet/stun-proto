@@ -29,8 +29,7 @@ fuzz_target!(|data_and_credentials: DataAndCredentials| {
     debug_init();
     let msg = Message::from_bytes(data_and_credentials.data);
     debug!("generated {:?}", msg);
-    let integrity_result = msg.and_then(|msg| {
-        msg.validate_integrity(data_and_credentials.data, &data_and_credentials.credentials)
-    });
+    let integrity_result =
+        msg.and_then(|msg| msg.validate_integrity(&data_and_credentials.credentials));
     debug!("integrity result {:?}", integrity_result);
 });

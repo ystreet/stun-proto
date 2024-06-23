@@ -25,12 +25,12 @@ impl Attribute for Nonce {
         self.nonce.len() as u16
     }
 }
-impl From<Nonce> for RawAttribute {
-    fn from(value: Nonce) -> RawAttribute {
+impl<'a> From<&'a Nonce> for RawAttribute<'a> {
+    fn from(value: &'a Nonce) -> RawAttribute<'a> {
         RawAttribute::new(Nonce::TYPE, value.nonce.as_bytes())
     }
 }
-impl TryFrom<&RawAttribute> for Nonce {
+impl<'a> TryFrom<&RawAttribute<'a>> for Nonce {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -100,7 +100,7 @@ mod tests {
         let attr = Nonce::new("nonce").unwrap();
         assert_eq!(attr.nonce(), "nonce");
         assert_eq!(attr.length() as usize, "nonce".len());
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), Nonce::TYPE);
         let mapped2 = Nonce::try_from(&raw).unwrap();
         assert_eq!(mapped2.nonce(), "nonce");
@@ -117,7 +117,7 @@ mod tests {
     fn nonce_not_utf8() {
         init();
         let attr = Nonce::new("nonce").unwrap();
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
         data[6] = 0x88;
         assert!(matches!(

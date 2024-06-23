@@ -25,20 +25,20 @@ impl Attribute for Fingerprint {
         4
     }
 }
-impl From<Fingerprint> for RawAttribute {
-    fn from(value: Fingerprint) -> RawAttribute {
+impl<'a> From<&Fingerprint> for RawAttribute<'a> {
+    fn from(value: &Fingerprint) -> RawAttribute<'a> {
         let buf = bytewise_xor!(4, value.fingerprint, Fingerprint::XOR_CONSTANT, 0);
-        RawAttribute::new(Fingerprint::TYPE, &buf)
+        RawAttribute::new(Fingerprint::TYPE, &buf).into_owned()
     }
 }
-impl TryFrom<&RawAttribute> for Fingerprint {
+impl<'a> TryFrom<&RawAttribute<'a>> for Fingerprint {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
         raw.check_type_and_len(Self::TYPE, 4..=4)?;
         // sized checked earlier
-        let boxed: Box<[u8; 4]> = raw.value.clone().into_boxed_slice().try_into().unwrap();
-        let fingerprint = bytewise_xor!(4, *boxed, Fingerprint::XOR_CONSTANT, 0);
+        let boxed: [u8; 4] = (&*raw.value).try_into().unwrap();
+        let fingerprint = bytewise_xor!(4, boxed, Fingerprint::XOR_CONSTANT, 0);
         Ok(Self { fingerprint })
     }
 }
@@ -115,7 +115,7 @@ mod tests {
         let attr = Fingerprint::new(val);
         assert_eq!(attr.fingerprint(), &val);
         assert_eq!(attr.length(), 4);
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), Fingerprint::TYPE);
         let mapped2 = Fingerprint::try_from(&raw).unwrap();
         assert_eq!(mapped2.fingerprint(), &val);

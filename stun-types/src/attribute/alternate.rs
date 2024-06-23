@@ -27,13 +27,13 @@ impl Attribute for AlternateServer {
     }
 }
 
-impl From<AlternateServer> for RawAttribute {
-    fn from(value: AlternateServer) -> RawAttribute {
+impl<'a> From<&AlternateServer> for RawAttribute<'a> {
+    fn from(value: &AlternateServer) -> RawAttribute<'a> {
         value.addr.to_raw(AlternateServer::TYPE)
     }
 }
 
-impl TryFrom<&RawAttribute> for AlternateServer {
+impl<'a> TryFrom<&RawAttribute<'a>> for AlternateServer {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -94,7 +94,7 @@ impl Attribute for AlternateDomain {
         self.domain.len() as u16
     }
 }
-impl TryFrom<&RawAttribute> for AlternateDomain {
+impl<'a> TryFrom<&RawAttribute<'a>> for AlternateDomain {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -107,9 +107,9 @@ impl TryFrom<&RawAttribute> for AlternateDomain {
         })
     }
 }
-impl From<AlternateDomain> for RawAttribute {
-    fn from(value: AlternateDomain) -> RawAttribute {
-        RawAttribute::new(AlternateDomain::TYPE, value.domain.as_bytes())
+impl<'a> From<&AlternateDomain> for RawAttribute<'a> {
+    fn from(value: &AlternateDomain) -> RawAttribute<'a> {
+        RawAttribute::new(AlternateDomain::TYPE, value.domain.as_bytes()).into_owned()
     }
 }
 
@@ -174,7 +174,7 @@ mod tests {
                 SocketAddr::V4(_) => assert_eq!(mapped.length(), 8),
                 SocketAddr::V6(_) => assert_eq!(mapped.length(), 20),
             }
-            let raw: RawAttribute = mapped.into();
+            let raw = RawAttribute::from(&mapped);
             assert_eq!(raw.get_type(), AlternateServer::TYPE);
             let mapped2 = AlternateServer::try_from(&raw).unwrap();
             assert_eq!(mapped2.server(), *addr);
@@ -184,7 +184,7 @@ mod tests {
             BigEndian::write_u16(&mut data[2..4], len as u16 - 4 - 1);
             assert!(matches!(
                 AlternateServer::try_from(
-                    &RawAttribute::try_from(data[..len - 1].as_ref()).unwrap()
+                    &RawAttribute::from_bytes(data[..len - 1].as_ref()).unwrap()
                 ),
                 Err(StunParseError::Truncated {
                     expected: _,
@@ -208,7 +208,7 @@ mod tests {
         let attr = AlternateDomain::new(dns);
         assert_eq!(attr.domain(), dns);
         assert_eq!(attr.length() as usize, dns.len());
-        let raw: RawAttribute = attr.into();
+        let raw = RawAttribute::from(&attr);
         assert_eq!(raw.get_type(), AlternateDomain::TYPE);
         let mapped2 = AlternateDomain::try_from(&raw).unwrap();
         assert_eq!(mapped2.domain(), dns);

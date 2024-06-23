@@ -25,6 +25,7 @@ use std::collections::{HashMap, HashSet};
 use byteorder::{BigEndian, ByteOrder};
 
 use stun_types::attribute::*;
+use stun_types::data::Data;
 use stun_types::message::*;
 
 use crate::DebugWrapper;
@@ -46,7 +47,6 @@ pub struct StunAgent {
     outstanding_requests: HashMap<TransactionId, StunRequestState>,
     local_credentials: Option<MessageIntegrityCredentials>,
     remote_credentials: Option<MessageIntegrityCredentials>,
-    tcp_buffer: Option<TcpBuffer>,
 }
 
 /// Builder struct for a [`StunAgent`]
@@ -66,10 +66,6 @@ impl StunAgentBuilder {
     /// Build the [`StunAgent`]
     pub fn build(self) -> StunAgent {
         let id = STUN_AGENT_COUNT.fetch_add(1, Ordering::SeqCst);
-        let tcp_buffer = match self.transport {
-            TransportType::Udp => None,
-            TransportType::Tcp => Some(TcpBuffer::new()),
-        };
         StunAgent {
             id,
             transport: self.transport,
@@ -79,7 +75,6 @@ impl StunAgentBuilder {
             outstanding_requests: Default::default(),
             local_credentials: None,
             remote_credentials: None,
-            tcp_buffer,
         }
     }
 }
@@ -137,8 +132,11 @@ impl StunAgent {
     /// Perform any operations needed to be able to send a [`Message`] to a peer.
     ///
     /// If a request message is successfully sent, then [`StunAgent::poll`] needs to be called.
-    pub fn send(&mut self, msg: Message, to: SocketAddr) -> Result<Transmit<'_>, StunError> {
-        let data = msg.to_bytes();
+    pub fn send(
+        &mut self,
+        msg: MessageBuilder<'_>,
+        to: SocketAddr,
+    ) -> Result<Transmit<'_>, StunError> {
         if msg.has_class(MessageClass::Request) {
             if self
                 .outstanding_requests
@@ -155,78 +153,18 @@ impl StunAgent {
             self.outstanding_requests.insert(transaction_id, state);
             return Ok(transmit);
         }
+        let data = msg.build();
         Ok(self.send_data(&data, to).into_owned())
     }
 
-    fn parse_chunk(
-        &mut self,
-        data: &[u8],
-        from: SocketAddr,
-    ) -> Result<Option<HandleStunReply>, StunError> {
-        match Message::from_bytes(data) {
-            Ok(stun_msg) => {
-                debug!("received stun {}", stun_msg);
-                self.handle_stun(stun_msg, data, from)
-            }
-            Err(_) => {
-                let peer_validated = { self.validated_peers.contains(&from) };
-                if peer_validated {
-                    Ok(Some(HandleStunReply::Data(data.to_vec())))
-                } else if self.transport == TransportType::Tcp {
-                    // close the tcp channel
-                    warn!("stun message not the first message sent over TCP channel, closing");
-                    Err(StunError::ProtocolViolation)
-                } else {
-                    trace!("dropping unvalidated data from peer");
-                    Ok(None)
-                }
-            }
-        }
-    }
-
-    /// Provide data received on a socket from a peer for handling by the [`StunAgent`].
-    /// The returned value indicates what the caller must do with the data.
+    /// Returns whether this agent has received or send a STUN message to this peer. Failure may
+    /// be the result of an attacker and the caller must drop any non-STUN data received before this
+    /// functions returns `true`.
     ///
-    /// If this function returns [`HandleStunReply::StunResponse`], then this agent needs to be
-    /// `poll()`ed again.
-    #[tracing::instrument(
-        name = "stun_incoming_data"
-        level = "info",
-        skip(self, data),
-        fields(
-            stun_id = self.id,
-            to = ?self.local_addr()
-        )
-    )]
-    pub fn handle_incoming_data(
-        &mut self,
-        data: &[u8],
-        from: SocketAddr,
-    ) -> Result<Vec<HandleStunReply>, StunError> {
-        match self.transport {
-            TransportType::Udp => {
-                if let Some(reply) = self.parse_chunk(data, from)? {
-                    Ok(vec![reply])
-                } else {
-                    Ok(vec![])
-                }
-            }
-            TransportType::Tcp => {
-                let mut ret = vec![];
-                let tcp = self.tcp_buffer.as_mut().unwrap();
-                tcp.push_data(data);
-                let mut datas = vec![];
-                while let Some(data) = tcp.pull_data() {
-                    datas.push(data);
-                }
-                for data in datas {
-                    if let Some(reply) = self.parse_chunk(&data, from)? {
-                        ret.push(reply);
-                    }
-                }
-                Ok(ret)
-            }
-        }
+    /// If non-STUN data is received over a TCP connection from an unvalidated peer, the caller
+    /// must immediately close the TCP connection.
+    pub fn is_validated_peer(&self, remote_addr: SocketAddr) -> bool {
+        self.validated_peers.contains(&remote_addr)
     }
 
     #[tracing::instrument(
@@ -241,53 +179,53 @@ impl StunAgent {
         }
     }
 
+    /// Provide data received on a socket from a peer for handling by the [`StunAgent`].
+    /// The returned value indicates what the caller must do with the data.
+    ///
+    /// If this function returns [`HandleStunReply::StunResponse`], then this agent needs to be
+    /// `poll()`ed again.
     #[tracing::instrument(
         name = "stun_handle_message"
-        skip(self, msg, orig_data, from),
+        skip(self, msg, from),
         fields(
             transaction_id = %msg.transaction_id(),
         )
     )]
-    fn handle_stun(
-        &mut self,
-        msg: Message,
-        orig_data: &[u8],
-        from: SocketAddr,
-    ) -> Result<Option<HandleStunReply>, StunError> {
+    pub fn handle_stun<'a>(&mut self, msg: Message<'a>, from: SocketAddr) -> HandleStunReply<'a> {
         if msg.is_response() {
             let Some(request) = self.take_outstanding_request(&msg.transaction_id()) else {
                 trace!("original request disappeared -> ignoring response");
-                return Ok(None);
+                return HandleStunReply::Drop;
             };
             // only validate response if the original request had credentials
-            if request.msg.has_attribute(MessageIntegrity::TYPE) {
+            if request.request_had_credentials {
                 if let Some(remote_creds) = &self.remote_credentials {
-                    match msg.validate_integrity(orig_data, remote_creds) {
+                    match msg.validate_integrity(remote_creds) {
                         Ok(_) => {
                             self.validated_peer(from);
-                            Ok(Some(HandleStunReply::StunResponse(request.msg, msg)))
+                            HandleStunReply::StunResponse(msg)
                         }
                         Err(e) => {
                             debug!("message failed integrity check: {:?}", e);
                             self.outstanding_requests
                                 .insert(msg.transaction_id(), request);
-                            Ok(None)
+                            HandleStunReply::Drop
                         }
                     }
                 } else {
                     debug!("no remote credentials, ignoring");
                     self.outstanding_requests
                         .insert(msg.transaction_id(), request);
-                    Ok(None)
+                    HandleStunReply::Drop
                 }
             } else {
                 // original message didn't have integrity, reply doesn't need to either
                 self.validated_peer(from);
-                Ok(Some(HandleStunReply::StunResponse(request.msg, msg)))
+                HandleStunReply::StunResponse(msg)
             }
         } else {
             self.validated_peer(from);
-            Ok(Some(HandleStunReply::IncomingStun(msg)))
+            HandleStunReply::IncomingStun(msg)
         }
     }
 
@@ -363,7 +301,7 @@ impl StunAgent {
         let mut timeout = None;
         let mut cancelled = None;
         for request in self.outstanding_requests.values_mut() {
-            let transaction_id = request.msg.transaction_id();
+            let transaction_id = request.transaction_id;
             match request.poll(now) {
                 StunRequestPollRet::Cancelled => {
                     cancelled = Some(transaction_id);
@@ -384,13 +322,13 @@ impl StunAgent {
             }
         }
         if let Some(transaction) = timeout {
-            if let Some(state) = self.outstanding_requests.remove(&transaction) {
-                return StunAgentPollRet::TransactionTimedOut(state.msg);
+            if let Some(_state) = self.outstanding_requests.remove(&transaction) {
+                return StunAgentPollRet::TransactionTimedOut(transaction);
             }
         }
         if let Some(transaction) = cancelled {
-            if let Some(state) = self.outstanding_requests.remove(&transaction) {
-                return StunAgentPollRet::TransactionCancelled(state.msg);
+            if let Some(_state) = self.outstanding_requests.remove(&transaction) {
+                return StunAgentPollRet::TransactionCancelled(transaction);
             }
         }
         StunAgentPollRet::WaitUntil(lowest_wait)
@@ -401,9 +339,9 @@ impl StunAgent {
 #[derive(Debug)]
 pub enum StunAgentPollRet<'a> {
     /// An oustanding transaction timed out and has been removed from the agent.
-    TransactionTimedOut(Message),
+    TransactionTimedOut(TransactionId),
     /// An oustanding transaction was cancelled and has been removed from the agent.
-    TransactionCancelled(Message),
+    TransactionCancelled(TransactionId),
     /// Send data using the specified 5-tuple
     SendData(Transmit<'a>),
     /// Wait until the specified time has passed
@@ -423,23 +361,29 @@ fn send_data(transport: TransportType, bytes: &[u8], from: SocketAddr, to: Socke
     }
 }
 
+/// A buffer object for handling STUN data received over a TCP connection that requires framing as
+/// specified in RFC 4571.  This framing is required for ICE usage of TCP candidates.
 #[derive(Debug)]
-struct TcpBuffer {
+pub struct TcpBuffer {
     buf: DebugWrapper<Vec<u8>>,
 }
 
 impl TcpBuffer {
-    fn new() -> Self {
+    /// Construct a new [`TcpBuffer`]
+    pub fn new() -> Self {
         Self {
             buf: DebugWrapper::wrap(vec![], "..."),
         }
     }
 
-    fn push_data(&mut self, data: &[u8]) {
+    /// Push a chunk of received data into the buffer.
+    pub fn push_data(&mut self, data: &[u8]) {
         self.buf.extend(data);
     }
 
-    fn pull_data(&mut self) -> Option<Vec<u8>> {
+    /// Pull the next chunk of data from the buffer.  If no buffer is available, then None is
+    /// returned.
+    pub fn pull_data(&mut self) -> Option<Vec<u8>> {
         if self.buf.len() < 2 {
             trace!(
                 "running buffer is currently too small ({} bytes) to provide data",
@@ -474,105 +418,9 @@ impl TcpBuffer {
     }
 }
 
-/// A slice of data
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct DataSlice<'a>(&'a [u8]);
-
-impl<'a> DataSlice<'a> {
-    pub fn take(self) -> &'a [u8] {
-        self.0
-    }
-
-    pub fn to_owned(&self) -> DataOwned {
-        DataOwned(self.0.into())
-    }
-}
-
-impl<'a> std::ops::Deref for DataSlice<'a> {
-    type Target = [u8];
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-impl<'a> From<DataSlice<'a>> for &'a [u8] {
-    fn from(value: DataSlice<'a>) -> Self {
-        value.0
-    }
-}
-
-impl<'a> From<&'a [u8]> for DataSlice<'a> {
-    fn from(value: &'a [u8]) -> Self {
-        Self(value)
-    }
-}
-
-/// An owned piece of data
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct DataOwned(Box<[u8]>);
-
-impl DataOwned {
-    pub fn take(self) -> Box<[u8]> {
-        self.0
-    }
-}
-
-impl std::ops::Deref for DataOwned {
-    type Target = [u8];
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<DataOwned> for Box<[u8]> {
-    fn from(value: DataOwned) -> Self {
-        value.0
-    }
-}
-
-impl From<Box<[u8]>> for DataOwned {
-    fn from(value: Box<[u8]>) -> Self {
-        Self(value)
-    }
-}
-
-/// An owned or borrowed piece of data
-#[derive(Debug)]
-pub enum Data<'a> {
-    Borrowed(DataSlice<'a>),
-    Owned(DataOwned),
-}
-
-impl<'a> std::ops::Deref for Data<'a> {
-    type Target = [u8];
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Borrowed(data) => data.0,
-            Self::Owned(data) => &data.0,
-        }
-    }
-}
-
-impl<'a> Data<'a> {
-    fn into_owned<'b>(self) -> Data<'b> {
-        match self {
-            Self::Borrowed(data) => Data::Owned(data.to_owned()),
-            Self::Owned(data) => Data::Owned(data),
-        }
-    }
-}
-
-impl<'a> From<&'a [u8]> for Data<'a> {
-    fn from(value: &'a [u8]) -> Self {
-        Self::Borrowed(value.into())
-    }
-}
-
-impl<'a> From<Box<[u8]>> for Data<'a> {
-    fn from(value: Box<[u8]>) -> Self {
-        Self::Owned(value.into())
+impl Default for TcpBuffer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -590,6 +438,7 @@ pub struct Transmit<'a> {
 }
 
 impl<'a> Transmit<'a> {
+    /// Construct a new [`Transmit`] with the specifid data and 5-tuple.
     pub fn new(
         data: impl Into<Data<'a>>,
         transport: TransportType,
@@ -604,6 +453,7 @@ impl<'a> Transmit<'a> {
         }
     }
 
+    /// Construct a new [`Transmit`] with the specifid 5-tuple and data converted to owned.
     pub fn new_owned(
         data: impl Into<Data<'a>>,
         transport: TransportType,
@@ -618,6 +468,7 @@ impl<'a> Transmit<'a> {
         }
     }
 
+    /// Consume this [`Transmit`] and produce and owned version.
     pub fn into_owned<'b>(self) -> Transmit<'b> {
         Transmit {
             data: self.data.into_owned(),
@@ -651,7 +502,8 @@ enum StunRequestPollRet<'a> {
 
 #[derive(Debug)]
 struct StunRequestState {
-    msg: Message,
+    transaction_id: TransactionId,
+    request_had_credentials: bool,
     bytes: Vec<u8>,
     transport: TransportType,
     from: SocketAddr,
@@ -664,19 +516,26 @@ struct StunRequestState {
 }
 
 impl StunRequestState {
-    fn new(request: Message, transport: TransportType, from: SocketAddr, to: SocketAddr) -> Self {
-        let data = request.to_bytes();
+    fn new(
+        request: MessageBuilder<'_>,
+        transport: TransportType,
+        from: SocketAddr,
+        to: SocketAddr,
+    ) -> Self {
+        let data = request.build();
         let timeouts_ms = if transport == TransportType::Tcp {
             vec![39500]
         } else {
             vec![500, 1000, 2000, 4000, 8000, 16000]
         };
         Self {
-            msg: request,
+            transaction_id: request.transaction_id(),
             bytes: data,
             transport,
             from,
             to,
+            request_had_credentials: request.has_attribute(MessageIntegrity::TYPE)
+                || request.has_attribute(MessageIntegritySha256::TYPE),
             timeouts_ms,
             timeout_i: 0,
             recv_cancelled: false,
@@ -690,7 +549,7 @@ impl StunRequestState {
         level = "info",
         ret,
         skip(self),
-        fields(transaction_id = %self.msg.transaction_id()),
+        fields(transaction_id = %self.transaction_id),
     )]
     fn poll(&mut self, now: Instant) -> StunRequestPollRet {
         if self.recv_cancelled {
@@ -726,12 +585,6 @@ pub struct StunRequest<'a> {
 }
 
 impl<'a> StunRequest<'a> {
-    /// The request [`Message`]
-    pub fn request(&self) -> &Message {
-        let state = self.agent.request_state(self.transaction_id).unwrap();
-        &state.msg
-    }
-
     /// The remote address the request is sent to
     pub fn peer_address(&self) -> SocketAddr {
         let state = self.agent.request_state(self.transaction_id).unwrap();
@@ -747,12 +600,6 @@ pub struct StunRequestMut<'a> {
 }
 
 impl<'a> StunRequestMut<'a> {
-    /// The request [`Message`]
-    pub fn request(&self) -> &Message {
-        let state = self.agent.request_state(self.transaction_id).unwrap();
-        &state.msg
-    }
-
     /// The remote address the request is sent to
     pub fn peer_address(&self) -> SocketAddr {
         let state = self.agent.request_state(self.transaction_id).unwrap();
@@ -787,13 +634,13 @@ impl<'a> StunRequestMut<'a> {
 
 /// Return value when handling possible STUN data
 #[derive(Debug)]
-pub enum HandleStunReply {
+pub enum HandleStunReply<'a> {
     /// The provided data could be parsed as a response to an outstanding request
-    StunResponse(Message, Message),
+    StunResponse(Message<'a>),
     /// The provided data could be parsed as a STUN message
-    IncomingStun(Message),
-    /// The provided data could not be parsed as a STUN message
-    Data(Vec<u8>),
+    IncomingStun(Message<'a>),
+    /// Drop this message.
+    Drop,
 }
 
 /// STUN errors
@@ -875,7 +722,7 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
-        let msg = Message::new_request(BINDING);
+        let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let transmit = agent.send(msg, remote_addr).unwrap();
         let now = Instant::now();
@@ -883,10 +730,11 @@ pub(crate) mod tests {
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
         let request = Message::from_bytes(&transmit.data).unwrap();
-        let response = Message::new_error(&request);
-        let resp_data = response.to_bytes();
-        let ret = agent.handle_incoming_data(&resp_data, remote_addr).unwrap();
-        assert!(matches!(ret[0], HandleStunReply::StunResponse(_, _)));
+        let response = Message::builder_error(&request);
+        let resp_data = response.build();
+        let response = Message::from_bytes(&resp_data).unwrap();
+        let ret = agent.handle_stun(response, remote_addr);
+        assert!(matches!(ret, HandleStunReply::StunResponse(_)));
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
 
@@ -903,7 +751,7 @@ pub(crate) mod tests {
             .remote_addr(remote_addr)
             .build();
         let transaction_id = TransactionId::generate();
-        let msg = Message::new(
+        let msg = Message::builder(
             MessageType::from_class_method(MessageClass::Indication, BINDING),
             transaction_id,
         );
@@ -915,14 +763,15 @@ pub(crate) mod tests {
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
         // you should definitely never do this ;). Indications should never get replies.
-        let response = Message::new(
+        let response = Message::builder(
             MessageType::from_class_method(MessageClass::Error, BINDING),
             transaction_id,
         );
-        let resp_data = response.to_bytes();
+        let resp_data = response.build();
+        let response = Message::from_bytes(&resp_data).unwrap();
         // response without a request is dropped.
-        let ret = agent.handle_incoming_data(&resp_data, remote_addr).unwrap();
-        assert!(ret.is_empty());
+        let ret = agent.handle_stun(response, remote_addr);
+        assert!(matches!(ret, HandleStunReply::Drop));
     }
 
     #[test]
@@ -938,21 +787,22 @@ pub(crate) mod tests {
         agent.set_remote_credentials(remote_credentials.clone().into());
 
         // unvalidated peer data should be dropped
-        let data = vec![20; 4];
-        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        assert!(replies.is_empty());
+        assert!(!agent.is_validated_peer(remote_addr));
 
-        let mut msg = Message::new_request(BINDING);
+        let mut msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
+        println!("send");
         let transmit = agent.send(msg, remote_addr).unwrap();
+        println!("sent");
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::new_success(&request);
+        println!("generate response");
+        let mut response = Message::builder_success(&request);
         response
-            .add_attribute(XorMappedAddress::new(
+            .add_attribute(&XorMappedAddress::new(
                 transmit.from,
                 request.transaction_id(),
             ))
@@ -960,25 +810,22 @@ pub(crate) mod tests {
         response
             .add_message_integrity(&remote_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
+        println!("{response:?}");
 
-        let data = response.to_bytes();
+        let data = response.build();
+        println!("{data:?}");
         let to = transmit.to;
-        let mut reply = agent.handle_incoming_data(&data, to).unwrap();
-        let HandleStunReply::StunResponse(request, response) = reply.remove(0) else {
+        let response = Message::from_bytes(&data).unwrap();
+        println!("{response}");
+        let reply = agent.handle_stun(response, to);
+        let HandleStunReply::StunResponse(response) = reply else {
             unreachable!();
         };
 
-        assert_eq!(request.transaction_id(), transaction_id);
         assert_eq!(response.transaction_id(), transaction_id);
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
-
-        let data = vec![20; 4];
-        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        let HandleStunReply::Data(received) = replies.remove(0) else {
-            unreachable!();
-        };
-        assert_eq!(data, received);
+        assert!(agent.is_validated_peer(remote_addr));
     }
 
     #[test]
@@ -989,7 +836,7 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
-        let msg = Message::new_request(BINDING);
+        let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         agent.send(msg, remote_addr).unwrap();
         let mut now = Instant::now();
@@ -1007,9 +854,7 @@ pub(crate) mod tests {
         assert!(agent.mut_request_transaction(transaction_id).is_none());
 
         // unvalidated peer data should be dropped
-        let data = vec![20; 4];
-        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        assert!(replies.is_empty());
+        assert!(!agent.is_validated_peer(remote_addr));
     }
 
     #[test]
@@ -1021,44 +866,32 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
         // unvalidated peer data should be dropped
-        let data = vec![20; 4];
-        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        assert!(replies.is_empty());
+        assert!(!agent.is_validated_peer(remote_addr));
 
-        let msg = Message::new_request(BINDING);
+        let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let transmit = agent.send(msg, remote_addr).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::new_success(&request);
+        let mut response = Message::builder_success(&request);
         response
-            .add_attribute(XorMappedAddress::new(
+            .add_attribute(&XorMappedAddress::new(
                 transmit.from,
                 request.transaction_id(),
             ))
             .unwrap();
 
-        let data = response.to_bytes();
+        let data = response.build();
         let to = transmit.to;
-        let reply = agent.handle_incoming_data(&data, to).unwrap();
+        trace!("data: {data:?}");
+        let response = Message::from_bytes(&data).unwrap();
+        let reply = agent.handle_stun(response, to);
 
-        assert!(matches!(reply[0], HandleStunReply::StunResponse(_, _)));
+        assert!(matches!(reply, HandleStunReply::StunResponse(_)));
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
-
-        let data = vec![42; 8];
-        let transmit = agent.send_data(&data, remote_addr);
-        assert_eq!(transmit.data(), &data);
-        assert_eq!(transmit.from, local_addr);
-        assert_eq!(transmit.to, remote_addr);
-
-        let data = vec![20; 4];
-        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        let HandleStunReply::Data(received) = replies.remove(0) else {
-            unreachable!();
-        };
-        assert_eq!(data, received);
+        assert!(agent.is_validated_peer(remote_addr));
     }
 
     #[test]
@@ -1073,7 +906,7 @@ pub(crate) mod tests {
         agent.set_local_credentials(local_credentials.clone().into());
         agent.set_remote_credentials(remote_credentials.clone().into());
 
-        let mut msg = Message::new_request(BINDING);
+        let mut msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
@@ -1081,26 +914,25 @@ pub(crate) mod tests {
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::new_success(&request);
+        let mut response = Message::builder_success(&request);
         response
-            .add_attribute(XorMappedAddress::new(
+            .add_attribute(&XorMappedAddress::new(
                 transmit.from,
                 request.transaction_id(),
             ))
             .unwrap();
 
-        let data = response.to_bytes();
+        let data = response.build();
         let to = transmit.to;
-        let reply = agent.handle_incoming_data(&data, to).unwrap();
+        let response = Message::from_bytes(&data).unwrap();
+        let reply = agent.handle_stun(response, to);
         // reply is ignored as it does not have credentials
-        assert!(reply.is_empty());
+        assert!(matches!(reply, HandleStunReply::Drop));
         assert!(agent.request_transaction(transaction_id).is_some());
         assert!(agent.mut_request_transaction(transaction_id).is_some());
 
         // unvalidated peer data should be dropped
-        let data = vec![20; 4];
-        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        assert!(replies.is_empty());
+        assert!(!agent.is_validated_peer(remote_addr));
     }
 
     #[test]
@@ -1115,16 +947,16 @@ pub(crate) mod tests {
         agent.set_local_credentials(local_credentials.clone().into());
         agent.set_remote_credentials(remote_credentials.into());
 
-        let mut msg = Message::new_request(BINDING);
+        let mut msg = Message::builder_request(BINDING);
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent.send(msg, remote_addr).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::new_success(&request);
+        let mut response = Message::builder_success(&request);
         response
-            .add_attribute(XorMappedAddress::new(
+            .add_attribute(&XorMappedAddress::new(
                 transmit.from,
                 request.transaction_id(),
             ))
@@ -1134,16 +966,15 @@ pub(crate) mod tests {
             .add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
 
-        let data = response.to_bytes();
+        let data = response.build();
         let to = transmit.to;
-        let reply = agent.handle_incoming_data(&data, to).unwrap();
+        let response = Message::from_bytes(&data).unwrap();
+        let reply = agent.handle_stun(response, to);
         // reply is ignored as it does not have credentials
-        assert!(reply.is_empty());
+        assert!(matches!(reply, HandleStunReply::Drop));
 
         // unvalidated peer data should be dropped
-        let data = vec![20; 4];
-        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        assert!(replies.is_empty());
+        assert!(!agent.is_validated_peer(remote_addr));
     }
 
     #[test]
@@ -1153,126 +984,30 @@ pub(crate) mod tests {
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+        assert!(!agent.is_validated_peer(remote_addr));
 
-        // unvalidated peer data should be dropped
-        let data = vec![20; 4];
-        let replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        assert!(replies.is_empty());
-
-        let msg = Message::new_request(BINDING);
+        let msg = Message::builder_request(BINDING);
         let transmit = agent.send(msg, remote_addr).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::new_success(&request);
+        let mut response = Message::builder_success(&request);
         response
-            .add_attribute(XorMappedAddress::new(
+            .add_attribute(&XorMappedAddress::new(
                 transmit.from,
                 request.transaction_id(),
             ))
             .unwrap();
 
-        let data = response.to_bytes();
+        let data = response.build();
         let to = transmit.to;
-        let reply = agent.handle_incoming_data(&data, to).unwrap();
+        let response = Message::from_bytes(&data).unwrap();
+        let reply = agent.handle_stun(response, to);
+        assert!(matches!(reply, HandleStunReply::StunResponse(_)));
 
-        assert!(matches!(reply[0], HandleStunReply::StunResponse(_, _)));
-
-        let data = vec![42; 8];
-        let transmit = agent.send_data(&data, remote_addr);
-        assert_eq!(transmit.data(), &data);
-        assert_eq!(transmit.from, local_addr);
-        assert_eq!(transmit.to, remote_addr);
-
-        let data = vec![20; 4];
-        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        let HandleStunReply::Data(received) = replies.remove(0) else {
-            unreachable!();
-        };
-        assert_eq!(data, received);
-
-        let data = response.to_bytes();
-        let reply = agent.handle_incoming_data(&data, to).unwrap();
-        assert!(reply.is_empty());
-    }
-
-    #[test]
-    fn tcp_request() {
-        init();
-        let local_addr = "127.0.0.1:2000".parse().unwrap();
-        let remote_addr = "127.0.0.1:1000".parse().unwrap();
-        let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
-            .remote_addr(remote_addr)
-            .build();
-        let msg = Message::new_request(BINDING);
-        let transmit = agent.send(msg, remote_addr).unwrap();
-        let now = Instant::now();
-        assert_eq!(transmit.transport, TransportType::Tcp);
-        assert_eq!(transmit.from, local_addr);
-        assert_eq!(transmit.to, remote_addr);
-        let request = Message::from_bytes(&transmit.data[2..]).unwrap();
-        let response = Message::new_error(&request);
-        let resp_data = response.to_bytes();
-        let mut data = Vec::with_capacity(resp_data.len() + 2);
-        data.resize(2, 0);
-        BigEndian::write_u16(&mut data[..2], resp_data.len() as u16);
-        data.extend(resp_data);
-        let ret = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        assert!(matches!(ret[0], HandleStunReply::StunResponse(_, _)));
-
-        let ret = agent.poll(now);
-        assert!(matches!(ret, StunAgentPollRet::WaitUntil(_)));
-
-        let data = vec![42; 8];
-        let transmit = agent.send_data(&data, remote_addr);
-        assert_eq!(&transmit.data()[2..], &data);
-        assert_eq!(transmit.from, local_addr);
-        assert_eq!(transmit.to, remote_addr);
-
-        let data = vec![0, 2, 4, 8];
-        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        let HandleStunReply::Data(received) = replies.remove(0) else {
-            unreachable!();
-        };
-        assert_eq!(&data[2..], received);
-    }
-
-    #[test]
-    fn tcp_data_before_request() {
-        init();
-        let local_addr = "127.0.0.1:2000".parse().unwrap();
-        let remote_addr = "127.0.0.1:1000".parse().unwrap();
-        let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
-            .remote_addr(remote_addr)
-            .build();
-        let data = [0, 2, 42, 42];
-
-        assert!(matches!(
-            agent.handle_incoming_data(&data, remote_addr),
-            Err(StunError::ProtocolViolation)
-        ));
-    }
-
-    #[test]
-    fn tcp_split_recv() {
-        init();
-        let local_addr = "127.0.0.1:2000".parse().unwrap();
-        let remote_addr = "127.0.0.1:1000".parse().unwrap();
-        let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
-            .remote_addr(remote_addr)
-            .build();
-        let msg = Message::new_request(BINDING);
-
-        let msg_data = msg.to_bytes();
-        let mut data = Vec::with_capacity(msg_data.len() + 2);
-        data.resize(2, 0);
-        BigEndian::write_u16(&mut data[..2], msg_data.len() as u16);
-        data.extend(msg_data);
-
-        let ret = agent.handle_incoming_data(&data[..8], remote_addr).unwrap();
-        assert!(ret.is_empty());
-        let ret = agent.handle_incoming_data(&data[8..], remote_addr).unwrap();
-        assert!(matches!(ret[0], HandleStunReply::IncomingStun(_)));
+        let response = Message::from_bytes(&data).unwrap();
+        let reply = agent.handle_stun(response, to);
+        assert!(matches!(reply, HandleStunReply::Drop));
     }
 
     #[test]
@@ -1282,24 +1017,24 @@ pub(crate) mod tests {
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
-        let msg = Message::new_request(BINDING);
+        let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let _transmit = agent.send(msg, remote_addr).unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
-        assert_eq!(request.request().transaction_id(), transaction_id);
         assert_eq!(request.agent().local_addr(), local_addr);
         assert_eq!(request.mut_agent().local_addr(), local_addr);
         assert_eq!(request.peer_address(), remote_addr);
         request.cancel();
 
         let ret = agent.poll(Instant::now());
-        let StunAgentPollRet::TransactionCancelled(request) = ret else {
+        let StunAgentPollRet::TransactionCancelled(_request) = ret else {
             unreachable!();
         };
-        assert_eq!(request.transaction_id(), transaction_id);
+        assert_eq!(transaction_id, transaction_id);
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
+        assert!(!agent.is_validated_peer(remote_addr));
     }
 
     #[test]
@@ -1309,12 +1044,11 @@ pub(crate) mod tests {
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
-        let msg = Message::new_request(BINDING);
+        let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let _transmit = agent.send(msg, remote_addr).unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
-        assert_eq!(request.request().transaction_id(), transaction_id);
         assert_eq!(request.agent().local_addr(), local_addr);
         assert_eq!(request.mut_agent().local_addr(), local_addr);
         assert_eq!(request.peer_address(), remote_addr);
@@ -1332,6 +1066,7 @@ pub(crate) mod tests {
         }
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
+        assert!(!agent.is_validated_peer(remote_addr));
     }
 
     #[test]
@@ -1341,14 +1076,15 @@ pub(crate) mod tests {
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
-        let msg = Message::new_request(BINDING);
+        let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let transmit = agent.send(msg.clone(), remote_addr).unwrap();
         let to = transmit.to;
+        let request = Message::from_bytes(transmit.data()).unwrap();
 
-        let mut response = Message::new_success(&msg);
+        let mut response = Message::builder_success(&request);
         response
-            .add_attribute(XorMappedAddress::new(transmit.from, transaction_id))
+            .add_attribute(&XorMappedAddress::new(transmit.from, transaction_id))
             .unwrap();
 
         assert!(matches!(
@@ -1358,24 +1094,17 @@ pub(crate) mod tests {
 
         // the original transaction should still exist
         let request = agent.request_transaction(transaction_id).unwrap();
-        assert_eq!(request.request().transaction_id(), transaction_id);
         assert_eq!(request.peer_address(), remote_addr);
 
-        let data = response.to_bytes();
-        let mut reply = agent.handle_incoming_data(&data, to).unwrap();
+        let data = response.build();
+        let response = Message::from_bytes(&data).unwrap();
+        let reply = agent.handle_stun(response, to);
 
-        let HandleStunReply::StunResponse(request, response) = reply.remove(0) else {
+        let HandleStunReply::StunResponse(response) = reply else {
             unreachable!();
         };
-        assert_eq!(request.transaction_id(), transaction_id);
         assert_eq!(response.transaction_id(), transaction_id);
-
-        let data = vec![20; 4];
-        let mut replies = agent.handle_incoming_data(&data, remote_addr).unwrap();
-        let HandleStunReply::Data(received) = replies.remove(0) else {
-            unreachable!();
-        };
-        assert_eq!(data, received);
+        assert!(agent.is_validated_peer(to));
     }
 
     #[test]
@@ -1385,33 +1114,50 @@ pub(crate) mod tests {
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
-        let msg = Message::new_request(BINDING);
-        let data = msg.to_bytes();
-        let HandleStunReply::IncomingStun(request) = agent
-            .handle_incoming_data(&data, remote_addr)
-            .unwrap()
-            .remove(0)
-        else {
+        let msg = Message::builder_request(BINDING);
+        let data = msg.build();
+        let stun = Message::from_bytes(&data).unwrap();
+        println!("{stun:?}");
+        let HandleStunReply::IncomingStun(request) = agent.handle_stun(stun, remote_addr) else {
             unreachable!()
         };
         assert_eq!(msg.transaction_id(), request.transaction_id());
+        assert!(agent.is_validated_peer(remote_addr));
     }
 
     #[test]
-    fn data_access() {
-        let array = [0, 1, 2, 3];
-        let borrowed_data = Data::from(array.as_slice());
-        assert_eq!(array.as_slice(), &*borrowed_data);
-        let owned_data = borrowed_data.into_owned();
-        assert_eq!(array.as_slice(), &*owned_data);
-        let Data::Owned(owned) = owned_data else {
-            unreachable!();
-        };
-        let owned = DataOwned::take(owned);
-        assert_eq!(array.as_slice(), &*owned);
-        let data = Data::from(owned);
-        assert_eq!(array.as_slice(), &*data);
-        let borrowed = DataSlice::from(&*data);
-        assert_eq!(array.as_slice(), &*borrowed);
+    fn tcp_request() {
+        init();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
+            .remote_addr(remote_addr)
+            .build();
+
+        let msg = Message::builder_request(BINDING);
+        let transaction_id = msg.transaction_id();
+        let transmit = agent.send(msg, remote_addr).unwrap();
+        assert_eq!(transmit.transport, TransportType::Tcp);
+        assert_eq!(transmit.from, local_addr);
+        assert_eq!(transmit.to, remote_addr);
+
+        let request = Message::from_bytes(&transmit.data[2..]).unwrap();
+        assert_eq!(request.transaction_id(), transaction_id);
+    }
+
+    #[test]
+    fn tcp_buffer_split_recv() {
+        init();
+
+        let mut tcp_buffer = TcpBuffer::default();
+
+        let mut len = [0; 2];
+        let data = [0, 1, 2, 4, 3];
+        BigEndian::write_u16(&mut len, data.len() as u16);
+
+        tcp_buffer.push_data(&len);
+        assert!(tcp_buffer.pull_data().is_none());
+        tcp_buffer.push_data(&data);
+        assert_eq!(tcp_buffer.pull_data().unwrap(), &data);
     }
 }

@@ -68,7 +68,7 @@ impl MappedSocketAddr {
     }
 
     /// Convert this [`MappedSocketAddr`] into a [`RawAttribute`]
-    pub fn to_raw(&self, atype: AttributeType) -> RawAttribute {
+    pub fn to_raw<'a>(&self, atype: AttributeType) -> RawAttribute<'a> {
         match self.addr {
             SocketAddr::V4(addr) => {
                 let mut buf = [0; 8];
@@ -76,7 +76,7 @@ impl MappedSocketAddr {
                 BigEndian::write_u16(&mut buf[2..4], addr.port());
                 let octets = u32::from(*addr.ip());
                 BigEndian::write_u32(&mut buf[4..8], octets);
-                RawAttribute::new(atype, &buf)
+                RawAttribute::new(atype, &buf).into_owned()
             }
             SocketAddr::V6(addr) => {
                 let mut buf = [0; 20];
@@ -84,7 +84,7 @@ impl MappedSocketAddr {
                 BigEndian::write_u16(&mut buf[2..4], addr.port());
                 let octets = u128::from(*addr.ip());
                 BigEndian::write_u128(&mut buf[4..20], octets);
-                RawAttribute::new(atype, &buf)
+                RawAttribute::new(atype, &buf).into_owned()
             }
         }
     }
@@ -155,7 +155,7 @@ impl XorSocketAddr {
     }
 
     /// Convert this [`XorSocketAddr`] into a [`RawAttribute`]
-    pub fn to_raw(&self, atype: AttributeType) -> RawAttribute {
+    pub fn to_raw<'a>(&self, atype: AttributeType) -> RawAttribute<'a> {
         self.addr.to_raw(atype)
     }
 

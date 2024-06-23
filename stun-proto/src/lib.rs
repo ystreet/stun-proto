@@ -35,27 +35,28 @@
 //! agent.set_remote_credentials(remote_credentials.clone().into());
 //!
 //! // and we can send a Message
-//! let mut msg = Message::new_request(BINDING);
+//! let mut msg = Message::builder_request(BINDING);
 //! msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
 //! let transmit = agent.send(msg, remote_addr).unwrap();
 //!
 //! // The transmit struct indicates what data and where to send it.
 //! let request = Message::from_bytes(&transmit.data).unwrap();
 //!
-//! let mut response = Message::new_success(&request);
+//! let mut response = Message::builder_success(&request);
 //! let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
-//! response.add_attribute(xor_addr).unwrap();
+//! response.add_attribute(&xor_addr).unwrap();
 //! response.add_message_integrity(&remote_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
 //!
 //! // when receiving data on the associated socket, we should pass it through the Agent so it can
 //! // parse and handle any STUN messages.
-//! let data = response.to_bytes();
+//! let data = response.build();
 //! let to = transmit.to;
-//! let reply = agent.handle_incoming_data(&data, to).unwrap();
+//! let response = Message::from_bytes(&data).unwrap();
+//! let reply = agent.handle_stun(response, to);
 //!
 //! // If running over TCP then there may be multiple messages parsed. However UDP will only ever
 //! // have a single message per datagram.
-//! assert!(matches!(reply[0], HandleStunReply::StunResponse(_, _)));
+//! assert!(matches!(reply, HandleStunReply::StunResponse(_)));
 //!
 //! // Once valid STUN data has been sent and received, then data can be sent and received from the
 //! // peer.

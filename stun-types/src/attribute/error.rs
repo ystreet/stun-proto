@@ -27,18 +27,18 @@ impl Attribute for ErrorCode {
         self.reason.len() as u16 + 4
     }
 }
-impl From<ErrorCode> for RawAttribute {
-    fn from(value: ErrorCode) -> RawAttribute {
+impl<'a> From<&ErrorCode> for RawAttribute<'a> {
+    fn from(value: &ErrorCode) -> RawAttribute<'a> {
         let mut data = Vec::with_capacity(value.length() as usize);
         data.push(0u8);
         data.push(0u8);
         data.push((value.code / 100) as u8);
         data.push((value.code % 100) as u8);
         data.extend(value.reason.as_bytes());
-        RawAttribute::new(ErrorCode::TYPE, &data)
+        RawAttribute::new(ErrorCode::TYPE, &data).into_owned()
     }
 }
-impl TryFrom<&RawAttribute> for ErrorCode {
+impl<'a> TryFrom<&RawAttribute<'a>> for ErrorCode {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -243,18 +243,18 @@ impl Attribute for UnknownAttributes {
         (self.attributes.len() as u16) * 2
     }
 }
-impl From<UnknownAttributes> for RawAttribute {
-    fn from(value: UnknownAttributes) -> RawAttribute {
+impl<'a> From<&UnknownAttributes> for RawAttribute<'a> {
+    fn from(value: &UnknownAttributes) -> RawAttribute<'a> {
         let mut data = Vec::with_capacity(value.length() as usize);
         for attr in &value.attributes {
             let mut encoded = vec![0; 2];
             BigEndian::write_u16(&mut encoded, (*attr).into());
             data.extend(encoded);
         }
-        RawAttribute::new(UnknownAttributes::TYPE, &data)
+        RawAttribute::new(UnknownAttributes::TYPE, &data).into_owned()
     }
 }
-impl TryFrom<&RawAttribute> for UnknownAttributes {
+impl<'a> TryFrom<&RawAttribute<'a>> for UnknownAttributes {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -345,7 +345,7 @@ mod tests {
             let err = ErrorCode::new(code, reason).unwrap();
             assert_eq!(err.code(), code);
             assert_eq!(err.reason(), reason);
-            let raw: RawAttribute = err.into();
+            let raw = RawAttribute::from(&err);
             assert_eq!(raw.get_type(), ErrorCode::TYPE);
             let err2 = ErrorCode::try_from(&raw).unwrap();
             assert_eq!(err2.code(), code);
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn error_code_parse_short() {
         let err = error_code_new(420);
-        let raw: RawAttribute = err.into();
+        let raw = RawAttribute::from(&err);
         // no data
         let mut data: Vec<_> = raw.into();
         let len = 0;
@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn error_code_parse_wrong_implementation() {
         let err = error_code_new(420);
-        let raw: RawAttribute = err.into();
+        let raw = RawAttribute::from(&err);
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn error_code_parse_out_of_range_code() {
         let err = error_code_new(420);
-        let raw: RawAttribute = err.into();
+        let raw = RawAttribute::from(&err);
         let mut data: Vec<_> = raw.into();
 
         // write an invalid error code
@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn error_code_parse_invalid_reason() {
         let err = error_code_new(420);
-        let raw: RawAttribute = err.into();
+        let raw = RawAttribute::from(&err);
         let mut data: Vec<_> = raw.into();
 
         // write an invalid utf8 bytes
@@ -457,7 +457,7 @@ mod tests {
         assert!(unknown.has_attribute(Realm::TYPE));
         assert!(unknown.has_attribute(AlternateServer::TYPE));
         assert!(!unknown.has_attribute(Nonce::TYPE));
-        let raw: RawAttribute = unknown.into();
+        let raw = RawAttribute::from(&unknown);
         assert_eq!(raw.get_type(), UnknownAttributes::TYPE);
         let unknown2 = UnknownAttributes::try_from(&raw).unwrap();
         assert!(unknown2.has_attribute(Realm::TYPE));
