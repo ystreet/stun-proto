@@ -37,12 +37,14 @@ impl PasswordAlgorithmValue {
     }
 
     fn read(data: &[u8]) -> Result<Self, StunParseError> {
+        // checked externally that we have at least 4 bytes
         let ty = BigEndian::read_u16(&data[..2]);
         let len = BigEndian::read_u16(&data[2..4]);
+        // all currently know algorithms don't ahve any extra data
         if len != 0 {
             return Err(StunParseError::TooLarge {
                 expected: 4,
-                actual: data.len(),
+                actual: 4 + len as usize,
             });
         }
         Ok(match ty {
@@ -266,6 +268,37 @@ mod tests {
         assert!(matches!(
             PasswordAlgorithm::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
+        ));
+    }
+
+    #[test]
+    fn password_algorithm_value_too_large() {
+        init();
+        let val = PasswordAlgorithmValue::SHA256;
+        let attr = PasswordAlgorithm::new(val);
+        let raw: RawAttribute = attr.into();
+        let mut data = raw.to_bytes();
+        data[7] = 100;
+        assert!(matches!(
+            PasswordAlgorithm::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Err(StunParseError::TooLarge {
+                expected: 4,
+                actual: 104
+            })
+        ));
+    }
+
+    #[test]
+    fn password_algorithm_value_unknown() {
+        init();
+        let val = PasswordAlgorithmValue::SHA256;
+        let attr = PasswordAlgorithm::new(val);
+        let raw: RawAttribute = attr.into();
+        let mut data = raw.to_bytes();
+        data[5] = 0x80;
+        assert!(matches!(
+            PasswordAlgorithm::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
         ));
     }
 }
