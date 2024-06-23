@@ -134,7 +134,9 @@ impl StunAgent {
         send_data(self.transport, bytes, self.local_addr, to)
     }
 
-    /// Perform any operations needed to be able to send a [`Message`] to a peer
+    /// Perform any operations needed to be able to send a [`Message`] to a peer.
+    ///
+    /// If a request message is successfully sent, then [`StunAgent::poll`] needs to be called.
     pub fn send(&mut self, msg: Message, to: SocketAddr) -> Result<Transmit<'_>, StunError> {
         let data = msg.to_bytes();
         if msg.has_class(MessageClass::Request) {
@@ -185,7 +187,8 @@ impl StunAgent {
     /// Provide data received on a socket from a peer for handling by the [`StunAgent`].
     /// The returned value indicates what the caller must do with the data.
     ///
-    /// After this call, any outstanding [`StunRequest`] may need to be `poll()`ed again.
+    /// If this function returns [`HandleStunReply::StunResponse`], then this agent needs to be
+    /// `poll()`ed again.
     #[tracing::instrument(
         name = "stun_incoming_data"
         level = "info",
@@ -303,7 +306,10 @@ impl StunAgent {
         }
     }
 
-    /// Retrieve a reference to an outstanding STUN request
+    /// Retrieve a reference to an outstanding STUN request. Outstanding requests are kept until
+    /// either `handle_incoming_data` receives the associated response, or `poll()` returns
+    /// [`StunAgentPollRet::TransactionCancelled`] or a [`StunAgentPollRet::TransactionTimedOut`]
+    /// for the request.
     pub fn request_transaction(&self, transaction_id: TransactionId) -> Option<StunRequest> {
         if self.outstanding_requests.contains_key(&transaction_id) {
             Some(StunRequest {
@@ -315,7 +321,10 @@ impl StunAgent {
         }
     }
 
-    /// Retrieve a mutable reference to an outstanding STUN request
+    /// Retrieve a mutable reference to an outstanding STUN request. Outstanding requests are kept
+    /// until either `handle_incoming_data` receives the associated response, or `poll()` returns
+    /// [`StunAgentPollRet::TransactionCancelled`] or a [`StunAgentPollRet::TransactionTimedOut`]
+    /// for the request.
     pub fn mut_request_transaction(
         &mut self,
         transaction_id: TransactionId,
@@ -341,7 +350,7 @@ impl StunAgent {
         self.outstanding_requests.get(&transaction_id)
     }
 
-    /// Poll the agent for making further progress on any outstanding requests.  The returned value
+    /// Poll the agent for making further progress on any outstanding requests. The returned value
     /// indicates the current state and anything the caller needs to perform.
     #[tracing::instrument(
         name = "stun_request_poll"
@@ -391,9 +400,9 @@ impl StunAgent {
 /// Return value for [`StunAgent::poll`]
 #[derive(Debug)]
 pub enum StunAgentPollRet<'a> {
-    /// An oustanding transaction timed out.
+    /// An oustanding transaction timed out and has been removed from the agent.
     TransactionTimedOut(Message),
-    /// An oustanding transaction was cancelled.
+    /// An oustanding transaction was cancelled and has been removed from the agent.
     TransactionCancelled(Message),
     /// Send data using the specified 5-tuple
     SendData(Transmit<'a>),
