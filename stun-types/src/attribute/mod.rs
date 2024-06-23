@@ -510,7 +510,7 @@ fn check_len(
         std::ops::Bound::Excluded(end) => {
             if len >= *end {
                 return Err(StunParseError::TooLarge {
-                    expected: *end + 1,
+                    expected: *end - 1,
                     actual: len,
                 });
             }
@@ -580,6 +580,46 @@ mod tests {
         BigEndian::write_u16(&mut data[2..4], len as u16 - 4 + 1);
         assert!(matches!(
             RawAttribute::from_bytes(data.as_ref()),
+            Err(StunParseError::Truncated {
+                expected: 5,
+                actual: 4
+            })
+        ));
+    }
+
+    #[test]
+    fn test_check_len() {
+        assert!(check_len(4, ..).is_ok());
+        assert!(check_len(4, 0..).is_ok());
+        assert!(check_len(4, 0..8).is_ok());
+        assert!(check_len(4, 0..=8).is_ok());
+        assert!(check_len(4, ..=8).is_ok());
+        assert!(matches!(
+            check_len(4, ..4),
+            Err(StunParseError::TooLarge {
+                expected: 3,
+                actual: 4
+            })
+        ));
+        assert!(matches!(
+            check_len(4, 5..),
+            Err(StunParseError::Truncated {
+                expected: 5,
+                actual: 4
+            })
+        ));
+        assert!(matches!(
+            check_len(4, ..=3),
+            Err(StunParseError::TooLarge {
+                expected: 3,
+                actual: 4
+            })
+        ));
+        assert!(matches!(
+            check_len(
+                4,
+                (std::ops::Bound::Excluded(4), std::ops::Bound::Unbounded)
+            ),
             Err(StunParseError::Truncated {
                 expected: 5,
                 actual: 4
