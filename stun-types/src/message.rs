@@ -1040,7 +1040,8 @@ impl Message {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING,
-    ///     MessageIntegrityCredentials, ShortTermCredentials, IntegrityAlgorithm};
+    ///     MessageIntegrityCredentials, ShortTermCredentials, IntegrityAlgorithm, StunWriteError};
+    /// # use stun_types::attribute::{Attribute, MessageIntegrity, MessageIntegritySha256};
     /// let mut message = Message::new_request(BINDING);
     /// let credentials = ShortTermCredentials::new("pass".to_owned()).into();
     /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1).is_ok());
@@ -1048,7 +1049,16 @@ impl Message {
     /// assert!(message.validate_integrity(&data, &credentials).is_ok());
     ///
     /// // duplicate MessageIntegrity is an error
-    /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1).is_err());
+    /// assert!(matches!(
+    ///     message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1),
+    ///     Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE)),
+    /// ));
+    ///
+    /// // only one of MessageIntegrity, and MessageIntegritySha256 is allowed
+    /// assert!(matches!(
+    ///     message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256),
+    ///     Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE)),
+    /// ));
     /// ```
     #[tracing::instrument(
         name = "message_add_integrity",
@@ -1064,12 +1074,10 @@ impl Message {
         credentials: &MessageIntegrityCredentials,
         algorithm: IntegrityAlgorithm,
     ) -> Result<(), StunWriteError> {
-        if algorithm == IntegrityAlgorithm::Sha1 && self.has_attribute(MessageIntegrity::TYPE) {
+        if self.has_attribute(MessageIntegrity::TYPE) {
             return Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE));
         }
-        if algorithm == IntegrityAlgorithm::Sha256
-            && self.has_attribute(MessageIntegritySha256::TYPE)
-        {
+        if self.has_attribute(MessageIntegritySha256::TYPE) {
             return Err(StunWriteError::AttributeExists(
                 MessageIntegritySha256::TYPE,
             ));
