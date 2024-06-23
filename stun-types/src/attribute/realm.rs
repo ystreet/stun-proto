@@ -111,4 +111,34 @@ mod tests {
             Err(StunParseError::WrongAttributeImplementation)
         ));
     }
+
+    #[test]
+    fn realm_not_utf8() {
+        init();
+        let attr = Realm::new("realm").unwrap();
+        let raw: RawAttribute = attr.into();
+        let mut data = raw.to_bytes();
+        data[6] = 0x88;
+        assert!(matches!(
+            Realm::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
+        ));
+    }
+
+    #[test]
+    fn realme_new_too_large() {
+        init();
+        let mut large = String::new();
+        for _i in 0..95 {
+            large.push_str("abcdefgh");
+        }
+        large.push_str("abcd");
+        assert!(matches!(
+            Realm::new(&large),
+            Err(StunWriteError::TooLarge {
+                expected: 763,
+                actual: 764
+            })
+        ));
+    }
 }

@@ -57,7 +57,8 @@ impl Software {
     /// assert_eq!(software.software(), "stun-types 0.1");
     /// ```
     pub fn new(software: &str) -> Result<Self, StunWriteError> {
-        if software.len() > 768 {
+        // TODO: should only allow 128 characters
+        if software.len() > 763 {
             return Err(StunWriteError::TooLarge {
                 expected: 763,
                 actual: software.len(),
@@ -113,6 +114,36 @@ mod tests {
         assert!(matches!(
             Software::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
+        ));
+    }
+
+    #[test]
+    fn software_not_utf8() {
+        init();
+        let attr = Software::new("software").unwrap();
+        let raw: RawAttribute = attr.into();
+        let mut data = raw.to_bytes();
+        data[6] = 0x88;
+        assert!(matches!(
+            Software::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
+        ));
+    }
+
+    #[test]
+    fn software_new_too_large() {
+        init();
+        let mut large = String::new();
+        for _i in 0..95 {
+            large.push_str("abcdefgh");
+        }
+        large.push_str("abcd");
+        assert!(matches!(
+            Software::new(&large),
+            Err(StunWriteError::TooLarge {
+                expected: 763,
+                actual: 764
+            })
         ));
     }
 }
