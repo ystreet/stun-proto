@@ -402,7 +402,7 @@ impl MessageType {
         self.class() == cls
     }
 
-    /// Returns whether class of a [`MessageType`] indicates a response [`Message`]
+    /// Returns whether the class of a [`MessageType`] indicates a response [`Message`]
     ///
     /// # Examples
     ///
@@ -477,6 +477,7 @@ impl TryFrom<&[u8]> for MessageType {
     }
 }
 
+/// A unique transaction identifier for each message and it's (possible) response.
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TransactionId {
     id: u128,
@@ -537,6 +538,7 @@ impl std::fmt::Display for Message {
     }
 }
 
+/// The supported hashing algorithms for ensuring integrity of a [`Message`]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IntegrityAlgorithm {
     Sha1,
@@ -1030,9 +1032,9 @@ impl Message {
     ///
     /// # Errors
     ///
-    /// - If a MESSAGE_INTEGRITY attribute is already present
-    /// - If a MESSAGE_INTEGRITY_SHA256 attribute is already present
-    /// - If a FINGERPRINT attribute is already present
+    /// - If a [`MessageIntegrity`] attribute is already present
+    /// - If a [`MessageIntegritySha256`] attribute is already present
+    /// - If a [`Fingerprint`] attribute is already present
     ///
     /// # Examples
     ///
@@ -1045,7 +1047,7 @@ impl Message {
     /// let data = message.to_bytes();
     /// assert!(message.validate_integrity(&data, &credentials).is_ok());
     ///
-    /// // duplicate MESSAGE_INTEGRITY is an error
+    /// // duplicate MessageIntegrity is an error
     /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1).is_err());
     /// ```
     #[tracing::instrument(
@@ -1094,11 +1096,11 @@ impl Message {
         Ok(())
     }
 
-    /// Adds FINGERPRINT attribute to a [`Message`]
+    /// Adds [`Fingerprint`] attribute to a [`Message`]
     ///
     /// # Errors
     ///
-    /// - If a FINGERPRINT attribute is already present
+    /// - If a [`Fingerprint`] attribute is already present
     ///
     /// # Examples
     ///
@@ -1138,13 +1140,13 @@ impl Message {
     ///
     /// # Errors
     ///
-    /// - if a MESSAGE_INTEGRITY attribute is attempted to be added.  Use
+    /// - if a [`MessageIntegrity`] or [`MessageIntegritySha256`] attribute is attempted to be added.  Use
     /// `Message::add_message_integrity` instead.
-    /// - if a FINGERPRINT attribute is attempted to be added. Use
+    /// - if a [`Fingerprint`] attribute is attempted to be added. Use
     /// `Message::add_fingerprint` instead.
     /// - If the attribute already exists within the message
-    /// - If attempting to add attributes when MESSAGE_INTEGRITY or FINGERPRINT atributes already
-    /// exist
+    /// - If attempting to add attributes when [`MessageIntegrity`], [`MessageIntegritySha256`] or
+    /// [`Fingerprint`] atributes already exist.
     ///
     /// # Examples
     ///
@@ -1224,7 +1226,11 @@ impl Message {
         self.attributes.iter().find(|attr| attr.get_type() == atype)
     }
 
-    /// Retrieve an `Attribute` from this `Message`.
+    /// Retrieve a concrete `Attribute` from this `Message`.
+    ///
+    /// This will error with [`StunParseError::MissingAttribute`] if the attribute does not exist.
+    /// Otherwise, other parsing errors of the data may be returned specific to the attribute
+    /// implementation provided.
     ///
     /// # Examples
     ///
@@ -1275,7 +1281,7 @@ impl Message {
     /// // If nothing is required, no error response is returned
     /// assert!(matches!(Message::check_attribute_types(&message, &[], &[]), None));
     ///
-    /// // If an atttribute is required that is not in the message, then and error response message
+    /// // If an atttribute is required that is not in the message, then an error response message
     /// // is generated
     /// let error_msg = Message::check_attribute_types(
     ///     &message,
