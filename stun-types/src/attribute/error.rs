@@ -144,9 +144,13 @@ impl ErrorCode {
     /// assert_eq!(error.code(), 400);
     /// assert_eq!(error.reason(), "bad error");
     /// ```
-    pub fn new(code: u16, reason: &str) -> Result<Self, StunParseError> {
+    pub fn new(code: u16, reason: &str) -> Result<Self, StunWriteError> {
         if !(300..700).contains(&code) {
-            return Err(StunParseError::InvalidAttributeData);
+            return Err(StunWriteError::OutOfRange {
+                value: code as usize,
+                min: 300,
+                max: 699,
+            });
         }
         Ok(Self {
             code,
@@ -347,12 +351,19 @@ mod tests {
             assert_eq!(err2.code(), code);
             assert_eq!(err2.reason(), reason);
         }
-        let code = codes[0];
+    }
+
+    fn error_code_new(code: u16) -> ErrorCode {
         let reason = ErrorCode::default_reason_for_code(code);
-        let err = ErrorCode::new(code, reason).unwrap();
+        ErrorCode::new(code, reason).unwrap()
+    }
+
+    #[test]
+    fn error_code_parse_short() {
+        let err = error_code_new(420);
         let raw: RawAttribute = err.into();
         // no data
-        let mut data: Vec<_> = raw.clone().into();
+        let mut data: Vec<_> = raw.into();
         let len = 0;
         BigEndian::write_u16(&mut data[2..4], len as u16);
         assert!(matches!(
@@ -362,12 +373,77 @@ mod tests {
                 actual: 0
             })
         ));
+    }
+
+    #[test]
+    fn error_code_parse_wrong_implementation() {
+        let err = error_code_new(420);
+        let raw: RawAttribute = err.into();
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
         assert!(matches!(
             ErrorCode::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
+        ));
+    }
+
+    #[test]
+    fn error_code_parse_out_of_range_code() {
+        let err = error_code_new(420);
+        let raw: RawAttribute = err.into();
+        let mut data: Vec<_> = raw.into();
+
+        // write an invalid error code
+        data[6] = 7;
+        assert!(matches!(
+            ErrorCode::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
+        ));
+    }
+
+    #[test]
+    fn error_code_parse_invalid_reason() {
+        let err = error_code_new(420);
+        let raw: RawAttribute = err.into();
+        let mut data: Vec<_> = raw.into();
+
+        // write an invalid utf8 bytes
+        data[10] = 0x88;
+        assert!(matches!(
+            ErrorCode::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
+        ));
+    }
+
+    #[test]
+    fn error_code_build_default_reason() {
+        let err = ErrorCode::builder(420).build().unwrap();
+        assert_eq!(err.code(), 420);
+        assert!(err.reason().len() > 0);
+    }
+
+    #[test]
+    fn error_code_build_out_of_range() {
+        assert!(matches!(
+            ErrorCode::builder(700).build(),
+            Err(StunWriteError::OutOfRange {
+                value: 700,
+                min: _,
+                max: _
+            })
+        ));
+    }
+
+    #[test]
+    fn error_code_new_out_of_range() {
+        assert!(matches!(
+            ErrorCode::new(700, "some-reason"),
+            Err(StunWriteError::OutOfRange {
+                value: 700,
+                min: _,
+                max: _
+            })
         ));
     }
 
