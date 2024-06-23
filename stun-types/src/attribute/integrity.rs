@@ -358,4 +358,40 @@ mod tests {
             Err(StunParseError::WrongAttributeImplementation)
         ));
     }
+
+    #[test]
+    fn message_integrity_sha256_new_too_large() {
+        init();
+        let val = [1; 33];
+        assert!(matches!(
+            MessageIntegritySha256::new(&val),
+            Err(StunWriteError::TooLarge {
+                expected: 32,
+                actual: 33
+            })
+        ));
+    }
+
+    #[test]
+    fn message_integrity_sha256_new_too_small() {
+        init();
+        let val = [1; 15];
+        assert!(matches!(
+            MessageIntegritySha256::new(&val),
+            Err(StunWriteError::TooSmall {
+                expected: 16,
+                actual: 15
+            })
+        ));
+    }
+
+    #[test]
+    fn message_integrity_sha256_new_not_multiple_of_4() {
+        init();
+        let val = [1; 19];
+        assert!(matches!(
+            MessageIntegritySha256::new(&val),
+            Err(StunWriteError::IntegrityFailed)
+        ));
+    }
 }
