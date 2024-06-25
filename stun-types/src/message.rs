@@ -1676,6 +1676,66 @@ mod tests {
     }
 
     #[test]
+    fn add_duplicate_integrity() {
+        init();
+        let credentials = ShortTermCredentials::new("secret".to_owned()).into();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
+            .unwrap();
+        assert!(matches!(
+            msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1),
+            Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE))
+        ));
+        assert!(matches!(
+            msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256),
+            Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE))
+        ));
+        let software = Software::new("s").unwrap();
+        assert!(matches!(
+            msg.add_attribute(&software),
+            Err(StunWriteError::MessageIntegrityExists)
+        ));
+    }
+
+    #[test]
+    fn add_attribute_after_integrity() {
+        init();
+        for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
+            let credentials = ShortTermCredentials::new("secret".to_owned()).into();
+            let mut msg = Message::builder_request(BINDING);
+            msg.add_message_integrity(&credentials, algorithm).unwrap();
+            let software = Software::new("s").unwrap();
+            assert!(matches!(
+                msg.add_attribute(&software),
+                Err(StunWriteError::MessageIntegrityExists)
+            ));
+        }
+    }
+
+    #[test]
+    fn duplicate_fingerprint() {
+        init();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        assert!(matches!(
+            msg.add_fingerprint(),
+            Err(StunWriteError::AttributeExists(Fingerprint::TYPE))
+        ));
+    }
+
+    #[test]
+    fn add_attribute_after_fingerprint() {
+        init();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        let software = Software::new("s").unwrap();
+        assert!(matches!(
+            msg.add_attribute(&software),
+            Err(StunWriteError::FingerprintExists)
+        ));
+    }
+
+    #[test]
     fn valid_attributes() {
         init();
         let mut src = Message::builder_request(BINDING);
