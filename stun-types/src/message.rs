@@ -464,11 +464,6 @@ impl MessageType {
         Ok(Self(data))
     }
 }
-impl From<MessageType> for Vec<u8> {
-    fn from(f: MessageType) -> Self {
-        f.to_bytes()
-    }
-}
 impl TryFrom<&[u8]> for MessageType {
     type Error = StunParseError;
 
@@ -659,7 +654,7 @@ impl<'a> Message<'a> {
     /// assert!(message.get_type().has_method(BINDING));
     /// ```
     pub fn get_type(&self) -> MessageType {
-        MessageType::from_bytes(&self.data[..2]).unwrap()
+        MessageType::try_from(&self.data[..2]).unwrap()
     }
 
     /// Retrieve the [`MessageClass`] of a [`Message`]
@@ -793,7 +788,7 @@ impl<'a> Message<'a> {
                 actual: data.len(),
             });
         }
-        let _mtype = MessageType::from_bytes(data)?;
+        let _mtype = MessageType::try_from(data)?;
         let mlength = BigEndian::read_u16(&data[2..]) as usize;
         if mlength + 20 > data.len() {
             // mlength + header
@@ -822,8 +817,21 @@ impl<'a> Message<'a> {
         let mut seen_message_integrity = false;
         while !data.is_empty() {
             let attr = RawAttribute::from_bytes(data).map_err(|e| {
-                warn!("failed to parse message attribute {:?}", e);
-                e
+                warn!(
+                    "failed to parse message attribute at offset {data_offset}: {:?}",
+                    e
+                );
+                match e {
+                    StunParseError::Truncated { expected, actual } => StunParseError::Truncated {
+                        expected: expected + 4 + data_offset,
+                        actual: actual + 4 + data_offset,
+                    },
+                    StunParseError::TooLarge { expected, actual } => StunParseError::TooLarge {
+                        expected: expected + 4 + data_offset,
+                        actual: actual + 4 + data_offset,
+                    },
+                    e => e,
+                }
             })?;
 
             if seen_message_integrity && attr.get_type() != Fingerprint::TYPE {
@@ -846,8 +854,8 @@ impl<'a> Message<'a> {
                     attr.get_type()
                 );
                 return Err(StunParseError::Truncated {
-                    expected: padded_len,
-                    actual: data.len(),
+                    expected: data_offset + padded_len,
+                    actual: data_offset + data.len(),
                 });
             }
             if attr.get_type() == Fingerprint::TYPE {
@@ -1724,6 +1732,52 @@ mod tests {
     }
 
     #[test]
+    fn parse_invalid_fingerprint() {
+        init();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        let mut bytes = msg.build();
+        bytes[25] = 0x80;
+        assert!(matches!(
+            Message::from_bytes(&bytes),
+            Err(StunParseError::FingerprintMismatch)
+        ));
+    }
+
+    #[test]
+    fn parse_wrong_magic() {
+        init();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        let mut bytes = msg.build();
+        bytes[4] = 0x80;
+        assert!(matches!(
+            Message::from_bytes(&bytes),
+            Err(StunParseError::NotStun)
+        ));
+    }
+
+    #[test]
+    fn parse_attribute_after_integrity() {
+        init();
+        let credentials = ShortTermCredentials::new("secret".to_owned()).into();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
+            .unwrap();
+        let mut bytes = msg.build();
+        let software = Software::new("s").unwrap();
+        let software_bytes = RawAttribute::from(&software).to_bytes();
+        let software_len = software_bytes.len();
+        bytes.extend(software_bytes);
+        bytes[3] += software_len as u8;
+        println!("bytes: {bytes:x?}");
+        assert!(matches!(
+            Message::from_bytes(&bytes),
+            Err(StunParseError::AttributeAfterIntegrity(Software::TYPE))
+        ));
+    }
+
+    #[test]
     fn add_attribute_after_fingerprint() {
         init();
         let mut msg = Message::builder_request(BINDING);
@@ -1732,6 +1786,53 @@ mod tests {
         assert!(matches!(
             msg.add_attribute(&software),
             Err(StunWriteError::FingerprintExists)
+        ));
+    }
+
+    #[test]
+    fn parse_truncated_message_header() {
+        init();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        let bytes = msg.build();
+        assert!(matches!(
+            Message::from_bytes(&bytes[..8]),
+            Err(StunParseError::Truncated {
+                expected: 20,
+                actual: 8
+            })
+        ));
+    }
+
+    #[test]
+    fn parse_truncated_message() {
+        init();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        let bytes = msg.build();
+        assert!(matches!(
+            Message::from_bytes(&bytes[..24]),
+            Err(StunParseError::Truncated {
+                expected: 28,
+                actual: 24
+            })
+        ));
+    }
+
+    #[test]
+    fn parse_truncated_message_attribute() {
+        init();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        let mut bytes = msg.build();
+        // rewrite message header to support the truncated length, but not the attribute.
+        bytes[3] = 4;
+        assert!(matches!(
+            Message::from_bytes(&bytes[..24]),
+            Err(StunParseError::Truncated {
+                expected: 28,
+                actual: 24
+            })
         ));
     }
 
