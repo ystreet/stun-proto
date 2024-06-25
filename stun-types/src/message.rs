@@ -121,6 +121,9 @@ pub enum StunParseError {
     /// An attribute was found after the message integrity attribute
     #[error("An attribute {:?} was encountered after a message integrity attribute", .0)]
     AttributeAfterIntegrity(AttributeType),
+    /// An attribute was found after the message integrity attribute
+    #[error("An attribute {:?} was encountered after a fingerprint attribute", .0)]
+    AttributeAfterFingerprint(AttributeType),
     /// Fingerprint does not match the data.
     #[error("Fingerprint does not match")]
     FingerprintMismatch,
@@ -815,6 +818,7 @@ impl<'a> Message<'a> {
         let mut data_offset = 20;
         let mut data = &data[20..];
         let mut seen_message_integrity = false;
+        let mut seen_fingerprint = false;
         while !data.is_empty() {
             let attr = RawAttribute::from_bytes(data).map_err(|e| {
                 warn!(
@@ -843,6 +847,12 @@ impl<'a> Message<'a> {
                 return Err(StunParseError::AttributeAfterIntegrity(attr.get_type()));
             }
 
+            if seen_fingerprint {
+                // no valid attributes after FINGERPRINT
+                warn!("unexpected attribute {} after FINGERPRINT", attr.get_type());
+                return Err(StunParseError::AttributeAfterFingerprint(attr.get_type()));
+            }
+
             if attr.get_type() == MessageIntegrity::TYPE {
                 seen_message_integrity = true;
                 // need credentials to validate the integrity of the message
@@ -859,6 +869,7 @@ impl<'a> Message<'a> {
                 });
             }
             if attr.get_type() == Fingerprint::TYPE {
+                seen_fingerprint = true;
                 let f = Fingerprint::from_raw(&attr)?;
                 let msg_fingerprint = f.fingerprint();
                 let mut fingerprint_data = orig_data[..data_offset].to_vec();
@@ -1774,6 +1785,24 @@ mod tests {
         assert!(matches!(
             Message::from_bytes(&bytes),
             Err(StunParseError::AttributeAfterIntegrity(Software::TYPE))
+        ));
+    }
+
+    #[test]
+    fn parse_attribute_after_fingerprint() {
+        init();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        let mut bytes = msg.build();
+        let software = Software::new("s").unwrap();
+        let software_bytes = RawAttribute::from(&software).to_bytes();
+        let software_len = software_bytes.len();
+        bytes.extend(software_bytes);
+        bytes[3] += software_len as u8;
+        println!("bytes: {bytes:x?}");
+        assert!(matches!(
+            Message::from_bytes(&bytes),
+            Err(StunParseError::AttributeAfterFingerprint(Software::TYPE))
         ));
     }
 
