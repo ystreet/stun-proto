@@ -853,7 +853,7 @@ impl<'a> Message<'a> {
                 return Err(StunParseError::AttributeAfterFingerprint(attr.get_type()));
             }
 
-            if attr.get_type() == MessageIntegrity::TYPE {
+            if [MessageIntegrity::TYPE, MessageIntegritySha256::TYPE].contains(&attr.get_type()) {
                 seen_message_integrity = true;
                 // need credentials to validate the integrity of the message
             }
@@ -1771,21 +1771,21 @@ mod tests {
     #[test]
     fn parse_attribute_after_integrity() {
         init();
-        let credentials = ShortTermCredentials::new("secret".to_owned()).into();
-        let mut msg = Message::builder_request(BINDING);
-        msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
-            .unwrap();
-        let mut bytes = msg.build();
-        let software = Software::new("s").unwrap();
-        let software_bytes = RawAttribute::from(&software).to_bytes();
-        let software_len = software_bytes.len();
-        bytes.extend(software_bytes);
-        bytes[3] += software_len as u8;
-        println!("bytes: {bytes:x?}");
-        assert!(matches!(
-            Message::from_bytes(&bytes),
-            Err(StunParseError::AttributeAfterIntegrity(Software::TYPE))
-        ));
+        for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
+            let credentials = ShortTermCredentials::new("secret".to_owned()).into();
+            let mut msg = Message::builder_request(BINDING);
+            msg.add_message_integrity(&credentials, algorithm).unwrap();
+            let mut bytes = msg.build();
+            let software = Software::new("s").unwrap();
+            let software_bytes = RawAttribute::from(&software).to_bytes();
+            let software_len = software_bytes.len();
+            bytes.extend(software_bytes);
+            bytes[3] += software_len as u8;
+            assert!(matches!(
+                Message::from_bytes(&bytes),
+                Err(StunParseError::AttributeAfterIntegrity(Software::TYPE))
+            ));
+        }
     }
 
     #[test]
@@ -1799,7 +1799,6 @@ mod tests {
         let software_len = software_bytes.len();
         bytes.extend(software_bytes);
         bytes[3] += software_len as u8;
-        println!("bytes: {bytes:x?}");
         assert!(matches!(
             Message::from_bytes(&bytes),
             Err(StunParseError::AttributeAfterFingerprint(Software::TYPE))
