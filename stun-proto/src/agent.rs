@@ -213,6 +213,7 @@ impl StunAgent {
                         }
                     }
                 } else {
+                    // XXX: may need to return this as 'Unvalididated'.
                     debug!("no remote credentials, ignoring");
                     self.outstanding_requests
                         .insert(msg.transaction_id(), request);
@@ -905,6 +906,45 @@ pub(crate) mod tests {
         let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
         agent.set_local_credentials(local_credentials.clone().into());
         agent.set_remote_credentials(remote_credentials.clone().into());
+
+        let mut msg = Message::builder_request(BINDING);
+        let transaction_id = msg.transaction_id();
+        msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
+            .unwrap();
+        let transmit = agent.send(msg, remote_addr).unwrap();
+
+        let request = Message::from_bytes(&transmit.data).unwrap();
+
+        let mut response = Message::builder_success(&request);
+        response
+            .add_attribute(&XorMappedAddress::new(
+                transmit.from,
+                request.transaction_id(),
+            ))
+            .unwrap();
+
+        let data = response.build();
+        let to = transmit.to;
+        let response = Message::from_bytes(&data).unwrap();
+        let reply = agent.handle_stun(response, to);
+        // reply is ignored as it does not have credentials
+        assert!(matches!(reply, HandleStunReply::Drop));
+        assert!(agent.request_transaction(transaction_id).is_some());
+        assert!(agent.mut_request_transaction(transaction_id).is_some());
+
+        // unvalidated peer data should be dropped
+        assert!(!agent.is_validated_peer(remote_addr));
+    }
+
+    #[test]
+    fn agent_response_without_credentials() {
+        init();
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+        let local_credentials = ShortTermCredentials::new(String::from("local_password"));
+        agent.set_local_credentials(local_credentials.clone().into());
 
         let mut msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
