@@ -638,6 +638,11 @@ impl<'a> Message<'a> {
     /// assert!(error.has_method(BINDING));
     /// ```
     pub fn builder_error(orig: &Message) -> MessageBuilder<'a> {
+        if !orig.has_class(MessageClass::Request) {
+            panic!(
+                "An error response message was attempted to be created from a non-request message"
+            );
+        }
         Message::builder(
             MessageType::from_class_method(MessageClass::Error, orig.method()),
             orig.transaction_id(),
@@ -1904,6 +1909,57 @@ mod tests {
         assert_eq!(err.code(), 420);
         let unknown = res.attribute::<UnknownAttributes>().unwrap();
         assert!(unknown.has_attribute(Priority::TYPE));
+    }
+
+    #[test]
+    #[should_panic(expected = "created from a non-request message")]
+    fn builder_success_panic() {
+        let msg = Message::builder(
+            MessageType::from_class_method(MessageClass::Indication, BINDING),
+            TransactionId::generate(),
+        )
+        .build();
+        let msg = Message::from_bytes(&msg).unwrap();
+        let _builder = Message::builder_success(&msg);
+    }
+
+    #[test]
+    #[should_panic(expected = "created from a non-request message")]
+    fn builder_error_panic() {
+        let msg = Message::builder(
+            MessageType::from_class_method(MessageClass::Indication, BINDING),
+            TransactionId::generate(),
+        )
+        .build();
+        let msg = Message::from_bytes(&msg).unwrap();
+        let _builder = Message::builder_error(&msg);
+    }
+
+    #[test]
+    #[should_panic(expected = "Use add_message_integrity() instead")]
+    fn builder_add_attribute_integrity_panic() {
+        let mut msg = Message::builder_request(BINDING);
+        let hmac = [2; 20];
+        let integrity = MessageIntegrity::new(hmac);
+        msg.add_attribute(&integrity).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Use add_message_integrity() instead")]
+    fn builder_add_attribute_integrity_sha256_panic() {
+        let mut msg = Message::builder_request(BINDING);
+        let hmac = [2; 16];
+        let integrity = MessageIntegritySha256::new(&hmac).unwrap();
+        msg.add_attribute(&integrity).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Use add_fingerprint() instead")]
+    fn builder_add_attribute_fingerprint_panic() {
+        let mut msg = Message::builder_request(BINDING);
+        let fingerprint = [2; 4];
+        let integrity = Fingerprint::new(fingerprint);
+        msg.add_attribute(&integrity).unwrap();
     }
 
     #[test]
