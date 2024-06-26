@@ -1488,13 +1488,16 @@ impl<'a> MessageBuilder<'a> {
     ///
     /// # Errors
     ///
+    /// - If the attribute already exists within the message
+    /// - If attempting to add attributes when [`MessageIntegrity`], [`MessageIntegritySha256`] or
+    /// [`Fingerprint`] atributes already exist.
+    ///
+    /// # Panics
+    ///
     /// - if a [`MessageIntegrity`] or [`MessageIntegritySha256`] attribute is attempted to be added.  Use
     /// `Message::add_message_integrity` instead.
     /// - if a [`Fingerprint`] attribute is attempted to be added. Use
     /// `Message::add_fingerprint` instead.
-    /// - If the attribute already exists within the message
-    /// - If attempting to add attributes when [`MessageIntegrity`], [`MessageIntegritySha256`] or
-    /// [`Fingerprint`] atributes already exist.
     ///
     /// # Examples
     ///
@@ -1705,6 +1708,20 @@ mod tests {
             assert!(matches!(
                 msg.add_attribute(&software),
                 Err(StunWriteError::MessageIntegrityExists)
+            ));
+        }
+    }
+
+    #[test]
+    fn add_integrity_after_fingerprint() {
+        init();
+        for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
+            let credentials = ShortTermCredentials::new("secret".to_owned()).into();
+            let mut msg = Message::builder_request(BINDING);
+            msg.add_fingerprint().unwrap();
+            assert!(matches!(
+                msg.add_message_integrity(&credentials, algorithm),
+                Err(StunWriteError::FingerprintExists)
             ));
         }
     }
