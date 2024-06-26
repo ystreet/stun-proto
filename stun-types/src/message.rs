@@ -944,25 +944,14 @@ impl<'a> Message<'a> {
         // find the location of the original MessageIntegrity attribute: XXX: maybe encode this into
         // the attribute instead?
         let data = self.data;
-        if data.len() < 20 {
-            // always at least 20 bytes long
-            debug!("not enough data in message");
-            return Err(StunParseError::Truncated {
-                expected: 20,
-                actual: data.len(),
-            });
-        }
+        debug_assert!(data.len() >= 20);
         let mut data = &data[20..];
         let mut data_offset = 20;
         while !data.is_empty() {
             let attr = RawAttribute::from_bytes(data)?;
             if algo == IntegrityAlgorithm::Sha1 && attr.get_type() == MessageIntegrity::TYPE {
                 let msg = MessageIntegrity::try_from(&attr)?;
-                if msg.hmac().as_slice() != msg_hmac {
-                    // data hmac is different from message hmac -> wrong data for this message.
-                    warn!("hmac from data does not match message hmac");
-                    return Err(StunParseError::DataMismatch);
-                }
+                debug_assert!(msg.hmac().as_slice() == msg_hmac);
 
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
@@ -978,11 +967,7 @@ impl<'a> Message<'a> {
                 && attr.get_type() == MessageIntegritySha256::TYPE
             {
                 let msg = MessageIntegritySha256::try_from(&attr)?;
-                if msg.hmac() != msg_hmac {
-                    // data hmac is different from message hmac -> wrong data for this message.
-                    warn!("hmac from data does not match message hmac");
-                    return Err(StunParseError::DataMismatch);
-                }
+                debug_assert!(msg.hmac() == msg_hmac);
 
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
@@ -995,22 +980,15 @@ impl<'a> Message<'a> {
                 return MessageIntegritySha256::verify(&hmac_data, &key, &msg_hmac);
             }
             let padded_len = padded_attr_size(&attr);
-            if padded_len > data.len() {
-                warn!(
-                    "attribute {:?} extends past the end of the data",
-                    attr.get_type()
-                );
-                return Err(StunParseError::Truncated {
-                    expected: padded_len,
-                    actual: data.len(),
-                });
-            }
+            // checked when initially parsing.
+            debug_assert!(padded_len <= data.len());
             data = &data[padded_len..];
             data_offset += padded_len;
         }
-        // no hmac in data but there was in the message? -> incompatible data for this message
-        warn!("no message integrity attribute in data");
-        Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE))
+
+        // Either there is no integrity (checked earlier), or the integrity was found and checked
+        // by the loop above.
+        unreachable!();
     }
 
     /// Retrieve a `RawAttribute` from this `Message`.
