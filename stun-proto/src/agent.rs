@@ -350,16 +350,7 @@ pub enum StunAgentPollRet<'a> {
 }
 
 fn send_data(transport: TransportType, bytes: &[u8], from: SocketAddr, to: SocketAddr) -> Transmit {
-    match transport {
-        TransportType::Udp => Transmit::new(bytes, transport, from, to),
-        TransportType::Tcp => {
-            let mut data = Vec::with_capacity(bytes.len() + 2);
-            data.resize(2, 0);
-            BigEndian::write_u16(&mut data, bytes.len() as u16);
-            data.extend(bytes);
-            Transmit::new_owned(data.into_boxed_slice(), transport, from, to)
-        }
-    }
+    Transmit::new(bytes, transport, from, to)
 }
 
 /// A buffer object for handling STUN data received over a TCP connection that requires framing as
@@ -1181,7 +1172,7 @@ pub(crate) mod tests {
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
 
-        let request = Message::from_bytes(&transmit.data[2..]).unwrap();
+        let request = Message::from_bytes(&transmit.data).unwrap();
         assert_eq!(request.transaction_id(), transaction_id);
     }
 
