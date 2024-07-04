@@ -29,7 +29,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: 'tarpaulin'
-          args: '--out Xml --run-types DocTests --all-targets -- --test-threads 1'
+          args: '--out Xml --lib --tests --doc -- --test-threads 1'
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3.1.1
