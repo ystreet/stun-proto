@@ -25,7 +25,6 @@
 //!
 //! See the [`message`] and [`attribute`] module documentation for examples on use.
 
-use std::error::Error;
 use std::str::FromStr;
 
 pub mod attribute;
@@ -43,17 +42,11 @@ pub enum TransportType {
 }
 
 /// Errors when parsing a [`TransportType`]
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ParseTransportTypeError {
+    /// An unknown transport value was provided
+    #[error("Unknown transport value was provided")]
     UnknownTransport,
-}
-
-impl Error for ParseTransportTypeError {}
-
-impl std::fmt::Display for ParseTransportTypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 impl FromStr for TransportType {
