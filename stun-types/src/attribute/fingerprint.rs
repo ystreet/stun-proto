@@ -104,13 +104,9 @@ mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn fingerprint() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = [1; 4];
         let attr = Fingerprint::new(val);
         assert_eq!(attr.fingerprint(), &val);

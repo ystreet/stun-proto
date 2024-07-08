@@ -156,13 +156,9 @@ mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn alternate_server() {
-        init();
+        let _log = crate::tests::test_init_log();
         let addrs = &[
             "192.168.0.1:40000".parse().unwrap(),
             "[fd12:3456:789a:1::1]:41000".parse().unwrap(),
@@ -203,7 +199,7 @@ mod tests {
 
     #[test]
     fn alternative_domain() {
-        init();
+        let _log = crate::tests::test_init_log();
         let dns = "example.com";
         let attr = AlternateDomain::new(dns);
         assert_eq!(attr.domain(), dns);

@@ -266,13 +266,9 @@ impl std::fmt::Display for IceControlling {
 mod tests {
     use super::*;
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn priority() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = 100;
         let priority = Priority::new(val);
         assert_eq!(priority.priority(), val);
@@ -303,7 +299,7 @@ mod tests {
 
     #[test]
     fn use_candidate() {
-        init();
+        let _log = crate::tests::test_init_log();
         let use_candidate = UseCandidate::default();
         assert_eq!(use_candidate.length(), 0);
         let raw = RawAttribute::from(&use_candidate);
@@ -320,7 +316,7 @@ mod tests {
 
     #[test]
     fn ice_controlling() {
-        init();
+        let _log = crate::tests::test_init_log();
         let tb = 100;
         let attr = IceControlling::new(tb);
         assert_eq!(attr.tie_breaker(), tb);
@@ -351,7 +347,7 @@ mod tests {
 
     #[test]
     fn ice_controlled() {
-        init();
+        let _log = crate::tests::test_init_log();
         let tb = 100;
         let attr = IceControlled::new(tb);
         assert_eq!(attr.tie_breaker(), tb);

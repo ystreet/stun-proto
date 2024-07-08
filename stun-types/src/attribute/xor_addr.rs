@@ -87,13 +87,9 @@ mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn xor_mapped_address() {
-        init();
+        let _log = crate::tests::test_init_log();
         let transaction_id = 0x9876_5432_1098_7654_3210_9876.into();
         let addrs = &[
             "192.168.0.1:40000".parse().unwrap(),

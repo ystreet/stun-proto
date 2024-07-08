@@ -116,13 +116,9 @@ impl<'a> From<Box<[u8]>> for Data<'a> {
 pub(crate) mod tests {
     use super::*;
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn data_access() {
-        init();
+        let _log = crate::tests::test_init_log();
         let array = [0, 1, 2, 3];
         let borrowed_data = Data::from(array.as_slice());
         assert_eq!(array.as_slice(), &*borrowed_data);
