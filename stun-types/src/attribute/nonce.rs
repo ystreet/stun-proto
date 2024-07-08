@@ -90,13 +90,9 @@ mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn nonce() {
-        init();
+        let _log = crate::tests::test_init_log();
         let attr = Nonce::new("nonce").unwrap();
         assert_eq!(attr.nonce(), "nonce");
         assert_eq!(attr.length() as usize, "nonce".len());
@@ -115,7 +111,7 @@ mod tests {
 
     #[test]
     fn nonce_not_utf8() {
-        init();
+        let _log = crate::tests::test_init_log();
         let attr = Nonce::new("nonce").unwrap();
         let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
@@ -128,7 +124,7 @@ mod tests {
 
     #[test]
     fn nonce_new_too_large() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut large = String::new();
         for _i in 0..95 {
             large.push_str("abcdefgh");

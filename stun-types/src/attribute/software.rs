@@ -94,13 +94,9 @@ mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn software() {
-        init();
+        let _log = crate::tests::test_init_log();
         let software = Software::new("software").unwrap();
         assert_eq!(software.software(), "software");
         assert_eq!(software.length() as usize, "software".len());
@@ -119,7 +115,7 @@ mod tests {
 
     #[test]
     fn software_not_utf8() {
-        init();
+        let _log = crate::tests::test_init_log();
         let attr = Software::new("software").unwrap();
         let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
@@ -132,7 +128,7 @@ mod tests {
 
     #[test]
     fn software_new_too_large() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut large = String::new();
         for _i in 0..95 {
             large.push_str("abcdefgh");

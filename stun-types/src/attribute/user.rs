@@ -180,13 +180,9 @@ mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn username() {
-        init();
+        let _log = crate::tests::test_init_log();
         let s = "woohoo!";
         let user = Username::new(s).unwrap();
         assert_eq!(user.username(), s);
@@ -206,7 +202,7 @@ mod tests {
 
     #[test]
     fn username_not_utf8() {
-        init();
+        let _log = crate::tests::test_init_log();
         let attr = Username::new("user").unwrap();
         let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
@@ -219,7 +215,7 @@ mod tests {
 
     #[test]
     fn username_new_too_large() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut large = String::new();
         for _i in 0..64 {
             large.push_str("abcdefgh");
@@ -236,7 +232,7 @@ mod tests {
 
     #[test]
     fn userhash() {
-        init();
+        let _log = crate::tests::test_init_log();
         let hash = Userhash::compute("username", "realm1");
         let attr = Userhash::new(hash);
         assert_eq!(attr.hash(), &hash);

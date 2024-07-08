@@ -89,13 +89,9 @@ mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn realm() {
-        init();
+        let _log = crate::tests::test_init_log();
         let attr = Realm::new("realm").unwrap();
         assert_eq!(attr.realm(), "realm");
         assert_eq!(attr.length() as usize, "realm".len());
@@ -114,7 +110,7 @@ mod tests {
 
     #[test]
     fn realm_not_utf8() {
-        init();
+        let _log = crate::tests::test_init_log();
         let attr = Realm::new("realm").unwrap();
         let raw = RawAttribute::from(&attr);
         let mut data = raw.to_bytes();
@@ -127,7 +123,7 @@ mod tests {
 
     #[test]
     fn realme_new_too_large() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut large = String::new();
         for _i in 0..95 {
             large.push_str("abcdefgh");

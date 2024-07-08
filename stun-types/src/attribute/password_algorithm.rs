@@ -229,13 +229,9 @@ impl std::fmt::Display for PasswordAlgorithm {
 mod tests {
     use super::*;
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn password_algorithms() {
-        init();
+        let _log = crate::tests::test_init_log();
         let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
         let attr = PasswordAlgorithms::new(&vals);
         assert_eq!(attr.algorithms(), &vals);
@@ -254,7 +250,7 @@ mod tests {
 
     #[test]
     fn password_algorithm() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = PasswordAlgorithmValue::SHA256;
         let attr = PasswordAlgorithm::new(val);
         assert_eq!(attr.algorithm(), val);
@@ -273,7 +269,7 @@ mod tests {
 
     #[test]
     fn password_algorithm_value_too_large() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = PasswordAlgorithmValue::SHA256;
         let attr = PasswordAlgorithm::new(val);
         let raw = RawAttribute::from(&attr);
@@ -290,7 +286,7 @@ mod tests {
 
     #[test]
     fn password_algorithm_value_unknown() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = PasswordAlgorithmValue::SHA256;
         let attr = PasswordAlgorithm::new(val);
         let raw = RawAttribute::from(&attr);

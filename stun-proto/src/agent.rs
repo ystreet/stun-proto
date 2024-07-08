@@ -677,12 +677,9 @@ impl From<StunWriteError> for StunError {
 pub(crate) mod tests {
     use super::*;
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn agent_getters_setters() {
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
@@ -708,7 +705,7 @@ pub(crate) mod tests {
 
     #[test]
     fn request() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
@@ -736,7 +733,7 @@ pub(crate) mod tests {
 
     #[test]
     fn indication_with_invalid_response() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
@@ -768,7 +765,7 @@ pub(crate) mod tests {
 
     #[test]
     fn request_with_credentials() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -822,7 +819,7 @@ pub(crate) mod tests {
 
     #[test]
     fn request_unanswered() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
@@ -851,7 +848,7 @@ pub(crate) mod tests {
 
     #[test]
     fn request_without_credentials() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -888,7 +885,7 @@ pub(crate) mod tests {
 
     #[test]
     fn response_without_credentials() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -929,7 +926,7 @@ pub(crate) mod tests {
 
     #[test]
     fn agent_response_without_credentials() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -968,7 +965,7 @@ pub(crate) mod tests {
 
     #[test]
     fn response_with_incorrect_credentials() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -1010,7 +1007,7 @@ pub(crate) mod tests {
 
     #[test]
     fn duplicate_response_ignored() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -1043,6 +1040,7 @@ pub(crate) mod tests {
 
     #[test]
     fn request_cancel() {
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -1070,6 +1068,7 @@ pub(crate) mod tests {
 
     #[test]
     fn request_cancel_send() {
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -1102,6 +1101,7 @@ pub(crate) mod tests {
 
     #[test]
     fn request_duplicate() {
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -1140,6 +1140,7 @@ pub(crate) mod tests {
 
     #[test]
     fn incoming_request() {
+        let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
 
@@ -1158,7 +1159,7 @@ pub(crate) mod tests {
 
     #[test]
     fn tcp_request() {
-        init();
+        let _log = crate::tests::test_init_log();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
         let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
@@ -1178,7 +1179,7 @@ pub(crate) mod tests {
 
     #[test]
     fn tcp_buffer_split_recv() {
-        init();
+        let _log = crate::tests::test_init_log();
 
         let mut tcp_buffer = TcpBuffer::default();
 

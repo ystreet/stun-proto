@@ -332,13 +332,9 @@ mod tests {
     use super::*;
     use crate::attribute::{AlternateServer, Nonce, Realm};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn error_code() {
-        init();
+        let _log = crate::tests::test_init_log();
         let codes = [300, 401, 699];
         for code in codes.iter().copied() {
             let reason = ErrorCode::default_reason_for_code(code);
@@ -360,6 +356,7 @@ mod tests {
 
     #[test]
     fn error_code_parse_short() {
+        let _log = crate::tests::test_init_log();
         let err = error_code_new(420);
         let raw = RawAttribute::from(&err);
         // no data
@@ -377,6 +374,7 @@ mod tests {
 
     #[test]
     fn error_code_parse_wrong_implementation() {
+        let _log = crate::tests::test_init_log();
         let err = error_code_new(420);
         let raw = RawAttribute::from(&err);
         // provide incorrectly typed data
@@ -390,6 +388,7 @@ mod tests {
 
     #[test]
     fn error_code_parse_out_of_range_code() {
+        let _log = crate::tests::test_init_log();
         let err = error_code_new(420);
         let raw = RawAttribute::from(&err);
         let mut data: Vec<_> = raw.into();
@@ -404,6 +403,7 @@ mod tests {
 
     #[test]
     fn error_code_parse_invalid_reason() {
+        let _log = crate::tests::test_init_log();
         let err = error_code_new(420);
         let raw = RawAttribute::from(&err);
         let mut data: Vec<_> = raw.into();
@@ -418,6 +418,7 @@ mod tests {
 
     #[test]
     fn error_code_build_default_reason() {
+        let _log = crate::tests::test_init_log();
         let err = ErrorCode::builder(420).build().unwrap();
         assert_eq!(err.code(), 420);
         assert!(err.reason().len() > 0);
@@ -425,6 +426,7 @@ mod tests {
 
     #[test]
     fn error_code_build_out_of_range() {
+        let _log = crate::tests::test_init_log();
         assert!(matches!(
             ErrorCode::builder(700).build(),
             Err(StunWriteError::OutOfRange {
@@ -437,6 +439,7 @@ mod tests {
 
     #[test]
     fn error_code_new_out_of_range() {
+        let _log = crate::tests::test_init_log();
         assert!(matches!(
             ErrorCode::new(700, "some-reason"),
             Err(StunWriteError::OutOfRange {
@@ -449,7 +452,7 @@ mod tests {
 
     #[test]
     fn unknown_attributes() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut unknown = UnknownAttributes::new(&[Realm::TYPE]);
         unknown.add_attribute(AlternateServer::TYPE);
         // duplicates ignored

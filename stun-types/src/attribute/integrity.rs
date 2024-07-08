@@ -292,13 +292,9 @@ mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn message_integrity() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = [1; 20];
         let attr = MessageIntegrity::new(val);
         assert_eq!(attr.hmac(), &val);
@@ -331,7 +327,7 @@ mod tests {
 
     #[test]
     fn message_integrity_sha256() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = [1; 32];
         let attr = MessageIntegritySha256::new(&val).unwrap();
         assert_eq!(attr.hmac(), &val);
@@ -361,7 +357,7 @@ mod tests {
 
     #[test]
     fn message_integrity_sha256_new_too_large() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = [1; 33];
         assert!(matches!(
             MessageIntegritySha256::new(&val),
@@ -374,7 +370,7 @@ mod tests {
 
     #[test]
     fn message_integrity_sha256_new_too_small() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = [1; 15];
         assert!(matches!(
             MessageIntegritySha256::new(&val),
@@ -387,7 +383,7 @@ mod tests {
 
     #[test]
     fn message_integrity_sha256_new_not_multiple_of_4() {
-        init();
+        let _log = crate::tests::test_init_log();
         let val = [1; 19];
         assert!(matches!(
             MessageIntegritySha256::new(&val),

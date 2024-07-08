@@ -537,13 +537,9 @@ impl<'a> From<RawAttribute<'a>> for Vec<u8> {
 mod tests {
     use super::*;
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn attribute_type() {
-        init();
+        let _log = crate::tests::test_init_log();
         let atype = ErrorCode::TYPE;
         let anum: u16 = atype.into();
         assert_eq!(atype, anum.into());
@@ -551,7 +547,7 @@ mod tests {
 
     #[test]
     fn short_attribute_header() {
-        init();
+        let _log = crate::tests::test_init_log();
         let data = [0; 1];
         // not enough data to parse the header
         let res: Result<AttributeHeader, _> = data.as_ref().try_into();
@@ -560,7 +556,7 @@ mod tests {
 
     #[test]
     fn raw_attribute_construct() {
-        init();
+        let _log = crate::tests::test_init_log();
         let a = RawAttribute::new(1.into(), &[80, 160]);
         assert_eq!(a.get_type(), 1.into());
         let bytes: Vec<_> = a.into();
@@ -571,7 +567,7 @@ mod tests {
 
     #[test]
     fn raw_attribute_encoding() {
-        init();
+        let _log = crate::tests::test_init_log();
         let orig = RawAttribute::new(1.into(), &[80, 160]);
         assert_eq!(orig.get_type(), 1.into());
         let mut data: Vec<_> = orig.into();
@@ -589,6 +585,7 @@ mod tests {
 
     #[test]
     fn test_check_len() {
+        let _log = crate::tests::test_init_log();
         assert!(check_len(4, ..).is_ok());
         assert!(check_len(4, 0..).is_ok());
         assert!(check_len(4, 0..8).is_ok());

@@ -1567,13 +1567,9 @@ impl<'a> MessageBuilder<'a> {
 mod tests {
     use super::*;
 
-    fn init() {
-        crate::tests::test_init_log();
-    }
-
     #[test]
     fn msg_type_roundtrip() {
-        init();
+        let _log = crate::tests::test_init_log();
         /* validate that all methods/classes survive a roundtrip */
         for m in 0..0xfff {
             let classes = vec![
@@ -1592,7 +1588,7 @@ mod tests {
 
     #[test]
     fn msg_roundtrip() {
-        init();
+        let _log = crate::tests::test_init_log();
         /* validate that all methods/classes survive a roundtrip */
         for m in (0x009..0x4ff).step_by(0x123) {
             let classes = vec![
@@ -1621,6 +1617,7 @@ mod tests {
 
     #[test]
     fn unknown_attributes() {
+        let _log = crate::tests::test_init_log();
         let src = Message::builder_request(BINDING).build();
         let src = Message::from_bytes(&src).unwrap();
         let msg = Message::unknown_attributes(&src, &[Software::TYPE]).build();
@@ -1636,6 +1633,7 @@ mod tests {
 
     #[test]
     fn bad_request() {
+        let _log = crate::tests::test_init_log();
         let src = Message::builder_request(BINDING).build();
         let src = Message::from_bytes(&src).unwrap();
         let msg = Message::bad_request(&src).build();
@@ -1649,7 +1647,7 @@ mod tests {
 
     #[test]
     fn fingerprint() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         let software = Software::new("s").unwrap();
         msg.add_attribute(&software).unwrap();
@@ -1664,7 +1662,7 @@ mod tests {
 
     #[test]
     fn integrity() {
-        init();
+        let _log = crate::tests::test_init_log();
         for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
             let credentials = ShortTermCredentials::new("secret".to_owned()).into();
             let mut msg = Message::builder_request(BINDING);
@@ -1682,7 +1680,7 @@ mod tests {
 
     #[test]
     fn add_duplicate_integrity() {
-        init();
+        let _log = crate::tests::test_init_log();
         let credentials = ShortTermCredentials::new("secret".to_owned()).into();
         let mut msg = Message::builder_request(BINDING);
         msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
@@ -1704,7 +1702,7 @@ mod tests {
 
     #[test]
     fn add_attribute_after_integrity() {
-        init();
+        let _log = crate::tests::test_init_log();
         for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
             let credentials = ShortTermCredentials::new("secret".to_owned()).into();
             let mut msg = Message::builder_request(BINDING);
@@ -1719,7 +1717,7 @@ mod tests {
 
     #[test]
     fn add_integrity_after_fingerprint() {
-        init();
+        let _log = crate::tests::test_init_log();
         for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
             let credentials = ShortTermCredentials::new("secret".to_owned()).into();
             let mut msg = Message::builder_request(BINDING);
@@ -1733,7 +1731,7 @@ mod tests {
 
     #[test]
     fn duplicate_fingerprint() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         assert!(matches!(
@@ -1744,7 +1742,7 @@ mod tests {
 
     #[test]
     fn parse_invalid_fingerprint() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         let mut bytes = msg.build();
@@ -1757,7 +1755,7 @@ mod tests {
 
     #[test]
     fn parse_wrong_magic() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         let mut bytes = msg.build();
@@ -1770,7 +1768,7 @@ mod tests {
 
     #[test]
     fn parse_attribute_after_integrity() {
-        init();
+        let _log = crate::tests::test_init_log();
         for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
             let credentials = ShortTermCredentials::new("secret".to_owned()).into();
             let mut msg = Message::builder_request(BINDING);
@@ -1790,7 +1788,7 @@ mod tests {
 
     #[test]
     fn parse_attribute_after_fingerprint() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         let mut bytes = msg.build();
@@ -1807,7 +1805,7 @@ mod tests {
 
     #[test]
     fn add_attribute_after_fingerprint() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         let software = Software::new("s").unwrap();
@@ -1819,7 +1817,7 @@ mod tests {
 
     #[test]
     fn parse_truncated_message_header() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         let bytes = msg.build();
@@ -1834,7 +1832,7 @@ mod tests {
 
     #[test]
     fn parse_truncated_message() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         let bytes = msg.build();
@@ -1849,7 +1847,7 @@ mod tests {
 
     #[test]
     fn parse_truncated_message_attribute() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         let mut bytes = msg.build();
@@ -1866,7 +1864,7 @@ mod tests {
 
     #[test]
     fn valid_attributes() {
-        init();
+        let _log = crate::tests::test_init_log();
         let mut src = Message::builder_request(BINDING);
         let username = Username::new("123").unwrap();
         src.add_attribute(&username).unwrap();
@@ -1914,6 +1912,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "created from a non-request message")]
     fn builder_success_panic() {
+        let _log = crate::tests::test_init_log();
         let msg = Message::builder(
             MessageType::from_class_method(MessageClass::Indication, BINDING),
             TransactionId::generate(),
@@ -1926,6 +1925,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "created from a non-request message")]
     fn builder_error_panic() {
+        let _log = crate::tests::test_init_log();
         let msg = Message::builder(
             MessageType::from_class_method(MessageClass::Indication, BINDING),
             TransactionId::generate(),
@@ -1938,6 +1938,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Use add_message_integrity() instead")]
     fn builder_add_attribute_integrity_panic() {
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         let hmac = [2; 20];
         let integrity = MessageIntegrity::new(hmac);
@@ -1947,6 +1948,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Use add_message_integrity() instead")]
     fn builder_add_attribute_integrity_sha256_panic() {
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         let hmac = [2; 16];
         let integrity = MessageIntegritySha256::new(&hmac).unwrap();
@@ -1956,6 +1958,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Use add_fingerprint() instead")]
     fn builder_add_attribute_fingerprint_panic() {
+        let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         let fingerprint = [2; 4];
         let integrity = Fingerprint::new(fingerprint);
@@ -1964,7 +1967,7 @@ mod tests {
 
     #[test]
     fn rfc5769_vector1() {
-        init();
+        let _log = crate::tests::test_init_log();
         // https://tools.ietf.org/html/rfc5769#section-2.1
         let data = vec![
             0x00, 0x01, 0x00, 0x58, // Request type message length
@@ -2063,7 +2066,7 @@ mod tests {
 
     #[test]
     fn rfc5769_vector2() {
-        init();
+        let _log = crate::tests::test_init_log();
         // https://tools.ietf.org/html/rfc5769#section-2.2
         let data = vec![
             0x01, 0x01, 0x00, 0x3c, // Response type message length
@@ -2140,7 +2143,7 @@ mod tests {
 
     #[test]
     fn rfc5769_vector3() {
-        init();
+        let _log = crate::tests::test_init_log();
         // https://tools.ietf.org/html/rfc5769#section-2.3
         let data = vec![
             0x01, 0x01, 0x00, 0x48, // Response type and message length
@@ -2220,7 +2223,7 @@ mod tests {
 
     #[test]
     fn rfc5769_vector4() {
-        init();
+        let _log = crate::tests::test_init_log();
         // https://tools.ietf.org/html/rfc5769#section-2.4
         let data = vec![
             0x00, 0x01, 0x00, 0x60, //    Request type and message length
@@ -2305,7 +2308,7 @@ mod tests {
 
     #[test]
     fn rfc8489_vector1() {
-        init();
+        let _log = crate::tests::test_init_log();
         // https://www.rfc-editor.org/rfc/rfc8489#appendix-B.1
         // https://www.rfc-editor.org/errata/eid6268
         let data = vec![
