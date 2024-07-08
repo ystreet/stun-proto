@@ -13,8 +13,6 @@ use std::net::{SocketAddr, UdpSocket};
 use std::process::exit;
 use std::str::FromStr;
 
-use tracing_subscriber::EnvFilter;
-
 use tracing::{info, trace};
 
 use stun_types::attribute::*;
@@ -115,10 +113,27 @@ fn udp_message(out: MessageBuilder<'_>, to: SocketAddr) -> Result<(), std::io::E
     parse_response(msg)
 }
 
+fn init_logs() {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::Layer;
+    let level_filter = std::env::var("STUN_LOG")
+        .ok()
+        .and_then(|var| var.parse::<tracing_subscriber::filter::Targets>().ok())
+        .unwrap_or(tracing_subscriber::filter::Targets::new().with_default(tracing::Level::ERROR));
+    let registry = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .with_file(true)
+            .with_line_number(true)
+            .with_level(true)
+            .with_target(false)
+            .with_writer(std::io::stderr)
+            .with_filter(level_filter),
+    );
+    tracing::subscriber::set_global_default(registry).unwrap()
+}
+
 fn main() -> std::io::Result<()> {
-    if let Ok(filter) = EnvFilter::try_from_default_env() {
-        tracing_subscriber::fmt().with_env_filter(filter).init();
-    }
+    init_logs();
 
     let args: Vec<String> = env::args().collect();
     let proto = if args.len() > 1 {

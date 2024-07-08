@@ -24,7 +24,7 @@ arbitrary ={ workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
-tracing-subscriber = { version = "0.3", features = ["env-filter"]}
+tracing-subscriber = "0.3"
 
 [features]
 arbitrary = ["dep:arbitrary"]
