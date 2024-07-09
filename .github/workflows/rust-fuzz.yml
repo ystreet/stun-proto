@@ -7,7 +7,7 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  check:
+  fuzz:
     name: 
     runs-on: ubuntu-latest
     steps:
