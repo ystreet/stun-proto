@@ -127,11 +127,17 @@ pub(crate) mod tests {
         let Data::Owned(owned) = owned_data else {
             unreachable!();
         };
+        let inner = <Box<[u8]>>::from(owned.clone());
+        assert_eq!(array.as_slice(), &*inner);
         let owned = DataOwned::take(owned);
         assert_eq!(array.as_slice(), &*owned);
         let data = Data::from(owned);
         assert_eq!(array.as_slice(), &*data);
         let borrowed = DataSlice::from(&*data);
         assert_eq!(array.as_slice(), &*borrowed);
+        let inner = <&[u8]>::from(borrowed.clone());
+        assert_eq!(array.as_slice(), inner);
+        let inner = borrowed.take();
+        assert_eq!(array.as_slice(), inner);
     }
 }
