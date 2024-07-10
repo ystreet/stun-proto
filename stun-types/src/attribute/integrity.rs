@@ -291,15 +291,18 @@ impl std::fmt::Display for MessageIntegritySha256 {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
+    use tracing::trace;
 
     #[test]
     fn message_integrity() {
         let _log = crate::tests::test_init_log();
         let val = [1; 20];
         let attr = MessageIntegrity::new(val);
+        trace!("{attr}");
         assert_eq!(attr.hmac(), &val);
         assert_eq!(attr.length(), 20);
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), MessageIntegrity::TYPE);
         let mapped2 = MessageIntegrity::try_from(&raw).unwrap();
         assert_eq!(mapped2.hmac(), &val);
@@ -330,9 +333,11 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let val = [1; 32];
         let attr = MessageIntegritySha256::new(&val).unwrap();
+        trace!("{attr}");
         assert_eq!(attr.hmac(), &val);
         assert_eq!(attr.length(), 32);
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), MessageIntegritySha256::TYPE);
         let mapped2 = MessageIntegritySha256::try_from(&raw).unwrap();
         assert_eq!(mapped2.hmac(), &val);

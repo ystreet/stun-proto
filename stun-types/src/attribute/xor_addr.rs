@@ -84,8 +84,11 @@ impl std::fmt::Display for XorMappedAddress {
 
 #[cfg(test)]
 mod tests {
+    use std::net::IpAddr;
+
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
+    use tracing::trace;
 
     #[test]
     fn xor_mapped_address() {
@@ -97,8 +100,14 @@ mod tests {
         ];
         for addr in addrs {
             let mapped = XorMappedAddress::new(*addr, transaction_id);
+            trace!("mapped: {mapped}");
             assert_eq!(mapped.addr(transaction_id), *addr);
             let raw = RawAttribute::from(&mapped);
+            trace!("{raw}");
+            match addr.ip() {
+                IpAddr::V4(_ip4) => assert_eq!(mapped.length(), 8),
+                IpAddr::V6(_ip6) => assert_eq!(mapped.length(), 20),
+            };
             assert_eq!(raw.get_type(), XorMappedAddress::TYPE);
             let mapped2 = XorMappedAddress::try_from(&raw).unwrap();
             assert_eq!(mapped2.addr(transaction_id), *addr);

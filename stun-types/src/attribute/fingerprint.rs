@@ -103,15 +103,18 @@ impl std::fmt::Display for Fingerprint {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
+    use tracing::trace;
 
     #[test]
     fn fingerprint() {
         let _log = crate::tests::test_init_log();
         let val = [1; 4];
         let attr = Fingerprint::new(val);
+        trace!("{attr}");
         assert_eq!(attr.fingerprint(), &val);
         assert_eq!(attr.length(), 4);
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), Fingerprint::TYPE);
         let mapped2 = Fingerprint::try_from(&raw).unwrap();
         assert_eq!(mapped2.fingerprint(), &val);

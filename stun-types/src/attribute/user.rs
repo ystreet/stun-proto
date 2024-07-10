@@ -179,15 +179,18 @@ impl std::fmt::Display for Userhash {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
+    use tracing::trace;
 
     #[test]
     fn username() {
         let _log = crate::tests::test_init_log();
         let s = "woohoo!";
         let user = Username::new(s).unwrap();
+        trace!("{user}");
         assert_eq!(user.username(), s);
         assert_eq!(user.length() as usize, s.len());
         let raw = RawAttribute::from(&user);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), Username::TYPE);
         let user2 = Username::try_from(&raw).unwrap();
         assert_eq!(user2.username(), s);
@@ -235,9 +238,11 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let hash = Userhash::compute("username", "realm1");
         let attr = Userhash::new(hash);
+        trace!("{attr}");
         assert_eq!(attr.hash(), &hash);
         assert_eq!(attr.length(), 32);
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), Userhash::TYPE);
         let mapped2 = Userhash::try_from(&raw).unwrap();
         assert_eq!(mapped2.hash(), &hash);

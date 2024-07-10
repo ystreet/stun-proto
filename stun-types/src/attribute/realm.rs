@@ -88,14 +88,17 @@ impl std::fmt::Display for Realm {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
+    use tracing::trace;
 
     #[test]
     fn realm() {
         let _log = crate::tests::test_init_log();
         let attr = Realm::new("realm").unwrap();
+        trace!("{attr}");
         assert_eq!(attr.realm(), "realm");
         assert_eq!(attr.length() as usize, "realm".len());
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), Realm::TYPE);
         let mapped2 = Realm::try_from(&raw).unwrap();
         assert_eq!(mapped2.realm(), "realm");

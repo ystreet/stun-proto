@@ -265,15 +265,18 @@ impl std::fmt::Display for IceControlling {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracing::trace;
 
     #[test]
     fn priority() {
         let _log = crate::tests::test_init_log();
         let val = 100;
         let priority = Priority::new(val);
+        trace!("{priority}");
         assert_eq!(priority.priority(), val);
         assert_eq!(priority.length(), 4);
         let raw = RawAttribute::from(&priority);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), Priority::TYPE);
         let mapped2 = Priority::try_from(&raw).unwrap();
         assert_eq!(mapped2.priority(), val);
@@ -301,8 +304,10 @@ mod tests {
     fn use_candidate() {
         let _log = crate::tests::test_init_log();
         let use_candidate = UseCandidate::default();
+        trace!("{use_candidate}");
         assert_eq!(use_candidate.length(), 0);
         let raw = RawAttribute::from(&use_candidate);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), UseCandidate::TYPE);
         let _mapped2 = UseCandidate::try_from(&raw).unwrap();
         // provide incorrectly typed data
@@ -319,9 +324,11 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let tb = 100;
         let attr = IceControlling::new(tb);
+        trace!("{attr}");
         assert_eq!(attr.tie_breaker(), tb);
         assert_eq!(attr.length(), 8);
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), IceControlling::TYPE);
         let mapped2 = IceControlling::try_from(&raw).unwrap();
         assert_eq!(mapped2.tie_breaker(), tb);
@@ -350,9 +357,11 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let tb = 100;
         let attr = IceControlled::new(tb);
+        trace!("{attr}");
         assert_eq!(attr.tie_breaker(), tb);
         assert_eq!(attr.length(), 8);
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), IceControlled::TYPE);
         let mapped2 = IceControlled::try_from(&raw).unwrap();
         assert_eq!(mapped2.tie_breaker(), tb);

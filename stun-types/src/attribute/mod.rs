@@ -359,7 +359,7 @@ impl<'a> std::fmt::Display for RawAttribute<'a> {
         let malformed_str = format!(
             "{}(Malformed): len: {}, data: {:?})",
             self.get_type(),
-            self.header.length,
+            self.header.length(),
             self.value
         );
         let display_str = match self.get_type() {
@@ -386,7 +386,9 @@ impl<'a> std::fmt::Display for RawAttribute<'a> {
             IceControlling::TYPE => display_attr!(self, IceControlling, malformed_str),
             _ => format!(
                 "RawAttribute (type: {:?}, len: {}, data: {:?})",
-                self.header.atype, self.header.length, &self.value
+                self.header.get_type(),
+                self.header.length(),
+                &self.value
             ),
         };
         write!(f, "{}", display_str)
@@ -419,15 +421,15 @@ impl<'a> RawAttribute<'a> {
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, StunParseError> {
         let header = AttributeHeader::parse(data)?;
         // the advertised length is larger than actual data -> error
-        if header.length > (data.len() - 4) as u16 {
+        if header.length() > (data.len() - 4) as u16 {
             return Err(StunParseError::Truncated {
-                expected: header.length as usize,
+                expected: header.length() as usize,
                 actual: data.len() - 4,
             });
         }
         Ok(Self {
             header,
-            value: Data::Borrowed(data[4..header.length as usize + 4].into()),
+            value: Data::Borrowed(data[4..header.length() as usize + 4].into()),
         })
     }
 
@@ -453,7 +455,7 @@ impl<'a> RawAttribute<'a> {
 
     /// Returns the [`AttributeType`] of this [`RawAttribute`]
     pub fn get_type(&self) -> AttributeType {
-        self.header.atype
+        self.header.get_type()
     }
 
     /// Returns the length of this [`RawAttribute`]
@@ -467,7 +469,7 @@ impl<'a> RawAttribute<'a> {
         atype: AttributeType,
         allowed_range: impl std::ops::RangeBounds<usize>,
     ) -> Result<(), StunParseError> {
-        if self.header.atype != atype {
+        if self.header.get_type() != atype {
             return Err(StunParseError::WrongAttributeImplementation);
         }
         check_len(self.value.len(), allowed_range)
