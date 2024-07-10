@@ -200,3 +200,44 @@ impl std::fmt::Display for XorSocketAddr {
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use tracing::trace;
+
+    #[test]
+    fn mapped_address_ipv4() {
+        let addr = "192.168.0.1:3178".parse().unwrap();
+        let _log = crate::tests::test_init_log();
+        let data = [
+            0x00, 0x01, 0x00, 0x08, 0x00, 0x01, 0x0C, 0x6A, 0xC0, 0xA8, 0x00, 0x01,
+        ];
+        let mapped = MappedSocketAddr::from_raw(&RawAttribute::from_bytes(&data).unwrap()).unwrap();
+        trace!("mapped: {mapped}");
+        assert_eq!(mapped.addr(), addr);
+    }
+
+    #[test]
+    fn mapped_address_short() {
+        let _log = crate::tests::test_init_log();
+        let data = [0x00, 0x01, 0x00, 0x02, 0x00, 0x00];
+        assert!(matches!(
+            MappedSocketAddr::from_raw(&RawAttribute::from_bytes(&data).unwrap()),
+            Err(StunParseError::Truncated {
+                expected: 4,
+                actual: 2
+            })
+        ));
+    }
+
+    #[test]
+    fn mapped_address_unknown_family() {
+        let _log = crate::tests::test_init_log();
+        let data = [0x00, 0x01, 0x00, 0x04, 0x00, 0x99, 0x00, 0x00];
+        assert!(matches!(
+            MappedSocketAddr::from_raw(&RawAttribute::from_bytes(&data).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
+        ));
+    }
+}
