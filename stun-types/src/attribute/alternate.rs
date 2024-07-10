@@ -209,11 +209,18 @@ mod tests {
         let mapped2 = AlternateDomain::try_from(&raw).unwrap();
         assert_eq!(mapped2.domain(), dns);
         // provide incorrectly typed data
-        let mut data: Vec<_> = raw.into();
+        let mut data: Vec<_> = raw.clone().into();
         BigEndian::write_u16(&mut data[0..2], 0);
         assert!(matches!(
             AlternateDomain::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
+        ));
+        let mut data: Vec<_> = raw.into();
+        // invalid utf-8 data
+        data[8] = 0x88;
+        assert!(matches!(
+            AlternateDomain::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
         ));
     }
 }
