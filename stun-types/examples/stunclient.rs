@@ -6,6 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![cfg(not(tarpaulin))]
+
 use std::env;
 use std::io::{Read, Write};
 use std::net::TcpStream;
