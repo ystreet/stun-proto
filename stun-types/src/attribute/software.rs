@@ -93,14 +93,17 @@ impl std::fmt::Display for Software {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
+    use tracing::trace;
 
     #[test]
     fn software() {
         let _log = crate::tests::test_init_log();
         let software = Software::new("software").unwrap();
+        trace!("{software}");
         assert_eq!(software.software(), "software");
         assert_eq!(software.length() as usize, "software".len());
         let raw = RawAttribute::from(&software);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), Software::TYPE);
         let software2 = Software::try_from(&raw).unwrap();
         assert_eq!(software2.software(), "software");

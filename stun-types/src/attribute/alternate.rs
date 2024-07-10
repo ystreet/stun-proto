@@ -155,6 +155,7 @@ impl std::fmt::Display for AlternateDomain {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
+    use tracing::trace;
 
     #[test]
     fn alternate_server() {
@@ -165,12 +166,14 @@ mod tests {
         ];
         for addr in addrs {
             let mapped = AlternateServer::new(*addr);
+            trace!("{mapped}");
             assert_eq!(mapped.server(), *addr);
             match addr {
                 SocketAddr::V4(_) => assert_eq!(mapped.length(), 8),
                 SocketAddr::V6(_) => assert_eq!(mapped.length(), 20),
             }
             let raw = RawAttribute::from(&mapped);
+            trace!("{raw}");
             assert_eq!(raw.get_type(), AlternateServer::TYPE);
             let mapped2 = AlternateServer::try_from(&raw).unwrap();
             assert_eq!(mapped2.server(), *addr);
@@ -202,9 +205,11 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let dns = "example.com";
         let attr = AlternateDomain::new(dns);
+        trace!("{attr}");
         assert_eq!(attr.domain(), dns);
         assert_eq!(attr.length() as usize, dns.len());
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), AlternateDomain::TYPE);
         let mapped2 = AlternateDomain::try_from(&raw).unwrap();
         assert_eq!(mapped2.domain(), dns);

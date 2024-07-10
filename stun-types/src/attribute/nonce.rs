@@ -89,14 +89,17 @@ impl std::fmt::Display for Nonce {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
+    use tracing::trace;
 
     #[test]
     fn nonce() {
         let _log = crate::tests::test_init_log();
         let attr = Nonce::new("nonce").unwrap();
+        trace!("{attr}");
         assert_eq!(attr.nonce(), "nonce");
         assert_eq!(attr.length() as usize, "nonce".len());
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), Nonce::TYPE);
         let mapped2 = Nonce::try_from(&raw).unwrap();
         assert_eq!(mapped2.nonce(), "nonce");

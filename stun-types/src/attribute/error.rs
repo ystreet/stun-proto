@@ -331,17 +331,22 @@ impl std::fmt::Display for UnknownAttributes {
 mod tests {
     use super::*;
     use crate::attribute::{AlternateServer, Nonce, Realm};
+    use tracing::trace;
 
     #[test]
     fn error_code() {
         let _log = crate::tests::test_init_log();
-        let codes = [300, 401, 699];
+        let codes = [
+            300, 301, 400, 401, 403, 420, 437, 438, 440, 441, 442, 443, 486, 487, 500, 508, 699,
+        ];
         for code in codes.iter().copied() {
             let reason = ErrorCode::default_reason_for_code(code);
             let err = ErrorCode::new(code, reason).unwrap();
+            trace!("{err}");
             assert_eq!(err.code(), code);
             assert_eq!(err.reason(), reason);
             let raw = RawAttribute::from(&err);
+            trace!("{raw}");
             assert_eq!(raw.get_type(), ErrorCode::TYPE);
             let err2 = ErrorCode::try_from(&raw).unwrap();
             assert_eq!(err2.code(), code);
@@ -457,6 +462,7 @@ mod tests {
         unknown.add_attribute(AlternateServer::TYPE);
         // duplicates ignored
         unknown.add_attribute(AlternateServer::TYPE);
+        trace!("{unknown}");
         assert!(unknown.has_attribute(Realm::TYPE));
         assert!(unknown.has_attribute(AlternateServer::TYPE));
         assert!(!unknown.has_attribute(Nonce::TYPE));

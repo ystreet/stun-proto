@@ -228,14 +228,17 @@ impl std::fmt::Display for PasswordAlgorithm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tracing::trace;
 
     #[test]
     fn password_algorithms() {
         let _log = crate::tests::test_init_log();
         let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
         let attr = PasswordAlgorithms::new(&vals);
+        trace!("{attr}");
         assert_eq!(attr.algorithms(), &vals);
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), PasswordAlgorithms::TYPE);
         let mapped2 = PasswordAlgorithms::try_from(&raw).unwrap();
         assert_eq!(mapped2.algorithms(), &vals);
@@ -253,8 +256,10 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let val = PasswordAlgorithmValue::SHA256;
         let attr = PasswordAlgorithm::new(val);
+        trace!("{attr}");
         assert_eq!(attr.algorithm(), val);
         let raw = RawAttribute::from(&attr);
+        trace!("{raw}");
         assert_eq!(raw.get_type(), PasswordAlgorithm::TYPE);
         let mapped2 = PasswordAlgorithm::try_from(&raw).unwrap();
         assert_eq!(mapped2.algorithm(), val);
