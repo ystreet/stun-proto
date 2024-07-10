@@ -1746,7 +1746,10 @@ mod tests {
         let mut msg = Message::builder_request(BINDING);
         msg.add_fingerprint().unwrap();
         let mut bytes = msg.build();
+        bytes[24] = 0x80;
         bytes[25] = 0x80;
+        bytes[26] = 0x80;
+        bytes[27] = 0x80;
         assert!(matches!(
             Message::from_bytes(&bytes),
             Err(StunParseError::FingerprintMismatch)
