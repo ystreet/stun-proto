@@ -30,8 +30,8 @@
 //!     0x00, 0x00, 0x00, 0x00, // \
 //!     0x00, 0x00, 0x00, 0x00, // } transaction ID
 //!     0x00, 0x00, 0x73, 0x92, // /
-//!     0x00, 0x1D, 0x00, 0x04, // PasswordAlgorithm ttribute
-//!     0x00, 0x02, 0x00, 0x00 // PasswordAlgorithm attribute
+//!     0x00, 0x1D, 0x00, 0x04, // PasswordAlgorithm attribute header (type and length)
+//!     0x00, 0x02, 0x00, 0x00  // PasswordAlgorithm attribute value
 //! ];
 //! let msg = Message::from_bytes(&msg_data).unwrap();
 //!
@@ -84,7 +84,7 @@ use crate::attribute::*;
 
 use tracing::{debug, warn};
 
-/// The value of magic cookie (in network byte order) as specified in RFC5389, and RFC8489.
+/// The value of the magic cookie (in network byte order) as specified in RFC5389, and RFC8489.
 pub const MAGIC_COOKIE: u32 = 0x2112A442;
 
 /// The value of the binding message type.  Can be used in either a request or an indication
@@ -1331,6 +1331,7 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
     }
 }
 
+/// A builder of a STUN Message to a sequence of bytes.
 #[derive(Clone, Debug)]
 pub struct MessageBuilder<'a> {
     msg_type: MessageType,

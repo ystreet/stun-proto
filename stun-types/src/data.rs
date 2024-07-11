@@ -6,6 +6,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! Data handling
+//!
+//! Provides a CoW interface for slices of `[u8]` and `Box<[u8]>`
+
 /// A slice of data
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
