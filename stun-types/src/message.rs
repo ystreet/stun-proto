@@ -508,6 +508,74 @@ impl std::fmt::Display for TransactionId {
     }
 }
 
+/// The fixed length header of a STUN message.  Allows reading the message header for a quick
+/// check if this message is a valid STUN message.  Can also be used to expose the length of the
+/// complete message without needing to receive the entire message.
+pub struct MessageHeader {
+    mtype: MessageType,
+    transaction_id: TransactionId,
+    length: u16,
+}
+
+impl MessageHeader {
+    /// The length of the STUN message header.
+    pub const LENGTH: usize = 20;
+
+    /// Deserialize a `MessageHeader`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::{MessageHeader, MessageType, MessageClass, BINDING};
+    /// let msg_data = [0, 1, 0, 8, 33, 18, 164, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 232];
+    /// let message = MessageHeader::from_bytes(&msg_data).unwrap();
+    /// assert_eq!(message.get_type(), MessageType::from_class_method(MessageClass::Request, BINDING));
+    /// assert_eq!(message.transaction_id(), 1000.into());
+    /// assert_eq!(message.data_length(), 8);
+    /// ```
+    pub fn from_bytes(data: &[u8]) -> Result<Self, StunParseError> {
+        if data.len() < 20 {
+            return Err(StunParseError::Truncated {
+                expected: 20,
+                actual: data.len(),
+            });
+        }
+        let mtype = MessageType::from_bytes(data)?;
+        let mlength = BigEndian::read_u16(&data[2..]);
+        let tid = BigEndian::read_u128(&data[4..]);
+        let cookie = (tid >> 96) as u32;
+        if cookie != MAGIC_COOKIE {
+            warn!(
+                "malformed cookie constant {:?} != stored data {:?}",
+                MAGIC_COOKIE, cookie
+            );
+            return Err(StunParseError::NotStun);
+        }
+
+        Ok(Self {
+            mtype,
+            transaction_id: tid.into(),
+            length: mlength,
+        })
+    }
+
+    /// The number of bytes of content in this [`MessageHeader`]. Adding both `data_length()`
+    /// and [`MessageHeader::LENGTH`] will result in the size of the complete STUN message.
+    pub fn data_length(&self) -> u16 {
+        self.length
+    }
+
+    /// The [`TransactionId`] of this [`MessageHeader`]
+    pub fn transaction_id(&self) -> TransactionId {
+        self.transaction_id
+    }
+
+    /// The [`MessageType`] of this [`MessageHeader`]
+    pub fn get_type(&self) -> MessageType {
+        self.mtype
+    }
+}
+
 /// The structure that encapsulates the entirety of a STUN message
 ///
 /// Contains the [`MessageType`], a transaction ID, and a list of STUN
@@ -788,17 +856,9 @@ impl<'a> Message<'a> {
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, StunParseError> {
         let orig_data = data;
 
-        if data.len() < 20 {
-            // always at least 20 bytes long
-            debug!("messsage data is too short {} < 20", data.len());
-            return Err(StunParseError::Truncated {
-                expected: 20,
-                actual: data.len(),
-            });
-        }
-        let _mtype = MessageType::try_from(data)?;
-        let mlength = BigEndian::read_u16(&data[2..]) as usize;
-        if mlength + 20 > data.len() {
+        let header = MessageHeader::from_bytes(data)?;
+        let mlength = header.data_length() as usize;
+        if mlength + MessageHeader::LENGTH > data.len() {
             // mlength + header
             warn!(
                 "malformed advertised size {:?} and data size {:?} don't match",
@@ -806,22 +866,13 @@ impl<'a> Message<'a> {
                 data.len()
             );
             return Err(StunParseError::Truncated {
-                expected: mlength + 20,
+                expected: mlength + MessageHeader::LENGTH,
                 actual: data.len(),
             });
         }
-        let tid = BigEndian::read_u128(&data[4..]);
-        let cookie = (tid >> 96) as u32;
-        if cookie != MAGIC_COOKIE {
-            warn!(
-                "malformed cookie constant {:?} != stored data {:?}",
-                MAGIC_COOKIE, cookie
-            );
-            return Err(StunParseError::NotStun);
-        }
 
-        let mut data_offset = 20;
-        let mut data = &data[20..];
+        let mut data_offset = MessageHeader::LENGTH;
+        let mut data = &data[MessageHeader::LENGTH..];
         let mut seen_message_integrity = false;
         let mut seen_fingerprint = false;
         while !data.is_empty() {
@@ -880,7 +931,7 @@ impl<'a> Message<'a> {
                 let mut fingerprint_data = orig_data[..data_offset].to_vec();
                 BigEndian::write_u16(
                     &mut fingerprint_data[2..4],
-                    (data_offset + padded_len - 20) as u16,
+                    (data_offset + padded_len - MessageHeader::LENGTH) as u16,
                 );
                 let calculated_fingerprint = Fingerprint::compute(&fingerprint_data);
                 if &calculated_fingerprint != msg_fingerprint {
@@ -949,9 +1000,9 @@ impl<'a> Message<'a> {
         // find the location of the original MessageIntegrity attribute: XXX: maybe encode this into
         // the attribute instead?
         let data = self.data;
-        debug_assert!(data.len() >= 20);
-        let mut data = &data[20..];
-        let mut data_offset = 20;
+        debug_assert!(data.len() >= MessageHeader::LENGTH);
+        let mut data = &data[MessageHeader::LENGTH..];
+        let mut data_offset = MessageHeader::LENGTH;
         while !data.is_empty() {
             let attr = RawAttribute::from_bytes(data)?;
             if algo == IntegrityAlgorithm::Sha1 && attr.get_type() == MessageIntegrity::TYPE {
@@ -962,7 +1013,10 @@ impl<'a> Message<'a> {
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
                 let key = credentials.make_hmac_key();
                 let mut hmac_data = self.data[..data_offset].to_vec();
-                BigEndian::write_u16(&mut hmac_data[2..4], data_offset as u16 + 24 - 20);
+                BigEndian::write_u16(
+                    &mut hmac_data[2..4],
+                    data_offset as u16 + 24 - MessageHeader::LENGTH as u16,
+                );
                 return MessageIntegrity::verify(
                     &hmac_data,
                     &key,
@@ -980,7 +1034,7 @@ impl<'a> Message<'a> {
                 let mut hmac_data = self.data[..data_offset].to_vec();
                 BigEndian::write_u16(
                     &mut hmac_data[2..4],
-                    data_offset as u16 + attr.length() + 4 - 20,
+                    data_offset as u16 + attr.length() + 4 - MessageHeader::LENGTH as u16,
                 );
                 return MessageIntegritySha256::verify(&hmac_data, &key, &msg_hmac);
             }
@@ -1067,7 +1121,7 @@ impl<'a> Message<'a> {
     pub fn iter_attributes(&self) -> impl Iterator<Item = RawAttribute> {
         MessageAttributesIter {
             data: self.data,
-            data_i: 20,
+            data_i: MessageHeader::LENGTH,
             seen_message_integrity: false,
         }
     }
@@ -1344,9 +1398,9 @@ impl<'a> MessageBuilder<'a> {
         for attr in &self.attributes {
             attr_size += padded_attr_size(attr);
         }
-        let mut ret = Vec::with_capacity(20 + attr_size);
+        let mut ret = Vec::with_capacity(MessageHeader::LENGTH + attr_size);
         ret.extend(self.msg_type.to_bytes());
-        ret.resize(20, 0);
+        ret.resize(MessageHeader::LENGTH, 0);
         let transaction: u128 = self.transaction_id.into();
         let tid = (MAGIC_COOKIE as u128) << 96 | transaction & 0xffff_ffff_ffff_ffff_ffff_ffff;
         BigEndian::write_u128(&mut ret[4..20], tid);

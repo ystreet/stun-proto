@@ -73,15 +73,46 @@ fn tcp_message(out: MessageBuilder<'_>, to: SocketAddr) -> Result<(), std::io::E
     trace!("generated to {:?}", buf);
     socket.write_all(&buf)?;
     let mut buf = [0; 1500];
-    let amt = socket.read(&mut buf)?;
-    let buf = &buf[..amt];
-    trace!("got {:?}", buf);
-    let msg = Message::from_bytes(buf).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("Invalid message: {e:?}"),
-        )
-    })?;
+    let mut offset = 0;
+    let msg;
+    loop {
+        let amt = socket.read(&mut buf[offset..])?;
+        let data = &buf[..offset + amt];
+        if amt == 0 {
+            trace!("got {:?}", data);
+            msg = Message::from_bytes(data).map_err(|e| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Invalid message: {e:?}"),
+                )
+            })?;
+            break;
+        }
+        match MessageHeader::from_bytes(data) {
+            Ok(header) => {
+                if header.data_length() as usize + MessageHeader::LENGTH > 1500 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Response data is too large to receive",
+                    ));
+                }
+                if header.data_length() as usize + MessageHeader::LENGTH < offset + amt {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Response data is too large for message",
+                    ));
+                }
+            }
+            Err(StunParseError::NotStun) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Did not receive a STUN response",
+                ))
+            }
+            Err(e) => trace!("parsing STUN message header produced: \'{e}\'"),
+        }
+        offset += amt;
+    }
     info!(
         "received from {:?} to {:?} {}",
         socket.peer_addr().unwrap(),
