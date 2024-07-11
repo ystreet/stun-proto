@@ -61,7 +61,7 @@
 //! }
 //! impl<'a> From<&MyAttribute> for RawAttribute<'a> {
 //!     fn from(value: &MyAttribute) -> RawAttribute<'a> {
-//!         let mut ret = vec![0; 4];
+//!         let mut ret = [0; 4];
 //!         BigEndian::write_u32(&mut ret, value.value);
 //!         RawAttribute::new(MyAttribute::TYPE, &ret).into_owned()
 //!     }
