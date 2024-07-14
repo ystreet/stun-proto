@@ -10,7 +10,7 @@ edition = "2021"
 rust-version = "1.65.0"
 
 [workspace.dependencies]
-arbitrary = "1"
+arbitrary = { version = "1", features = ["derive"] }
 byteorder = "1"
 rand = "0.8"
 tracing = "0.1"
