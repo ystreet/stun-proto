@@ -136,6 +136,7 @@ impl StunAgent {
         &mut self,
         msg: MessageBuilder<'_>,
         to: SocketAddr,
+        now: Instant,
     ) -> Result<Transmit<'_>, StunError> {
         if msg.has_class(MessageClass::Request) {
             if self
@@ -146,7 +147,7 @@ impl StunAgent {
             }
             let transaction_id = msg.transaction_id();
             let mut state = StunRequestState::new(msg, self.transport, self.local_addr, to);
-            let StunRequestPollRet::SendData(transmit) = state.poll(Instant::now()) else {
+            let StunRequestPollRet::SendData(transmit) = state.poll(now) else {
                 return Err(StunError::ProtocolViolation);
             };
             let transmit = transmit.into_owned();
@@ -713,7 +714,7 @@ pub(crate) mod tests {
             .build();
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
         let now = Instant::now();
         assert_eq!(transmit.transport, TransportType::Udp);
         assert_eq!(transmit.from, local_addr);
@@ -744,7 +745,7 @@ pub(crate) mod tests {
             MessageType::from_class_method(MessageClass::Indication, BINDING),
             transaction_id,
         );
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
         assert_eq!(transmit.transport, TransportType::Udp);
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
@@ -783,7 +784,7 @@ pub(crate) mod tests {
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         println!("send");
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
         println!("sent");
 
         let request = Message::from_bytes(&transmit.data).unwrap();
@@ -827,7 +828,7 @@ pub(crate) mod tests {
             .build();
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        agent.send(msg, remote_addr).unwrap();
+        agent.send(msg, remote_addr, Instant::now()).unwrap();
         let mut now = Instant::now();
         loop {
             match agent.poll(now) {
@@ -859,7 +860,7 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
@@ -899,7 +900,7 @@ pub(crate) mod tests {
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
@@ -938,7 +939,7 @@ pub(crate) mod tests {
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
@@ -978,7 +979,7 @@ pub(crate) mod tests {
         let mut msg = Message::builder_request(BINDING);
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
@@ -1015,7 +1016,7 @@ pub(crate) mod tests {
         assert!(!agent.is_validated_peer(remote_addr));
 
         let msg = Message::builder_request(BINDING);
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
@@ -1048,7 +1049,7 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let _transmit = agent.send(msg, remote_addr).unwrap();
+        let _transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
         assert_eq!(request.agent().local_addr(), local_addr);
@@ -1076,7 +1077,7 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let _transmit = agent.send(msg, remote_addr).unwrap();
+        let _transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
         assert_eq!(request.agent().local_addr(), local_addr);
@@ -1109,7 +1110,9 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let transmit = agent.send(msg.clone(), remote_addr).unwrap();
+        let transmit = agent
+            .send(msg.clone(), remote_addr, Instant::now())
+            .unwrap();
         let to = transmit.to;
         let request = Message::from_bytes(transmit.data()).unwrap();
 
@@ -1119,7 +1122,7 @@ pub(crate) mod tests {
             .unwrap();
 
         assert!(matches!(
-            agent.send(msg, remote_addr),
+            agent.send(msg, remote_addr, Instant::now()),
             Err(StunError::AlreadyInProgress)
         ));
 
@@ -1168,7 +1171,7 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let transmit = agent.send(msg, remote_addr).unwrap();
+        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
         assert_eq!(transmit.transport, TransportType::Tcp);
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);

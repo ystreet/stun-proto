@@ -17,6 +17,7 @@
 //!
 //! ```
 //! # use std::net::SocketAddr;
+//! # use std::time::Instant;
 //! use stun_proto::types::TransportType;
 //! use stun_proto::types::attribute::{MessageIntegrity, XorMappedAddress};
 //! use stun_proto::types::message::{
@@ -37,7 +38,7 @@
 //! // and we can send a Message
 //! let mut msg = Message::builder_request(BINDING);
 //! msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
-//! let transmit = agent.send(msg, remote_addr).unwrap();
+//! let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
 //!
 //! // The transmit struct indicates what data and where to send it.
 //! let request = Message::from_bytes(&transmit.data).unwrap();
