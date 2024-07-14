@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, UdpSocket};
 use std::str::FromStr;
+use std::time::Instant;
 
 use tracing::{debug, error, info, warn};
 
@@ -150,7 +151,7 @@ fn main() -> io::Result<()> {
             if let Some((response, to)) =
                 handle_incoming_data(&data[..size], remote_addr, &mut tcp_stun_agent)
             {
-                if let Ok(data) = tcp_stun_agent.send(response, to) {
+                if let Ok(data) = tcp_stun_agent.send(response, to, Instant::now()) {
                     warn_on_err(stream.write_all(&data.data), ());
                 }
             }
