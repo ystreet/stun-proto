@@ -130,9 +130,6 @@ pub enum StunParseError {
     /// The provided data does not match the message
     #[error("The provided data does not match the message")]
     DataMismatch,
-    /// The message has multiple integrity attributes
-    #[error("Multiple integrity types are used in this message")]
-    DuplicateIntegrity,
     /// The attribute contains invalid data
     #[error("The attribute contains invalid data")]
     InvalidAttributeData,
@@ -873,8 +870,14 @@ impl<'a> Message<'a> {
 
         let mut data_offset = MessageHeader::LENGTH;
         let mut data = &data[MessageHeader::LENGTH..];
-        let mut seen_message_integrity = false;
-        let mut seen_fingerprint = false;
+        let ending_attributes = [
+            MessageIntegrity::TYPE,
+            MessageIntegritySha256::TYPE,
+            Fingerprint::TYPE,
+        ];
+        // XXX: maybe use small/tinyvec?
+        let mut seen_ending_attributes = [AttributeType::new(0); 3];
+        let mut seen_ending_len = 0;
         while !data.is_empty() {
             let attr = RawAttribute::from_bytes(data).map_err(|e| {
                 warn!(
@@ -894,24 +897,40 @@ impl<'a> Message<'a> {
                 }
             })?;
 
-            if seen_message_integrity && attr.get_type() != Fingerprint::TYPE {
-                // only attribute valid after MESSAGE_INTEGRITY is FINGERPRINT
-                warn!(
-                    "unexpected attribute {} after MESSAGE_INTEGRITY",
-                    attr.get_type()
-                );
-                return Err(StunParseError::AttributeAfterIntegrity(attr.get_type()));
+            // if we have seen any ending attributes, then there is only a fixed set of attributes
+            // that are allowed.
+            if seen_ending_len > 0 && !ending_attributes.contains(&attr.get_type()) {
+                if seen_ending_attributes.contains(&Fingerprint::TYPE) {
+                    warn!("unexpected attribute {} after FINGERPRINT", attr.get_type());
+                    return Err(StunParseError::AttributeAfterFingerprint(attr.get_type()));
+                } else {
+                    // only attribute valid after MESSAGE_INTEGRITY is FINGERPRINT
+                    warn!(
+                        "unexpected attribute {} after MESSAGE_INTEGRITY",
+                        attr.get_type()
+                    );
+                    return Err(StunParseError::AttributeAfterIntegrity(attr.get_type()));
+                }
             }
 
-            if seen_fingerprint {
-                // no valid attributes after FINGERPRINT
-                warn!("unexpected attribute {} after FINGERPRINT", attr.get_type());
-                return Err(StunParseError::AttributeAfterFingerprint(attr.get_type()));
-            }
-
-            if [MessageIntegrity::TYPE, MessageIntegritySha256::TYPE].contains(&attr.get_type()) {
-                seen_message_integrity = true;
-                // need credentials to validate the integrity of the message
+            if ending_attributes.contains(&attr.get_type()) {
+                if seen_ending_attributes.contains(&attr.get_type()) {
+                    if seen_ending_attributes.contains(&Fingerprint::TYPE) {
+                        warn!("unexpected attribute {} after FINGERPRINT", attr.get_type());
+                        return Err(StunParseError::AttributeAfterFingerprint(attr.get_type()));
+                    } else {
+                        // only attribute valid after MESSAGE_INTEGRITY is FINGERPRINT
+                        warn!(
+                            "unexpected attribute {} after MESSAGE_INTEGRITY",
+                            attr.get_type()
+                        );
+                        return Err(StunParseError::AttributeAfterIntegrity(attr.get_type()));
+                    }
+                } else {
+                    seen_ending_attributes[seen_ending_len] = attr.get_type();
+                    seen_ending_len += 1;
+                    // need credentials to validate the integrity of the message
+                }
             }
             let padded_len = padded_attr_size(&attr);
             if padded_len > data.len() {
@@ -925,7 +944,6 @@ impl<'a> Message<'a> {
                 });
             }
             if attr.get_type() == Fingerprint::TYPE {
-                seen_fingerprint = true;
                 let f = Fingerprint::from_raw(&attr)?;
                 let msg_fingerprint = f.fingerprint();
                 let mut fingerprint_data = orig_data[..data_offset].to_vec();
@@ -980,19 +998,18 @@ impl<'a> Message<'a> {
     pub fn validate_integrity(
         &self,
         credentials: &MessageIntegrityCredentials,
-    ) -> Result<(), StunParseError> {
+    ) -> Result<IntegrityAlgorithm, StunParseError> {
         debug!("using credentials {credentials:?}");
         let raw_sha1 = self.raw_attribute(MessageIntegrity::TYPE);
         let raw_sha256 = self.raw_attribute(MessageIntegritySha256::TYPE);
         let (algo, msg_hmac) = match (raw_sha1, raw_sha256) {
-            (Some(_), Some(_)) => return Err(StunParseError::DuplicateIntegrity),
+            (_, Some(sha256)) => {
+                let integrity = MessageIntegritySha256::try_from(&sha256)?;
+                (IntegrityAlgorithm::Sha256, integrity.hmac().to_vec())
+            }
             (Some(sha1), None) => {
                 let integrity = MessageIntegrity::try_from(&sha1)?;
                 (IntegrityAlgorithm::Sha1, integrity.hmac().to_vec())
-            }
-            (None, Some(sha256)) => {
-                let integrity = MessageIntegritySha256::try_from(&sha256)?;
-                (IntegrityAlgorithm::Sha256, integrity.hmac().to_vec())
             }
             (None, None) => return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE)),
         };
@@ -1017,11 +1034,12 @@ impl<'a> Message<'a> {
                     &mut hmac_data[2..4],
                     data_offset as u16 + 24 - MessageHeader::LENGTH as u16,
                 );
-                return MessageIntegrity::verify(
+                MessageIntegrity::verify(
                     &hmac_data,
                     &key,
                     msg_hmac.as_slice().try_into().unwrap(),
-                );
+                )?;
+                return Ok(algo);
             } else if algo == IntegrityAlgorithm::Sha256
                 && attr.get_type() == MessageIntegritySha256::TYPE
             {
@@ -1036,7 +1054,8 @@ impl<'a> Message<'a> {
                     &mut hmac_data[2..4],
                     data_offset as u16 + attr.length() + 4 - MessageHeader::LENGTH as u16,
                 );
-                return MessageIntegritySha256::verify(&hmac_data, &key, &msg_hmac);
+                MessageIntegritySha256::verify(&hmac_data, &key, &msg_hmac)?;
+                return Ok(algo);
             }
             let padded_len = padded_attr_size(&attr);
             // checked when initially parsing.
@@ -1447,11 +1466,9 @@ impl<'a> MessageBuilder<'a> {
     ///     Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE)),
     /// ));
     ///
-    /// // only one of MessageIntegrity, and MessageIntegritySha256 is allowed
-    /// assert!(matches!(
-    ///     message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256),
-    ///     Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE)),
-    /// ));
+    /// // both MessageIntegrity, and MessageIntegritySha256 are allowed, however Sha256 must be
+    /// // after Sha1
+    /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256).is_ok());
     ///
     /// let data = message.build();
     /// let message = Message::from_bytes(&data).unwrap();
@@ -1471,7 +1488,7 @@ impl<'a> MessageBuilder<'a> {
         credentials: &MessageIntegrityCredentials,
         algorithm: IntegrityAlgorithm,
     ) -> Result<(), StunWriteError> {
-        if self.has_attribute(MessageIntegrity::TYPE) {
+        if self.has_attribute(MessageIntegrity::TYPE) && algorithm == IntegrityAlgorithm::Sha1 {
             return Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE));
         }
         if self.has_attribute(MessageIntegritySha256::TYPE) {
@@ -1483,6 +1500,16 @@ impl<'a> MessageBuilder<'a> {
             return Err(StunWriteError::FingerprintExists);
         }
 
+        self.add_message_integrity_unchecked(credentials, algorithm);
+
+        Ok(())
+    }
+
+    fn add_message_integrity_unchecked(
+        &mut self,
+        credentials: &MessageIntegrityCredentials,
+        algorithm: IntegrityAlgorithm,
+    ) {
         let key = credentials.make_hmac_key();
         match algorithm {
             IntegrityAlgorithm::Sha1 => {
@@ -1495,12 +1522,11 @@ impl<'a> MessageBuilder<'a> {
                 let bytes = self.integrity_bytes_from_message(36);
                 let integrity = MessageIntegritySha256::compute(&bytes, &key).unwrap();
                 self.attributes.push(
-                    RawAttribute::from(&MessageIntegritySha256::new(integrity.as_slice())?)
+                    RawAttribute::from(&MessageIntegritySha256::new(integrity.as_slice()).unwrap())
                         .into_owned(),
                 );
             }
         }
-        Ok(())
     }
 
     /// Adds [`Fingerprint`] attribute to a [`Message`]
@@ -1531,6 +1557,13 @@ impl<'a> MessageBuilder<'a> {
         if self.has_attribute(Fingerprint::TYPE) {
             return Err(StunWriteError::AttributeExists(Fingerprint::TYPE));
         }
+
+        self.add_fingerprint_unchecked();
+
+        Ok(())
+    }
+
+    fn add_fingerprint_unchecked(&mut self) {
         // fingerprint is computed using all the data up to (exclusive of) the FINGERPRINT
         // but with a length field including the FINGERPRINT attribute...
         let mut bytes = self.build();
@@ -1540,7 +1573,6 @@ impl<'a> MessageBuilder<'a> {
         let fingerprint = Fingerprint::compute(&bytes);
         self.attributes
             .push(RawAttribute::from(&Fingerprint::new(fingerprint)));
-        Ok(())
     }
 
     /// Add a `Attribute` to this `Message`.  Only one `AttributeType` can be added for each
@@ -1744,14 +1776,33 @@ mod tests {
             msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1),
             Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE))
         ));
+        msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256)
+            .unwrap();
         assert!(matches!(
             msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256),
-            Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE))
+            Err(StunWriteError::AttributeExists(
+                MessageIntegritySha256::TYPE
+            ))
         ));
         let software = Software::new("s").unwrap();
         assert!(matches!(
             msg.add_attribute(&software),
             Err(StunWriteError::MessageIntegrityExists)
+        ));
+    }
+
+    #[test]
+    fn add_sha1_integrity_after_sha256() {
+        let _log = crate::tests::test_init_log();
+        let credentials = ShortTermCredentials::new("secret".to_owned()).into();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha256)
+            .unwrap();
+        assert!(matches!(
+            msg.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1),
+            Err(StunWriteError::AttributeExists(
+                MessageIntegritySha256::TYPE
+            ))
         ));
     }
 
@@ -1845,6 +1896,29 @@ mod tests {
     }
 
     #[test]
+    fn parse_duplicate_integrity_after_integrity() {
+        let _log = crate::tests::test_init_log();
+        for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
+            let credentials = ShortTermCredentials::new("secret".to_owned()).into();
+            let mut msg = Message::builder_request(BINDING);
+            msg.add_message_integrity(&credentials, algorithm).unwrap();
+            // duplicate integrity attribute. Don't do this in real code!
+            msg.add_message_integrity_unchecked(&credentials, algorithm);
+            let bytes = msg.build();
+            let integrity_type = match algorithm {
+                IntegrityAlgorithm::Sha1 => MessageIntegrity::TYPE,
+                IntegrityAlgorithm::Sha256 => MessageIntegritySha256::TYPE,
+            };
+            let Err(StunParseError::AttributeAfterIntegrity(err_integrity_type)) =
+                Message::from_bytes(&bytes)
+            else {
+                unreachable!();
+            };
+            assert_eq!(integrity_type, err_integrity_type);
+        }
+    }
+
+    #[test]
     fn parse_attribute_after_fingerprint() {
         let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
@@ -1858,6 +1932,19 @@ mod tests {
         assert!(matches!(
             Message::from_bytes(&bytes),
             Err(StunParseError::AttributeAfterFingerprint(Software::TYPE))
+        ));
+    }
+
+    #[test]
+    fn parse_duplicate_fingerprint_after_fingerprint() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        msg.add_fingerprint_unchecked();
+        let bytes = msg.build();
+        assert!(matches!(
+            Message::from_bytes(&bytes),
+            Err(StunParseError::AttributeAfterFingerprint(Fingerprint::TYPE))
         ));
     }
 
@@ -2102,7 +2189,10 @@ mod tests {
         let credentials = MessageIntegrityCredentials::ShortTerm(ShortTermCredentials {
             password: "VOkJxbRl1RmTxUk/WvJxBt".to_owned(),
         });
-        assert!(matches!(msg.validate_integrity(&credentials), Ok(())));
+        assert!(matches!(
+            msg.validate_integrity(&credentials),
+            Ok(IntegrityAlgorithm::Sha1)
+        ));
         builder
             .add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
             .unwrap();
@@ -2183,7 +2273,7 @@ mod tests {
         });
         let ret = msg.validate_integrity(&credentials);
         debug!("{:?}", ret);
-        assert!(matches!(ret, Ok(())));
+        assert!(matches!(ret, Ok(IntegrityAlgorithm::Sha1)));
         builder
             .add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
             .unwrap();
@@ -2263,7 +2353,10 @@ mod tests {
         let credentials = MessageIntegrityCredentials::ShortTerm(ShortTermCredentials {
             password: "VOkJxbRl1RmTxUk/WvJxBt".to_owned(),
         });
-        assert!(matches!(msg.validate_integrity(&credentials), Ok(())));
+        assert!(matches!(
+            msg.validate_integrity(&credentials),
+            Ok(IntegrityAlgorithm::Sha1)
+        ));
         builder
             .add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
             .unwrap();
