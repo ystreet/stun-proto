@@ -248,9 +248,13 @@ impl AttributeHeader {
 
     fn to_bytes(self) -> Vec<u8> {
         let mut ret = vec![0; 4];
+        self.write_into(&mut ret);
+        ret
+    }
+
+    fn write_into(&self, ret: &mut [u8]) {
         BigEndian::write_u16(&mut ret[0..2], self.atype.into());
         BigEndian::write_u16(&mut ret[2..4], self.length);
-        ret
     }
 
     /// Returns the type of the attribute
@@ -443,14 +447,17 @@ impl<'a> RawAttribute<'a> {
     /// assert_eq!(attr.to_bytes(), &[0, 1, 0, 2, 5, 6, 0, 0]);
     /// ```
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut ret: Vec<u8> = self.header.into();
-        ret.extend(&*self.value);
-        let len = ret.len();
+        let mut vec = Vec::with_capacity(padded_attr_len(self.header.length as usize + 4));
+        let mut header_bytes = [0; 4];
+        self.header.write_into(&mut header_bytes);
+        vec.extend(&header_bytes);
+        vec.extend(&*self.value);
+        let len = vec.len();
         if len % 4 != 0 {
             // pad to 4 bytes
-            ret.resize(len + 4 - (len % 4), 0);
+            vec.resize(len + 4 - (len % 4), 0);
         }
-        ret
+        vec
     }
 
     /// Returns the [`AttributeType`] of this [`RawAttribute`]
