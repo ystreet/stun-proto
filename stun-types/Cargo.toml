@@ -25,6 +25,19 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tracing-subscriber = "0.3"
+criterion = "0.5"
 
 [features]
 arbitrary = ["dep:arbitrary"]
+
+[[bench]]
+name = "message_parse"
+harness = false
+
+[[bench]]
+name = "message_write"
+harness = false
+
+[[bench]]
+name = "attribute_write"
+harness = false
