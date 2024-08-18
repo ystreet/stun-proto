@@ -448,6 +448,11 @@ impl MessageType {
     }
 
     /// Convert a [`MessageType`] to network bytes
+    pub fn write_into(&self, dest: &mut [u8]) {
+        BigEndian::write_u16(dest, self.0);
+    }
+
+    /// Convert a [`MessageType`] to network bytes
     pub fn to_bytes(self) -> Vec<u8> {
         let mut ret = vec![0; 2];
         BigEndian::write_u16(&mut ret[0..2], self.0);
@@ -932,7 +937,7 @@ impl<'a> Message<'a> {
                     // need credentials to validate the integrity of the message
                 }
             }
-            let padded_len = padded_attr_size(&attr);
+            let padded_len = attr.padded_len();
             if padded_len > data.len() {
                 warn!(
                     "attribute {:?} extends past the end of the data",
@@ -1057,7 +1062,7 @@ impl<'a> Message<'a> {
                 MessageIntegritySha256::verify(&hmac_data, &key, &msg_hmac)?;
                 return Ok(algo);
             }
-            let padded_len = padded_attr_size(&attr);
+            let padded_len = attr.padded_len();
             // checked when initially parsing.
             debug_assert!(padded_len <= data.len());
             data = &data[padded_len..];
@@ -1332,7 +1337,7 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
             self.data_i = self.data.len();
             return None;
         };
-        let padded_len = padded_attr_size(&attr);
+        let padded_len = attr.padded_len();
         self.data_i += padded_len;
         if self.seen_message_integrity {
             if attr.get_type() == Fingerprint::TYPE {
@@ -1416,18 +1421,17 @@ impl<'a> MessageBuilder<'a> {
     pub fn build(&self) -> Vec<u8> {
         let mut attr_size = 0;
         for attr in &self.attributes {
-            attr_size += padded_attr_size(attr);
+            attr_size += attr.padded_len();
         }
-        let mut ret = Vec::with_capacity(MessageHeader::LENGTH + attr_size);
-        ret.extend(self.msg_type.to_bytes());
-        ret.resize(MessageHeader::LENGTH, 0);
+        let mut ret = vec![0; MessageHeader::LENGTH + attr_size];
+        self.msg_type.write_into(&mut ret[..2]);
         let transaction: u128 = self.transaction_id.into();
         let tid = (MAGIC_COOKIE as u128) << 96 | transaction & 0xffff_ffff_ffff_ffff_ffff_ffff;
         BigEndian::write_u128(&mut ret[4..20], tid);
         BigEndian::write_u16(&mut ret[2..4], attr_size as u16);
+        let mut offset = MessageHeader::LENGTH;
         for attr in &self.attributes {
-            let bytes = attr.to_bytes();
-            ret.extend(bytes);
+            offset += attr.write_into(&mut ret[offset..]).unwrap();
         }
         ret
     }
