@@ -125,7 +125,8 @@ pub use software::Software;
 mod xor_addr;
 pub use xor_addr::XorMappedAddress;
 
-use crate::{data::Data, message::StunParseError};
+use crate::data::Data;
+use crate::message::{StunParseError, StunWriteError};
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -285,7 +286,7 @@ pub trait Attribute: std::fmt::Debug {
     const TYPE: AttributeType;
 
     /// Retrieve the length of an `Attribute`.  This is not the padded length as stored in a
-    /// `Message`
+    /// `Message` and does not include the size of the attribute header.
     fn length(&self) -> u16;
 }
 
@@ -334,8 +335,16 @@ fn padded_attr_len(len: usize) -> usize {
     }
 }
 
-pub(crate) fn padded_attr_size(attr: &RawAttribute) -> usize {
-    4 + padded_attr_len(attr.length() as usize)
+pub trait AttributeExt {
+    /// The length in bytes of an attribute as stored in a [`Message`](crate::message::Message)
+    /// including any padding and the attribute header.
+    fn padded_len(&self) -> usize;
+}
+
+impl<A: Attribute> AttributeExt for A {
+    fn padded_len(&self) -> usize {
+        4 + padded_attr_len(self.length() as usize)
+    }
 }
 
 /// The header and raw bytes of an unparsed [`Attribute`]
@@ -447,7 +456,7 @@ impl<'a> RawAttribute<'a> {
     /// assert_eq!(attr.to_bytes(), &[0, 1, 0, 2, 5, 6, 0, 0]);
     /// ```
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut vec = Vec::with_capacity(padded_attr_len(self.header.length as usize + 4));
+        let mut vec = Vec::with_capacity(self.padded_len());
         let mut header_bytes = [0; 4];
         self.header.write_into(&mut header_bytes);
         vec.extend(&header_bytes);
@@ -458,6 +467,25 @@ impl<'a> RawAttribute<'a> {
             vec.resize(len + 4 - (len % 4), 0);
         }
         vec
+    }
+
+    /// Write this [`RawAttribute`] into a byte slice.  Returns the number of bytes written.
+    pub fn write_into(&self, dest: &mut [u8]) -> Result<usize, StunWriteError> {
+        let len = self.padded_len();
+        if len > dest.len() {
+            return Err(StunWriteError::TooSmall {
+                expected: len,
+                actual: dest.len(),
+            });
+        }
+        self.header.write_into(dest);
+        let mut offset = 4;
+        dest[offset..offset + self.value.len()].copy_from_slice(&self.value);
+        offset += self.value.len();
+        if len - offset > 0 {
+            dest[offset..len].fill(0);
+        }
+        Ok(len)
     }
 
     /// Returns the [`AttributeType`] of this [`RawAttribute`]
@@ -488,6 +516,12 @@ impl<'a> RawAttribute<'a> {
             header: self.header,
             value: self.value.into_owned(),
         }
+    }
+}
+
+impl<'a> AttributeExt for RawAttribute<'a> {
+    fn padded_len(&self) -> usize {
+        4 + padded_attr_len(self.length() as usize)
     }
 }
 
