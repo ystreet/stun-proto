@@ -10,7 +10,10 @@ use std::convert::TryFrom;
 
 use crate::message::{StunParseError, StunWriteError};
 
-use super::{Attribute, AttributeType, RawAttribute};
+use super::{
+    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
+    RawAttribute,
+};
 
 /// The Realm [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,16 +21,30 @@ pub struct Realm {
     realm: String,
 }
 
-impl Attribute for Realm {
+impl AttributeStaticType for Realm {
     const TYPE: AttributeType = AttributeType(0x0014);
+}
+impl Attribute for Realm {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         self.realm.len() as u16
     }
 }
-impl<'a> From<&'a Realm> for RawAttribute<'a> {
-    fn from(value: &'a Realm) -> RawAttribute<'a> {
-        RawAttribute::new(Realm::TYPE, value.realm.as_bytes())
+impl AttributeWrite for Realm {
+    fn to_raw(&self) -> RawAttribute {
+        RawAttribute::new(Realm::TYPE, self.realm.as_bytes())
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        self.write_header_unchecked(dest);
+        let offset = 4 + self.realm.len();
+        dest[4..offset].copy_from_slice(self.realm.as_bytes());
+        if len > offset {
+            dest[offset..len].fill(0);
+        }
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for Realm {

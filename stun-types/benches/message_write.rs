@@ -13,16 +13,21 @@ use stun_types::message::{
     TransactionId, BINDING,
 };
 
-fn builder_with_attribute<'a>(attr: impl Into<RawAttribute<'a>>) -> MessageBuilder<'a> {
+fn builder_with_attribute(attr: &dyn AttributeWrite) -> MessageBuilder {
     let mut msg = Message::builder_request(BINDING);
     msg.add_attribute(attr).unwrap();
     msg
 }
 
-fn build_with_attribute<'a>(attr: impl Into<RawAttribute<'a>>) {
+fn build_with_attribute(attr: &dyn AttributeWrite) {
     let mut msg = Message::builder_request(BINDING);
     msg.add_attribute(attr).unwrap();
     let _data = msg.build();
+}
+
+fn write_into_with_attribute(attr: &dyn AttributeWrite, dest: &mut [u8]) {
+    let msg = builder_with_attribute(attr);
+    msg.write_into(dest).unwrap();
 }
 
 fn bench_message_write(c: &mut Criterion) {
@@ -118,6 +123,91 @@ fn bench_message_write(c: &mut Criterion) {
                     .unwrap();
                 msg.add_fingerprint().unwrap();
                 msg.build();
+            })
+        },
+    );
+    group.finish();
+
+    let mut group = c.benchmark_group("Message/WriteInto");
+    let mut scratch = vec![0; 1 << 8];
+
+    group.throughput(criterion::Throughput::Bytes(
+        builder_with_attribute(&software).build().len() as u64,
+    ));
+    group.bench_with_input(
+        BenchmarkId::from_parameter("Software"),
+        &software,
+        |b, software| b.iter(|| write_into_with_attribute(software, &mut scratch)),
+    );
+    group.bench_with_input(
+        BenchmarkId::from_parameter("Attributes/9"),
+        &(
+            &software,
+            &xor_mapped_address,
+            &nonce,
+            &alt_server,
+            &alt_domain,
+            &priority,
+            &controlled,
+            &controlling,
+            &use_candidate,
+        ),
+        |b, attrs| {
+            b.iter(|| {
+                let mut msg = builder_with_attribute(attrs.0);
+                msg.add_attribute(attrs.1).unwrap();
+                msg.add_attribute(attrs.2).unwrap();
+                msg.add_attribute(attrs.3).unwrap();
+                msg.add_attribute(attrs.4).unwrap();
+                msg.add_attribute(attrs.5).unwrap();
+                msg.add_attribute(attrs.6).unwrap();
+                msg.add_attribute(attrs.7).unwrap();
+                msg.add_attribute(attrs.8).unwrap();
+                msg.write_into(&mut scratch).unwrap();
+            })
+        },
+    );
+    group.bench_with_input(
+        BenchmarkId::from_parameter("XorMappedAddress"),
+        &xor_mapped_address,
+        |b, xor_mapped_address| {
+            b.iter(|| write_into_with_attribute(xor_mapped_address, &mut scratch));
+        },
+    );
+    group.bench_with_input(
+        BenchmarkId::from_parameter("XorMappedAddress+Fingerprint"),
+        &xor_mapped_address,
+        |b, xor_mapped_address| {
+            b.iter(|| {
+                let mut msg = builder_with_attribute(xor_mapped_address);
+                msg.add_fingerprint().unwrap();
+                msg.write_into(&mut scratch).unwrap();
+            })
+        },
+    );
+    group.bench_with_input(
+        BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha1+Fingerprint"),
+        &(&xor_mapped_address, &short_term_integrity),
+        |b, &(xor_mapped_address, short_term_integrity)| {
+            b.iter(|| {
+                let mut msg = builder_with_attribute(xor_mapped_address);
+                msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha1)
+                    .unwrap();
+                msg.add_fingerprint().unwrap();
+                msg.write_into(&mut scratch).unwrap();
+            })
+        },
+    );
+    group.bench_with_input(
+        BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha256+Fingerprint"),
+        &(&xor_mapped_address, &short_term_integrity),
+        |b, &(xor_mapped_address, short_term_integrity)| {
+            b.iter(|| {
+                let mut msg = builder_with_attribute(xor_mapped_address);
+                msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha256)
+                    .unwrap();
+                msg.add_fingerprint().unwrap();
+                msg.write_into(&mut scratch).unwrap();
             })
         },
     );

@@ -11,7 +11,10 @@ use std::net::SocketAddr;
 
 use crate::message::StunParseError;
 
-use super::{Attribute, AttributeType, MappedSocketAddr, RawAttribute};
+use super::{
+    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
+    MappedSocketAddr, RawAttribute,
+};
 
 /// The AlternateServer [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,17 +22,26 @@ pub struct AlternateServer {
     addr: MappedSocketAddr,
 }
 
-impl Attribute for AlternateServer {
+impl AttributeStaticType for AlternateServer {
     const TYPE: AttributeType = AttributeType(0x8023);
+}
+impl Attribute for AlternateServer {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         self.addr.length()
     }
 }
 
-impl<'a> From<&AlternateServer> for RawAttribute<'a> {
-    fn from(value: &AlternateServer) -> RawAttribute<'a> {
-        value.addr.to_raw(AlternateServer::TYPE)
+impl AttributeWrite for AlternateServer {
+    fn to_raw(&self) -> RawAttribute {
+        self.addr.to_raw(AlternateServer::TYPE)
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.write_header_unchecked(dest);
+        self.addr.write_into_unchecked(&mut dest[4..]);
     }
 }
 
@@ -87,9 +99,14 @@ pub struct AlternateDomain {
     domain: String,
 }
 
-impl Attribute for AlternateDomain {
+impl AttributeStaticType for AlternateDomain {
     const TYPE: AttributeType = AttributeType(0x8003);
+}
 
+impl Attribute for AlternateDomain {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
     fn length(&self) -> u16 {
         self.domain.len() as u16
     }
@@ -107,9 +124,18 @@ impl<'a> TryFrom<&RawAttribute<'a>> for AlternateDomain {
         })
     }
 }
-impl<'a> From<&AlternateDomain> for RawAttribute<'a> {
-    fn from(value: &AlternateDomain) -> RawAttribute<'a> {
-        RawAttribute::new(AlternateDomain::TYPE, value.domain.as_bytes()).into_owned()
+impl AttributeWrite for AlternateDomain {
+    fn to_raw(&self) -> RawAttribute {
+        RawAttribute::new(AlternateDomain::TYPE, self.domain.as_bytes())
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        self.write_header_unchecked(dest);
+        dest[4..4 + self.domain.len()].copy_from_slice(self.domain.as_bytes());
+        let offset = 4 + self.domain.len();
+        if len > offset {
+            dest[offset..len].fill(0);
+        }
     }
 }
 

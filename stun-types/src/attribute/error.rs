@@ -12,7 +12,10 @@ use byteorder::{BigEndian, ByteOrder};
 
 use crate::message::{StunParseError, StunWriteError};
 
-use super::{Attribute, AttributeType, RawAttribute};
+use super::{
+    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
+    RawAttribute,
+};
 
 /// The ErrorCode [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,22 +23,43 @@ pub struct ErrorCode {
     code: u16,
     reason: String,
 }
-impl Attribute for ErrorCode {
+impl AttributeStaticType for ErrorCode {
     const TYPE: AttributeType = AttributeType(0x0009);
+}
+impl Attribute for ErrorCode {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         self.reason.len() as u16 + 4
     }
 }
-impl<'a> From<&ErrorCode> for RawAttribute<'a> {
-    fn from(value: &ErrorCode) -> RawAttribute<'a> {
-        let mut data = Vec::with_capacity(value.length() as usize);
+
+impl AttributeWrite for ErrorCode {
+    fn to_raw(&self) -> RawAttribute {
+        let mut data = Vec::with_capacity(self.length() as usize);
         data.push(0u8);
         data.push(0u8);
-        data.push((value.code / 100) as u8);
-        data.push((value.code % 100) as u8);
-        data.extend(value.reason.as_bytes());
-        RawAttribute::new(ErrorCode::TYPE, &data).into_owned()
+        data.push((self.code / 100) as u8);
+        data.push((self.code % 100) as u8);
+        data.extend(self.reason.as_bytes());
+        RawAttribute::new_owned(ErrorCode::TYPE, data.into_boxed_slice())
+    }
+
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        let offset = self.write_header_unchecked(dest);
+        dest[offset] = 0u8;
+        dest[offset + 1] = 0u8;
+        dest[offset + 2] = (self.code / 100) as u8;
+        dest[offset + 3] = (self.code % 100) as u8;
+        let offset = offset + 4;
+        dest[offset..offset + self.reason.len()].copy_from_slice(self.reason.as_bytes());
+        let offset = offset + self.reason.len();
+        if len - offset > 0 {
+            dest[offset..len].fill(0);
+        }
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for ErrorCode {
@@ -236,22 +260,39 @@ impl std::fmt::Display for ErrorCode {
 pub struct UnknownAttributes {
     attributes: Vec<AttributeType>,
 }
-impl Attribute for UnknownAttributes {
+impl AttributeStaticType for UnknownAttributes {
     const TYPE: AttributeType = AttributeType(0x000A);
-
+}
+impl Attribute for UnknownAttributes {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
     fn length(&self) -> u16 {
         (self.attributes.len() as u16) * 2
     }
 }
-impl<'a> From<&UnknownAttributes> for RawAttribute<'a> {
-    fn from(value: &UnknownAttributes) -> RawAttribute<'a> {
-        let mut data = Vec::with_capacity(value.length() as usize);
-        for attr in &value.attributes {
-            let mut encoded = vec![0; 2];
+impl AttributeWrite for UnknownAttributes {
+    fn to_raw(&self) -> RawAttribute {
+        let mut data = Vec::with_capacity(self.length() as usize);
+        for attr in &self.attributes {
+            let mut encoded = [0; 2];
             BigEndian::write_u16(&mut encoded, (*attr).into());
             data.extend(encoded);
         }
-        RawAttribute::new(UnknownAttributes::TYPE, &data).into_owned()
+        RawAttribute::new_owned(UnknownAttributes::TYPE, data.into_boxed_slice())
+    }
+
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        let mut offset = self.write_header_unchecked(dest);
+        for attr in &self.attributes {
+            let mut encoded = [0; 2];
+            BigEndian::write_u16(&mut encoded, (*attr).into());
+            offset += 2;
+        }
+        if len - offset > 0 {
+            dest[offset..len].fill(0);
+        }
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for UnknownAttributes {
