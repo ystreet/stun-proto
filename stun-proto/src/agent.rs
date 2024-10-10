@@ -791,12 +791,8 @@ pub(crate) mod tests {
 
         println!("generate response");
         let mut response = Message::builder_success(&request);
-        response
-            .add_attribute(&XorMappedAddress::new(
-                transmit.from,
-                request.transaction_id(),
-            ))
-            .unwrap();
+        let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
         response
             .add_message_integrity(&remote_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
@@ -865,12 +861,8 @@ pub(crate) mod tests {
         let request = Message::from_bytes(&transmit.data).unwrap();
 
         let mut response = Message::builder_success(&request);
-        response
-            .add_attribute(&XorMappedAddress::new(
-                transmit.from,
-                request.transaction_id(),
-            ))
-            .unwrap();
+        let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
 
         let data = response.build();
         let to = transmit.to;
@@ -905,12 +897,8 @@ pub(crate) mod tests {
         let request = Message::from_bytes(&transmit.data).unwrap();
 
         let mut response = Message::builder_success(&request);
-        response
-            .add_attribute(&XorMappedAddress::new(
-                transmit.from,
-                request.transaction_id(),
-            ))
-            .unwrap();
+        let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
 
         let data = response.build();
         let to = transmit.to;
@@ -944,12 +932,8 @@ pub(crate) mod tests {
         let request = Message::from_bytes(&transmit.data).unwrap();
 
         let mut response = Message::builder_success(&request);
-        response
-            .add_attribute(&XorMappedAddress::new(
-                transmit.from,
-                request.transaction_id(),
-            ))
-            .unwrap();
+        let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
 
         let data = response.build();
         let to = transmit.to;
@@ -984,12 +968,8 @@ pub(crate) mod tests {
         let request = Message::from_bytes(&transmit.data).unwrap();
 
         let mut response = Message::builder_success(&request);
-        response
-            .add_attribute(&XorMappedAddress::new(
-                transmit.from,
-                request.transaction_id(),
-            ))
-            .unwrap();
+        let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
         // wrong credentials, should be `remote_credentials`
         response
             .add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
@@ -1021,12 +1001,8 @@ pub(crate) mod tests {
         let request = Message::from_bytes(&transmit.data).unwrap();
 
         let mut response = Message::builder_success(&request);
-        response
-            .add_attribute(&XorMappedAddress::new(
-                transmit.from,
-                request.transaction_id(),
-            ))
-            .unwrap();
+        let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
 
         let data = response.build();
         let to = transmit.to;
@@ -1117,9 +1093,8 @@ pub(crate) mod tests {
         let request = Message::from_bytes(transmit.data()).unwrap();
 
         let mut response = Message::builder_success(&request);
-        response
-            .add_attribute(&XorMappedAddress::new(transmit.from, transaction_id))
-            .unwrap();
+        let xor_addr = XorMappedAddress::new(transmit.from, transaction_id);
+        response.add_attribute(&xor_addr).unwrap();
 
         assert!(matches!(
             agent.send(msg, remote_addr, Instant::now()),

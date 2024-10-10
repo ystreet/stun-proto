@@ -70,20 +70,14 @@ impl MappedSocketAddr {
     /// Convert this [`MappedSocketAddr`] into a [`RawAttribute`]
     pub fn to_raw<'a>(&self, atype: AttributeType) -> RawAttribute<'a> {
         match self.addr {
-            SocketAddr::V4(addr) => {
+            SocketAddr::V4(_addr) => {
                 let mut buf = [0; 8];
-                buf[1] = AddressFamily::IPV4.to_byte();
-                BigEndian::write_u16(&mut buf[2..4], addr.port());
-                let octets = u32::from(*addr.ip());
-                BigEndian::write_u32(&mut buf[4..8], octets);
+                self.write_into_unchecked(&mut buf);
                 RawAttribute::new(atype, &buf).into_owned()
             }
-            SocketAddr::V6(addr) => {
+            SocketAddr::V6(_addr) => {
                 let mut buf = [0; 20];
-                buf[1] = AddressFamily::IPV6.to_byte();
-                BigEndian::write_u16(&mut buf[2..4], addr.port());
-                let octets = u128::from(*addr.ip());
-                BigEndian::write_u128(&mut buf[4..20], octets);
+                self.write_into_unchecked(&mut buf);
                 RawAttribute::new(atype, &buf).into_owned()
             }
         }
@@ -121,6 +115,25 @@ impl MappedSocketAddr {
     /// The `SocketAddr` in this [`MappedSocketAddr`]
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    pub(crate) fn write_into_unchecked(&self, dest: &mut [u8]) {
+        match self.addr {
+            SocketAddr::V4(addr) => {
+                dest[0] = 0x0;
+                dest[1] = AddressFamily::IPV4.to_byte();
+                BigEndian::write_u16(&mut dest[2..4], addr.port());
+                let octets = u32::from(*addr.ip());
+                BigEndian::write_u32(&mut dest[4..8], octets);
+            }
+            SocketAddr::V6(addr) => {
+                dest[0] = 0x0;
+                dest[1] = AddressFamily::IPV6.to_byte();
+                BigEndian::write_u16(&mut dest[2..4], addr.port());
+                let octets = u128::from(*addr.ip());
+                BigEndian::write_u128(&mut dest[4..20], octets);
+            }
+        }
     }
 }
 
@@ -189,6 +202,10 @@ impl XorSocketAddr {
 
     pub(crate) fn addr(&self, transaction: TransactionId) -> SocketAddr {
         XorSocketAddr::xor_addr(self.addr.addr(), transaction)
+    }
+
+    pub(crate) fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.addr.write_into_unchecked(dest)
     }
 }
 

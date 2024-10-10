@@ -12,7 +12,9 @@ use byteorder::{BigEndian, ByteOrder};
 
 use crate::message::StunParseError;
 
-use super::{Attribute, AttributeType, RawAttribute};
+use super::{
+    Attribute, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
+};
 
 /// The Priority [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,18 +22,27 @@ pub struct Priority {
     priority: u32,
 }
 
-impl Attribute for Priority {
+impl AttributeStaticType for Priority {
     const TYPE: AttributeType = AttributeType(0x0024);
+}
+impl Attribute for Priority {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         4
     }
 }
-impl<'a> From<&Priority> for RawAttribute<'a> {
-    fn from(value: &Priority) -> RawAttribute<'a> {
+impl AttributeWrite for Priority {
+    fn to_raw(&self) -> RawAttribute {
         let mut buf = [0; 4];
-        BigEndian::write_u32(&mut buf[0..4], value.priority);
+        BigEndian::write_u32(&mut buf[0..4], self.priority);
         RawAttribute::new(Priority::TYPE, &buf).into_owned()
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.write_header_unchecked(dest);
+        BigEndian::write_u32(&mut dest[4..8], self.priority);
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for Priority {
@@ -83,17 +94,25 @@ impl std::fmt::Display for Priority {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UseCandidate {}
 
-impl Attribute for UseCandidate {
+impl AttributeStaticType for UseCandidate {
     const TYPE: AttributeType = AttributeType(0x0025);
+}
+impl Attribute for UseCandidate {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         0
     }
 }
-impl<'a> From<&UseCandidate> for RawAttribute<'a> {
-    fn from(_value: &UseCandidate) -> RawAttribute<'a> {
+impl AttributeWrite for UseCandidate {
+    fn to_raw(&self) -> RawAttribute {
         static BUF: [u8; 0] = [0; 0];
         RawAttribute::new(UseCandidate::TYPE, &BUF)
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.write_header_unchecked(dest);
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for UseCandidate {
@@ -137,18 +156,27 @@ pub struct IceControlled {
     tie_breaker: u64,
 }
 
-impl Attribute for IceControlled {
+impl AttributeStaticType for IceControlled {
     const TYPE: AttributeType = AttributeType(0x8029);
+}
+impl Attribute for IceControlled {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         8
     }
 }
-impl<'a> From<&IceControlled> for RawAttribute<'a> {
-    fn from(value: &IceControlled) -> RawAttribute<'a> {
+impl AttributeWrite for IceControlled {
+    fn to_raw(&self) -> RawAttribute {
         let mut buf = [0; 8];
-        BigEndian::write_u64(&mut buf[..8], value.tie_breaker);
+        BigEndian::write_u64(&mut buf[..8], self.tie_breaker);
         RawAttribute::new(IceControlled::TYPE, &buf).into_owned()
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.write_header_unchecked(dest);
+        BigEndian::write_u64(&mut dest[4..12], self.tie_breaker);
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for IceControlled {
@@ -202,19 +230,27 @@ pub struct IceControlling {
     tie_breaker: u64,
 }
 
-impl Attribute for IceControlling {
+impl AttributeStaticType for IceControlling {
     const TYPE: AttributeType = AttributeType(0x802A);
+}
+impl Attribute for IceControlling {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         8
     }
 }
-impl<'a> From<&IceControlling> for RawAttribute<'a> {
-    fn from(value: &IceControlling) -> RawAttribute<'a> {
+impl AttributeWrite for IceControlling {
+    fn to_raw(&self) -> RawAttribute {
         let mut buf = [0; 8];
-
-        BigEndian::write_u64(&mut buf[..8], value.tie_breaker);
+        BigEndian::write_u64(&mut buf[..8], self.tie_breaker);
         RawAttribute::new(IceControlling::TYPE, &buf).into_owned()
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.write_header_unchecked(dest);
+        BigEndian::write_u64(&mut dest[4..12], self.tie_breaker);
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for IceControlling {

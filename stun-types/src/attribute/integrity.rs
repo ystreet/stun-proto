@@ -10,7 +10,9 @@ use std::convert::TryFrom;
 
 use crate::message::{StunParseError, StunWriteError};
 
-use super::{Attribute, AttributeType, RawAttribute};
+use super::{
+    Attribute, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
+};
 
 use tracing::error;
 
@@ -20,16 +22,25 @@ pub struct MessageIntegrity {
     hmac: [u8; 20],
 }
 
-impl Attribute for MessageIntegrity {
+impl AttributeStaticType for MessageIntegrity {
     const TYPE: AttributeType = AttributeType(0x0008);
+}
+impl Attribute for MessageIntegrity {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         20
     }
 }
-impl<'a> From<&'a MessageIntegrity> for RawAttribute<'a> {
-    fn from(value: &'a MessageIntegrity) -> RawAttribute<'a> {
-        RawAttribute::new(MessageIntegrity::TYPE, &value.hmac)
+impl AttributeWrite for MessageIntegrity {
+    fn to_raw(&self) -> RawAttribute {
+        RawAttribute::new(MessageIntegrity::TYPE, &self.hmac)
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.write_header_unchecked(dest);
+        dest[4..4 + self.hmac.len()].copy_from_slice(&self.hmac);
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for MessageIntegrity {
@@ -146,16 +157,25 @@ pub struct MessageIntegritySha256 {
     hmac: Vec<u8>,
 }
 
-impl Attribute for MessageIntegritySha256 {
+impl AttributeStaticType for MessageIntegritySha256 {
     const TYPE: AttributeType = AttributeType(0x001C);
+}
+impl Attribute for MessageIntegritySha256 {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         self.hmac.len() as u16
     }
 }
-impl<'a> From<&'a MessageIntegritySha256> for RawAttribute<'a> {
-    fn from(value: &'a MessageIntegritySha256) -> RawAttribute<'a> {
-        RawAttribute::new(MessageIntegritySha256::TYPE, &value.hmac)
+impl AttributeWrite for MessageIntegritySha256 {
+    fn to_raw(&self) -> RawAttribute {
+        RawAttribute::new(MessageIntegritySha256::TYPE, &self.hmac)
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.write_header_unchecked(dest);
+        dest[4..4 + self.hmac.len()].copy_from_slice(&self.hmac);
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for MessageIntegritySha256 {

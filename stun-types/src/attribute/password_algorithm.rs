@@ -12,7 +12,10 @@ use byteorder::{BigEndian, ByteOrder};
 
 use crate::message::StunParseError;
 
-use super::{padded_attr_len, Attribute, AttributeType, RawAttribute};
+use super::{
+    padded_attr_len, Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
+};
 
 /// The hashing algorithm for the password
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,8 +73,13 @@ pub struct PasswordAlgorithms {
     algorithms: Vec<PasswordAlgorithmValue>,
 }
 
-impl Attribute for PasswordAlgorithms {
+impl AttributeStaticType for PasswordAlgorithms {
     const TYPE: AttributeType = AttributeType(0x8002);
+}
+impl Attribute for PasswordAlgorithms {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         let mut len = 0;
@@ -81,16 +89,20 @@ impl Attribute for PasswordAlgorithms {
         len as u16
     }
 }
-impl<'a> From<&PasswordAlgorithms> for RawAttribute<'a> {
-    fn from(value: &PasswordAlgorithms) -> RawAttribute<'a> {
-        let len = value.length() as usize;
+impl AttributeWrite for PasswordAlgorithms {
+    fn to_raw(&self) -> RawAttribute {
+        let len = self.length() as usize;
         let mut data = vec![0; len];
-        let mut i = 0;
-        for algo in value.algorithms.iter() {
-            algo.write(&mut data[i..]);
-            i += 4 + padded_attr_len(algo.len() as usize);
+        self.write_data_into_unchecked(&mut data);
+        RawAttribute::new_owned(PasswordAlgorithms::TYPE, data.into_boxed_slice())
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        self.write_header_unchecked(dest);
+        let offset = 4 + self.write_data_into_unchecked(&mut dest[4..]);
+        if len > offset {
+            dest[offset..len].fill(0);
         }
-        RawAttribute::new(PasswordAlgorithms::TYPE, &data).into_owned()
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for PasswordAlgorithms {
@@ -140,6 +152,15 @@ impl PasswordAlgorithms {
     pub fn algorithms(&self) -> &[PasswordAlgorithmValue] {
         &self.algorithms
     }
+
+    fn write_data_into_unchecked(&self, data: &mut [u8]) -> usize {
+        let mut i = 0;
+        for algo in self.algorithms.iter() {
+            algo.write(&mut data[i..]);
+            i += 4 + padded_attr_len(algo.len() as usize);
+        }
+        i
+    }
 }
 
 impl std::fmt::Display for PasswordAlgorithms {
@@ -162,20 +183,34 @@ pub struct PasswordAlgorithm {
     algorithm: PasswordAlgorithmValue,
 }
 
-impl Attribute for PasswordAlgorithm {
+impl AttributeStaticType for PasswordAlgorithm {
     const TYPE: AttributeType = AttributeType(0x001D);
+}
+impl Attribute for PasswordAlgorithm {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         4 + padded_attr_len(self.algorithm.len() as usize) as u16
     }
 }
 
-impl<'a> From<&PasswordAlgorithm> for RawAttribute<'a> {
-    fn from(value: &PasswordAlgorithm) -> RawAttribute<'a> {
-        let len = value.length() as usize;
+impl AttributeWrite for PasswordAlgorithm {
+    fn to_raw(&self) -> RawAttribute {
+        let len = self.length() as usize;
         let mut data = vec![0; len];
-        value.algorithm.write(&mut data);
-        RawAttribute::new(PasswordAlgorithm::TYPE, &data).into_owned()
+        self.algorithm.write(&mut data);
+        RawAttribute::new_owned(PasswordAlgorithm::TYPE, data.into_boxed_slice())
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        self.write_header_unchecked(dest);
+        let offset = 4 + 4 + self.algorithm.len() as usize;
+        self.algorithm.write(&mut dest[4..]);
+        if len > offset {
+            dest[offset..len].fill(0);
+        }
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for PasswordAlgorithm {

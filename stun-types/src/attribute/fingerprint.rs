@@ -10,7 +10,9 @@ use std::convert::TryFrom;
 
 use crate::message::StunParseError;
 
-use super::{Attribute, AttributeType, RawAttribute};
+use super::{
+    Attribute, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
+};
 
 /// The Fingerprint [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,17 +20,30 @@ pub struct Fingerprint {
     fingerprint: [u8; 4],
 }
 
-impl Attribute for Fingerprint {
+impl AttributeStaticType for Fingerprint {
     const TYPE: AttributeType = AttributeType(0x8028);
+}
+
+impl Attribute for Fingerprint {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         4
     }
 }
-impl<'a> From<&Fingerprint> for RawAttribute<'a> {
-    fn from(value: &Fingerprint) -> RawAttribute<'a> {
-        let buf = bytewise_xor!(4, value.fingerprint, Fingerprint::XOR_CONSTANT, 0);
+
+impl AttributeWrite for Fingerprint {
+    fn to_raw(&self) -> RawAttribute {
+        let buf = bytewise_xor!(4, self.fingerprint, Fingerprint::XOR_CONSTANT, 0);
         RawAttribute::new(Fingerprint::TYPE, &buf).into_owned()
+    }
+
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let offset = self.write_header_unchecked(dest);
+        let buf = bytewise_xor!(4, self.fingerprint, Fingerprint::XOR_CONSTANT, 0);
+        dest[offset..offset + 4].copy_from_slice(&buf);
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for Fingerprint {

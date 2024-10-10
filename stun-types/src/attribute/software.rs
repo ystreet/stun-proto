@@ -10,25 +10,45 @@ use std::convert::TryFrom;
 
 use crate::message::{StunParseError, StunWriteError};
 
-use super::{Attribute, AttributeType, RawAttribute};
+use super::{
+    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
+    RawAttribute,
+};
 
 /// The Software [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Software {
     software: String,
 }
-impl Attribute for Software {
+impl AttributeStaticType for Software {
     const TYPE: AttributeType = AttributeType(0x8022);
+}
+impl Attribute for Software {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         self.software.len() as u16
     }
 }
-impl<'a> From<&'a Software> for RawAttribute<'a> {
-    fn from(value: &'a Software) -> RawAttribute<'a> {
-        RawAttribute::new(Software::TYPE, value.software.as_bytes())
+
+impl AttributeWrite for Software {
+    fn to_raw(&self) -> RawAttribute {
+        RawAttribute::new(Software::TYPE, self.software.as_bytes())
+    }
+
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        let offset = self.write_header_unchecked(dest);
+        dest[offset..offset + self.software.len()].copy_from_slice(self.software.as_bytes());
+        let offset = offset + self.software.len();
+        if len > offset {
+            dest[offset..len].fill(0);
+        }
     }
 }
+
 impl<'a> TryFrom<&RawAttribute<'a>> for Software {
     type Error = StunParseError;
 

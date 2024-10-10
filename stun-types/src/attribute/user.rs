@@ -10,23 +10,40 @@ use std::convert::TryFrom;
 
 use crate::message::{StunParseError, StunWriteError};
 
-use super::{Attribute, AttributeType, RawAttribute};
+use super::{
+    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
+    RawAttribute,
+};
 
 /// The username [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Username {
     user: String,
 }
-impl Attribute for Username {
+impl AttributeStaticType for Username {
     const TYPE: AttributeType = AttributeType(0x0006);
+}
+impl Attribute for Username {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         self.user.len() as u16
     }
 }
-impl<'a> From<&'a Username> for RawAttribute<'a> {
-    fn from(value: &'a Username) -> RawAttribute<'a> {
-        RawAttribute::new(Username::TYPE, value.user.as_bytes())
+impl AttributeWrite for Username {
+    fn to_raw(&self) -> RawAttribute {
+        RawAttribute::new(Username::TYPE, self.user.as_bytes())
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        self.write_header_unchecked(dest);
+        let offset = 4 + self.user.len();
+        dest[4..offset].copy_from_slice(self.user.as_bytes());
+        if len > offset {
+            dest[offset..len].fill(0);
+        }
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for Username {
@@ -48,7 +65,7 @@ impl Username {
     /// # Errors
     ///
     /// - When the length of the username is longer than allowed in a STUN
-    /// [`Message`](crate::message::Message)
+    ///   [`Message`](crate::message::Message)
     /// - TODO: If converting through SASLPrep fails
     ///
     /// # Examples
@@ -97,16 +114,26 @@ pub struct Userhash {
     hash: [u8; 32],
 }
 
-impl Attribute for Userhash {
+impl AttributeStaticType for Userhash {
     const TYPE: AttributeType = AttributeType(0x001E);
+}
+impl Attribute for Userhash {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         32
     }
 }
-impl<'a> From<&'a Userhash> for RawAttribute<'a> {
-    fn from(value: &'a Userhash) -> RawAttribute<'a> {
-        RawAttribute::new(Userhash::TYPE, &value.hash)
+impl AttributeWrite for Userhash {
+    fn to_raw(&self) -> RawAttribute {
+        RawAttribute::new(Userhash::TYPE, &self.hash)
+    }
+
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        self.write_header_unchecked(dest);
+        dest[4..4 + self.hash.len()].copy_from_slice(&self.hash);
     }
 }
 

@@ -46,24 +46,33 @@
 //! ```
 //! # use stun_types::prelude::*;
 //! use byteorder::{BigEndian, ByteOrder};
-//! use stun_types::attribute::{Attribute, AttributeType, RawAttribute};
+//! use stun_types::attribute::{AttributeType, RawAttribute};
 //! use stun_types::message::StunParseError;
 //! #[derive(Debug)]
 //! struct MyAttribute {
 //!    value: u32,
 //! }
-//! impl Attribute for MyAttribute {
+//! impl AttributeStaticType for MyAttribute {
 //!    const TYPE: AttributeType = AttributeType::new(0x8851);
+//! }
+//! impl Attribute for MyAttribute {
+//!    fn get_type(&self) -> AttributeType {
+//!        Self::TYPE
+//!    }
 //!
 //!    fn length(&self) -> u16 {
 //!        4
 //!    }
 //! }
-//! impl<'a> From<&MyAttribute> for RawAttribute<'a> {
-//!     fn from(value: &MyAttribute) -> RawAttribute<'a> {
+//! impl AttributeWrite for MyAttribute {
+//!     fn to_raw(&self) -> RawAttribute {
 //!         let mut ret = [0; 4];
-//!         BigEndian::write_u32(&mut ret, value.value);
+//!         BigEndian::write_u32(&mut ret, self.value);
 //!         RawAttribute::new(MyAttribute::TYPE, &ret).into_owned()
+//!     }
+//!     fn write_into_unchecked(&self, dest: &mut [u8]) {
+//!         self.write_header_unchecked(dest);
+//!         BigEndian::write_u32(&mut dest[4..], self.value);
 //!     }
 //! }
 //! impl<'a> TryFrom<&RawAttribute<'a>> for MyAttribute {
@@ -281,15 +290,21 @@ impl TryFrom<&[u8]> for AttributeHeader {
     }
 }
 
+/// A static type for an [`Attribute`]
+pub trait AttributeStaticType {
+    const TYPE: AttributeType;
+}
+
 /// A STUN attribute for use in [`Message`](crate::message::Message)s
 pub trait Attribute: std::fmt::Debug {
-    const TYPE: AttributeType;
+    /// Retrieve the type of an `Attribute`.
+    fn get_type(&self) -> AttributeType;
 
     /// Retrieve the length of an `Attribute`.  This is not the padded length as stored in a
     /// `Message` and does not include the size of the attribute header.
     fn length(&self) -> u16;
 }
-
+/*
 /// Automatically implemented trait for converting from a concrete [`Attribute`] to a
 /// [`RawAttribute`]
 pub trait AttributeToRaw<'b>: Attribute + Into<RawAttribute<'b>>
@@ -299,7 +314,7 @@ where
     /// Convert an `Attribute` to a `RawAttribute`
     fn to_raw(&self) -> RawAttribute<'b>;
 }
-impl<'b, T: Attribute + Into<RawAttribute<'b>>> AttributeToRaw<'b> for T
+impl<'b, T: Attribute + Into<RawAttribute<'b>> + ?Sized> AttributeToRaw<'b> for T
 where
     RawAttribute<'b>: for<'a> From<&'a Self>,
 {
@@ -310,6 +325,7 @@ where
         self.into()
     }
 }
+*/
 /// Automatically implemented trait for converting to a concrete [`Attribute`] from a
 /// [`RawAttribute`]
 pub trait AttributeFromRaw<E>:
@@ -341,9 +357,53 @@ pub trait AttributeExt {
     fn padded_len(&self) -> usize;
 }
 
-impl<A: Attribute> AttributeExt for A {
+impl<A: Attribute + ?Sized> AttributeExt for A {
     fn padded_len(&self) -> usize {
         4 + padded_attr_len(self.length() as usize)
+    }
+}
+
+pub trait AttributeWrite: Attribute {
+    fn write_into_unchecked(&self, dest: &mut [u8]);
+    fn to_raw(&self) -> RawAttribute;
+}
+
+pub trait AttributeWriteExt: AttributeWrite {
+    fn write_header_unchecked(&self, dest: &mut [u8]) -> usize;
+    fn write_header(&self, dest: &mut [u8]) -> Result<usize, StunWriteError>;
+    fn write_into(&self, dest: &mut [u8]) -> Result<usize, StunWriteError>;
+}
+
+impl<A: AttributeWrite + ?Sized> AttributeWriteExt for A {
+    fn write_header(&self, dest: &mut [u8]) -> Result<usize, StunWriteError> {
+        if dest.len() < 4 {
+            return Err(StunWriteError::TooSmall {
+                expected: 4,
+                actual: dest.len(),
+            });
+        }
+        self.write_header_unchecked(dest);
+        Ok(4)
+    }
+    fn write_header_unchecked(&self, dest: &mut [u8]) -> usize {
+        AttributeHeader {
+            atype: self.get_type(),
+            length: self.length(),
+        }
+        .write_into(dest);
+        4
+    }
+
+    fn write_into(&self, dest: &mut [u8]) -> Result<usize, StunWriteError> {
+        let len = self.padded_len();
+        if len > dest.len() {
+            return Err(StunWriteError::TooSmall {
+                expected: len,
+                actual: dest.len(),
+            });
+        }
+        self.write_into_unchecked(dest);
+        Ok(len)
     }
 }
 
@@ -420,6 +480,17 @@ impl<'a> RawAttribute<'a> {
         }
     }
 
+    /// Create a new owned [`RawAttribute`]
+    pub fn new_owned(atype: AttributeType, data: Box<[u8]>) -> Self {
+        Self {
+            header: AttributeHeader {
+                atype,
+                length: data.len() as u16,
+            },
+            value: data.into(),
+        }
+    }
+
     /// Deserialize a `RawAttribute` from bytes.
     ///
     /// # Examples
@@ -469,35 +540,6 @@ impl<'a> RawAttribute<'a> {
         vec
     }
 
-    /// Write this [`RawAttribute`] into a byte slice.  Returns the number of bytes written.
-    pub fn write_into(&self, dest: &mut [u8]) -> Result<usize, StunWriteError> {
-        let len = self.padded_len();
-        if len > dest.len() {
-            return Err(StunWriteError::TooSmall {
-                expected: len,
-                actual: dest.len(),
-            });
-        }
-        self.header.write_into(dest);
-        let mut offset = 4;
-        dest[offset..offset + self.value.len()].copy_from_slice(&self.value);
-        offset += self.value.len();
-        if len - offset > 0 {
-            dest[offset..len].fill(0);
-        }
-        Ok(len)
-    }
-
-    /// Returns the [`AttributeType`] of this [`RawAttribute`]
-    pub fn get_type(&self) -> AttributeType {
-        self.header.get_type()
-    }
-
-    /// Returns the length of this [`RawAttribute`]
-    pub fn length(&self) -> u16 {
-        self.value.len() as u16
-    }
-
     /// Helper for checking that a raw attribute is of a particular type and within a certain range
     pub fn check_type_and_len(
         &self,
@@ -519,9 +561,39 @@ impl<'a> RawAttribute<'a> {
     }
 }
 
-impl<'a> AttributeExt for RawAttribute<'a> {
-    fn padded_len(&self) -> usize {
-        4 + padded_attr_len(self.length() as usize)
+impl<'a> Attribute for RawAttribute<'a> {
+    /// Returns the [`AttributeType`] of this [`RawAttribute`]
+    fn get_type(&self) -> AttributeType {
+        self.header.get_type()
+    }
+
+    /// Returns the length of this [`RawAttribute`]
+    fn length(&self) -> u16 {
+        self.value.len() as u16
+    }
+}
+
+impl<'a> AttributeWrite for RawAttribute<'a> {
+    /// Write this [`RawAttribute`] into a byte slice.  Returns the number of bytes written.
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        self.header.write_into(dest);
+        let mut offset = 4;
+        dest[offset..offset + self.value.len()].copy_from_slice(&self.value);
+        offset += self.value.len();
+        if len - offset > 0 {
+            dest[offset..len].fill(0);
+        }
+    }
+
+    fn to_raw(&self) -> RawAttribute<'a> {
+        self.clone()
+    }
+}
+
+impl<'a, A: AttributeWrite> From<&'a A> for RawAttribute<'a> {
+    fn from(value: &'a A) -> Self {
+        value.to_raw()
     }
 }
 

@@ -71,7 +71,10 @@ impl std::fmt::Display for TransportType {
 }
 
 pub mod prelude {
-    pub use crate::attribute::{AttributeExt, AttributeFromRaw, AttributeToRaw};
+    pub use crate::attribute::{
+        Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeWrite,
+        AttributeWriteExt,
+    };
 }
 
 #[cfg(test)]

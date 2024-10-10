@@ -10,7 +10,10 @@ use std::convert::TryFrom;
 
 use crate::message::{StunParseError, StunWriteError};
 
-use super::{Attribute, AttributeType, RawAttribute};
+use super::{
+    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
+    RawAttribute,
+};
 
 /// The Nonce [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,16 +21,30 @@ pub struct Nonce {
     nonce: String,
 }
 
-impl Attribute for Nonce {
+impl AttributeStaticType for Nonce {
     const TYPE: AttributeType = AttributeType(0x0015);
+}
+impl Attribute for Nonce {
+    fn get_type(&self) -> AttributeType {
+        Self::TYPE
+    }
 
     fn length(&self) -> u16 {
         self.nonce.len() as u16
     }
 }
-impl<'a> From<&'a Nonce> for RawAttribute<'a> {
-    fn from(value: &'a Nonce) -> RawAttribute<'a> {
-        RawAttribute::new(Nonce::TYPE, value.nonce.as_bytes())
+impl AttributeWrite for Nonce {
+    fn to_raw(&self) -> RawAttribute {
+        RawAttribute::new(Nonce::TYPE, self.nonce.as_bytes())
+    }
+    fn write_into_unchecked(&self, dest: &mut [u8]) {
+        let len = self.padded_len();
+        self.write_header_unchecked(dest);
+        let offset = 4 + self.nonce.len();
+        dest[4..offset].copy_from_slice(self.nonce.as_bytes());
+        if len > offset {
+            dest[offset..len].fill(0);
+        }
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for Nonce {
