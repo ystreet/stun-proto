@@ -1841,6 +1841,9 @@ mod tests {
                 let mtype = MessageType::from_class_method(c, m);
                 assert_eq!(mtype.class(), c);
                 assert_eq!(mtype.method(), m);
+                let bytes = mtype.to_bytes();
+                let ptype = MessageType::from_bytes(&bytes).unwrap();
+                assert_eq!(mtype, ptype);
             }
         }
     }
