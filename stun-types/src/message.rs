@@ -1949,6 +1949,22 @@ mod tests {
     }
 
     #[test]
+    fn write_into_short_destination() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING);
+        let software = Software::new("s").unwrap();
+        msg.add_attribute(&software).unwrap();
+        let len = msg.byte_len();
+        let mut dest = vec![0; len - 1];
+        assert!(
+            matches!(msg.write_into(&mut dest), Err(StunWriteError::TooSmall {
+            expected,
+            actual,
+        }) if expected == len && actual == len - 1)
+        );
+    }
+
+    #[test]
     fn add_duplicate_integrity() {
         let _log = crate::tests::test_init_log();
         let credentials = ShortTermCredentials::new("secret".to_owned()).into();
