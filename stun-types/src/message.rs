@@ -2051,6 +2051,31 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_add_attribute() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING);
+        let software = Software::new("s").unwrap();
+        msg.add_attribute(&software).unwrap();
+        assert!(matches!(
+            msg.add_attribute(&software),
+            Err(StunWriteError::AttributeExists(ty)) if ty == Software::TYPE
+        ));
+    }
+
+    #[test]
+    fn duplicate_add_raw_attribute() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING);
+        let software = Software::new("s").unwrap();
+        let raw = software.to_raw();
+        msg.add_raw_attribute(raw.clone()).unwrap();
+        assert!(matches!(
+            msg.add_raw_attribute(raw),
+            Err(StunWriteError::AttributeExists(ty)) if ty == Software::TYPE
+        ));
+    }
+
+    #[test]
     fn duplicate_fingerprint() {
         let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
