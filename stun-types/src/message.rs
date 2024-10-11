@@ -2021,6 +2021,22 @@ mod tests {
     }
 
     #[test]
+    fn add_raw_attribute_after_integrity() {
+        let _log = crate::tests::test_init_log();
+        for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
+            let credentials = ShortTermCredentials::new("secret".to_owned()).into();
+            let mut msg = Message::builder_request(BINDING);
+            msg.add_message_integrity(&credentials, algorithm).unwrap();
+            let software = Software::new("s").unwrap();
+            let raw = software.to_raw();
+            assert!(matches!(
+                msg.add_raw_attribute(raw),
+                Err(StunWriteError::MessageIntegrityExists)
+            ));
+        }
+    }
+
+    #[test]
     fn add_integrity_after_fingerprint() {
         let _log = crate::tests::test_init_log();
         for algorithm in [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256] {
@@ -2160,6 +2176,19 @@ mod tests {
     }
 
     #[test]
+    fn add_raw_attribute_after_fingerprint() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING);
+        msg.add_fingerprint().unwrap();
+        let software = Software::new("s").unwrap();
+        let raw = software.to_raw();
+        assert!(matches!(
+            msg.add_raw_attribute(raw),
+            Err(StunWriteError::FingerprintExists)
+        ));
+    }
+
+    #[test]
     fn parse_truncated_message_header() {
         let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
@@ -2292,6 +2321,17 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Use add_message_integrity() instead")]
+    fn builder_add_raw_attribute_integrity_panic() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING);
+        let hmac = [2; 20];
+        let integrity = MessageIntegrity::new(hmac);
+        let raw = integrity.to_raw();
+        msg.add_raw_attribute(raw).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Use add_message_integrity() instead")]
     fn builder_add_attribute_integrity_sha256_panic() {
         let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
@@ -2301,13 +2341,35 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Use add_message_integrity() instead")]
+    fn builder_add_raw_attribute_integrity_sha256_panic() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING);
+        let hmac = [2; 16];
+        let integrity = MessageIntegritySha256::new(&hmac).unwrap();
+        let raw = integrity.to_raw();
+        msg.add_raw_attribute(raw).unwrap();
+    }
+
+    #[test]
     #[should_panic(expected = "Use add_fingerprint() instead")]
     fn builder_add_attribute_fingerprint_panic() {
         let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING);
         let fingerprint = [2; 4];
-        let integrity = Fingerprint::new(fingerprint);
-        msg.add_attribute(&integrity).unwrap();
+        let fingerprint = Fingerprint::new(fingerprint);
+        msg.add_attribute(&fingerprint).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Use add_fingerprint() instead")]
+    fn builder_add_raw_attribute_fingerprint_panic() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING);
+        let fingerprint = [2; 4];
+        let fingerprint = Fingerprint::new(fingerprint);
+        let raw = fingerprint.to_raw();
+        msg.add_raw_attribute(raw).unwrap();
     }
 
     #[test]
