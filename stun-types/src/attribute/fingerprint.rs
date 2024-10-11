@@ -116,6 +116,8 @@ impl std::fmt::Display for Fingerprint {
 
 #[cfg(test)]
 mod tests {
+    use crate::prelude::AttributeExt;
+
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
@@ -145,11 +147,17 @@ mod tests {
             })
         ));
         // provide incorrectly typed data
-        let mut data: Vec<_> = raw.into();
+        let mut data: Vec<_> = raw.clone().into();
         BigEndian::write_u16(&mut data[0..2], 0);
         assert!(matches!(
             Fingerprint::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+
+        let mut dest = vec![0; raw.padded_len()];
+        attr.write_into(&mut dest).unwrap();
+        let raw = RawAttribute::from_bytes(&dest).unwrap();
+        let attr2 = Fingerprint::try_from(&raw).unwrap();
+        assert_eq!(attr2.fingerprint(), &val);
     }
 }

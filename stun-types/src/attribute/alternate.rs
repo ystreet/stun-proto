@@ -217,12 +217,18 @@ mod tests {
                 })
             ));
             // provide incorrectly typed data
-            let mut data: Vec<_> = raw.into();
+            let mut data: Vec<_> = raw.clone().into();
             BigEndian::write_u16(&mut data[0..2], 0);
             assert!(matches!(
                 AlternateServer::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
                 Err(StunParseError::WrongAttributeImplementation)
             ));
+
+            let mut dest = vec![0; raw.padded_len()];
+            mapped.write_into(&mut dest).unwrap();
+            let raw = RawAttribute::from_bytes(&dest).unwrap();
+            let mapped2 = AlternateServer::try_from(&raw).unwrap();
+            assert_eq!(mapped2.server(), *addr);
         }
     }
 
@@ -246,12 +252,18 @@ mod tests {
             AlternateDomain::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
-        let mut data: Vec<_> = raw.into();
+        let mut data: Vec<_> = raw.clone().into();
         // invalid utf-8 data
         data[8] = 0x88;
         assert!(matches!(
             AlternateDomain::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::InvalidAttributeData)
         ));
+
+        let mut dest = vec![0; raw.padded_len()];
+        attr.write_into(&mut dest).unwrap();
+        let raw = RawAttribute::from_bytes(&dest).unwrap();
+        let mapped2 = AlternateDomain::try_from(&raw).unwrap();
+        assert_eq!(mapped2.domain(), dns);
     }
 }
