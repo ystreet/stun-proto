@@ -1849,6 +1849,14 @@ mod tests {
     }
 
     #[test]
+    fn msg_type_not_stun() {
+        assert!(matches!(
+            MessageType::from_bytes(&[0xc0, 0x00]),
+            Err(StunParseError::NotStun)
+        ));
+    }
+
+    #[test]
     fn msg_roundtrip() {
         let _log = crate::tests::test_init_log();
         /* validate that all methods/classes survive a roundtrip */
