@@ -1497,7 +1497,7 @@ impl<'a> MessageBuilder<'a> {
         BigEndian::write_u16(&mut dest[2..4], (len - MessageHeader::LENGTH) as u16);
         let mut offset = MessageHeader::LENGTH;
         for attr in &self.attributes {
-            offset += attr.write_into(&mut dest[offset..]).unwrap();
+            offset += attr.write_into(&mut dest[offset..])?;
         }
         Ok(offset)
     }
