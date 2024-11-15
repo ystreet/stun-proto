@@ -297,7 +297,7 @@ pub trait AttributeStaticType {
 }
 
 /// A STUN attribute for use in [`Message`](crate::message::Message)s
-pub trait Attribute: std::fmt::Debug {
+pub trait Attribute: std::fmt::Debug + std::marker::Sync {
     /// Retrieve the type of an `Attribute`.
     fn get_type(&self) -> AttributeType;
 
