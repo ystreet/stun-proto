@@ -123,7 +123,7 @@ impl ErrorCode {
     pub const BAD_REQUEST: u16 = 400;
     pub const UNAUTHORIZED: u16 = 401;
     pub const FORBIDDEN: u16 = 403;
-    pub const UNKNOWN_ATRIBUTE: u16 = 420;
+    pub const UNKNOWN_ATTRIBUTE: u16 = 420;
     pub const ALLOCATION_MISMATCH: u16 = 437;
     pub const STALE_NONCE: u16 = 438;
     pub const ADDRESS_FAMILY_NOT_SUPPORTED: u16 = 440;
@@ -228,7 +228,7 @@ impl ErrorCode {
             Self::BAD_REQUEST => "Bad Request",
             Self::UNAUTHORIZED => "Unauthorized",
             Self::FORBIDDEN => "Forbidden",
-            Self::UNKNOWN_ATRIBUTE => "Unknown Attribute",
+            Self::UNKNOWN_ATTRIBUTE => "Unknown Attribute",
             Self::ALLOCATION_MISMATCH => "Allocation Mismatch",
             Self::STALE_NONCE => "Stale Nonce",
             Self::ADDRESS_FAMILY_NOT_SUPPORTED => "Address Family Not Supported",
