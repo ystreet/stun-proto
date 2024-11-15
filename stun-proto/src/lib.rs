@@ -6,6 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![deny(missing_debug_implementations)]
+
 //! # stun-proto
 //!
 //! A sans-IO implementation of a STUN agent as specified in [RFC5389] and [RFC8489].

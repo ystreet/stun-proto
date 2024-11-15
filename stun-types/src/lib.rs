@@ -6,6 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![deny(missing_debug_implementations)]
+
 //! # stun-types
 //!
 //! An implementation of parsing and writing STUN messages and attributes. This implementation is

@@ -50,6 +50,7 @@ pub struct StunAgent {
 }
 
 /// Builder struct for a [`StunAgent`]
+#[derive(Debug)]
 pub struct StunAgentBuilder {
     transport: TransportType,
     local_addr: SocketAddr,
