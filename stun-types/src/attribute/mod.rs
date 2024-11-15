@@ -292,6 +292,7 @@ impl TryFrom<&[u8]> for AttributeHeader {
 
 /// A static type for an [`Attribute`]
 pub trait AttributeStaticType {
+    /// The [`AttributeType`]
     const TYPE: AttributeType;
 }
 
@@ -351,6 +352,7 @@ fn padded_attr_len(len: usize) -> usize {
     }
 }
 
+/// Automatically implemented trait providing some helper functions.
 pub trait AttributeExt {
     /// The length in bytes of an attribute as stored in a [`Message`](crate::message::Message)
     /// including any padding and the attribute header.
@@ -363,14 +365,30 @@ impl<A: Attribute + ?Sized> AttributeExt for A {
     }
 }
 
+/// Trait required when implementing writing an [`Attribute`] to a sequence of bytes
 pub trait AttributeWrite: Attribute {
+    /// Write the 4 byte attribute header into the provided destination buffer returning the
+    /// number of bytes written.
+    ///
+    /// Panics if the destination buffer is not large enough
     fn write_into_unchecked(&self, dest: &mut [u8]);
+    /// Produce a [`RawAttribute`] from this [`Attribute`]
     fn to_raw(&self) -> RawAttribute;
 }
 
+/// Automatically implemented trait providing helper functionality for writing an [`Attribute`] to
+/// a sequence of bytes.
 pub trait AttributeWriteExt: AttributeWrite {
+    /// Write the 4 byte attribute header into the provided destination buffer returning the
+    /// number of bytes written.
+    ///
+    /// Panics if the destination cannot hold at least 4 bytes of data.
     fn write_header_unchecked(&self, dest: &mut [u8]) -> usize;
+    /// Write the 4 byte attribute header into the provided destination buffer returning the
+    /// number of bytes written, or an error.
     fn write_header(&self, dest: &mut [u8]) -> Result<usize, StunWriteError>;
+    /// Write this attribute into the provided destination buffer returning the number of bytes
+    /// written, or an error.
     fn write_into(&self, dest: &mut [u8]) -> Result<usize, StunWriteError>;
 }
 

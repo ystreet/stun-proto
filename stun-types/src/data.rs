@@ -80,7 +80,9 @@ impl From<Box<[u8]>> for DataOwned {
 /// An owned or borrowed piece of data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Data<'a> {
+    /// Borrowed data.
     Borrowed(DataSlice<'a>),
+    /// Owned data.
     Owned(DataOwned),
 }
 

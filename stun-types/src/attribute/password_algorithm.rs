@@ -20,7 +20,9 @@ use super::{
 /// The hashing algorithm for the password
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PasswordAlgorithmValue {
+    /// The MD-5 hashing algorithm.
     MD5,
+    /// The SHA-256 hashing algorithm.
     SHA256,
 }
 

@@ -91,6 +91,7 @@ pub const MAGIC_COOKIE: u32 = 0x2112A442;
 /// message.
 pub const BINDING: u16 = 0x0001;
 
+/// Possible errors when parsing a STUN message.
 #[derive(Debug, thiserror::Error)]
 pub enum StunParseError {
     /// Not a STUN message.
@@ -263,7 +264,9 @@ impl ShortTermCredentials {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum MessageIntegrityCredentials {
+    /// Short term integrity credentials.
     ShortTerm(ShortTermCredentials),
+    /// Long term integrity credentials.
     LongTerm(LongTermCredentials),
 }
 
@@ -311,9 +314,13 @@ impl MessageIntegrityCredentials {
 ///  - [Error][`MessageClass::Error`] class indicates that an error was produced.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum MessageClass {
+    /// A request that is expecting a response of either Success, or Error.
     Request,
+    /// A request that does not expect a response.
     Indication,
+    /// A success response to a previous Request.
     Success,
+    /// An error response to a previous Request.
     Error,
 }
 
@@ -614,7 +621,9 @@ impl<'a> std::fmt::Display for Message<'a> {
 /// The supported hashing algorithms for ensuring integrity of a [`Message`]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IntegrityAlgorithm {
+    /// SHA-1 algorithm
     Sha1,
+    /// SHA-256 algorithm
     Sha256,
 }
 
@@ -1474,6 +1483,8 @@ impl<'a> MessageBuilder<'a> {
         ret
     }
 
+    /// Write this builder into the provided destination buffer returning the length in bytes that
+    /// has been written, or an error.
     #[tracing::instrument(
         name = "message_build",
         level = "trace",
@@ -1502,6 +1513,8 @@ impl<'a> MessageBuilder<'a> {
         Ok(offset)
     }
 
+    /// The length in bytes this [`MessageBuilder`] would require to successfully construct
+    /// a message.
     pub fn byte_len(&self) -> usize {
         MessageHeader::LENGTH
             + self
