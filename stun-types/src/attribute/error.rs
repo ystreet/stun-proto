@@ -77,6 +77,7 @@ impl<'a> TryFrom<&RawAttribute<'a>> for ErrorCode {
 }
 
 /// Builder for an [`ErrorCode`]
+#[derive(Debug)]
 pub struct ErrorCodeBuilder<'reason> {
     code: u16,
     reason: Option<&'reason str>,

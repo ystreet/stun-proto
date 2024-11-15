@@ -513,6 +513,7 @@ impl std::fmt::Display for TransactionId {
 /// The fixed length header of a STUN message.  Allows reading the message header for a quick
 /// check if this message is a valid STUN message.  Can also be used to expose the length of the
 /// complete message without needing to receive the entire message.
+#[derive(Debug)]
 pub struct MessageHeader {
     mtype: MessageType,
     transaction_id: TransactionId,
@@ -1322,6 +1323,7 @@ impl<'a> TryFrom<&'a [u8]> for Message<'a> {
 }
 
 #[doc(hidden)]
+#[derive(Debug)]
 pub struct MessageAttributesIter<'a> {
     data: &'a [u8],
     data_i: usize,
