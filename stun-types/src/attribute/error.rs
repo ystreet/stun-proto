@@ -119,20 +119,39 @@ impl<'reason> ErrorCodeBuilder<'reason> {
 }
 
 impl ErrorCode {
+    /// Try an alternate server.  The
+    /// [`AlternateServer`](crate::attribute::alternate::AlternateServer) or
+    /// [`AlternateDomain`](crate::attribute::alternate::AlternateDomain) contains the location of
+    /// where to forward this request.
     pub const TRY_ALTERNATE: u16 = 301;
+    /// The request was malformed and could not be processed.
     pub const BAD_REQUEST: u16 = 400;
+    /// The required credentials were not found or did not match.
     pub const UNAUTHORIZED: u16 = 401;
+    /// Not allowed to access this resource.
     pub const FORBIDDEN: u16 = 403;
+    /// An unknown comprehension required attribute was present.  The [`UnknownAttributes`]
+    /// contains the specific attribute/s.
     pub const UNKNOWN_ATTRIBUTE: u16 = 420;
+    /// The allocation already exists on this server.
     pub const ALLOCATION_MISMATCH: u16 = 437;
+    /// The nonce is no longer valid.
     pub const STALE_NONCE: u16 = 438;
+    /// The address family (IPv4, IPv6) is not supported.
     pub const ADDRESS_FAMILY_NOT_SUPPORTED: u16 = 440;
+    /// Incorrect credentials provided.
     pub const WRONG_CREDENTIALS: u16 = 441;
+    /// The transport protocol (UDP, TCP) is not supported.
     pub const UNSUPPORTED_TRANSPORT_PROTOCOL: u16 = 442;
+    /// The peer address family does not match the TURN allocation.
     pub const PEER_ADDRESS_FAMILY_MISMATCH: u16 = 443;
+    /// This username has reached its limit of allocations currently allowed.
     pub const ALLOCATION_QUOTA_REACHED: u16 = 486;
+    /// Requestor must switch ICE roles.
     pub const ROLE_CONFLICT: u16 = 487;
+    /// An unspecificed error has occurred.
     pub const SERVER_ERROR: u16 = 500;
+    /// The server does not have capacity to handle this request.
     pub const INSUFFICIENT_CAPACITY: u16 = 508;
 
     /// Create a builder for creating a new [`ErrorCode`] [`Attribute`]

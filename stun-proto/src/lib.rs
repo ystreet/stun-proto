@@ -7,6 +7,7 @@
 // except according to those terms.
 
 #![deny(missing_debug_implementations)]
+#![deny(missing_docs)]
 
 //! # stun-proto
 //!

@@ -150,7 +150,9 @@ impl std::fmt::Display for MappedSocketAddr {
 /// [`Attribute`](crate::attribute::Attribute) after an XOR operation with the [`TransactionId`]
 /// of a [`Message`](crate::message::Message).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct XorSocketAddr {
+    /// The parent [`MappedSocketAddr`]
     pub addr: MappedSocketAddr,
 }
 
@@ -178,6 +180,7 @@ impl XorSocketAddr {
         Ok(Self { addr })
     }
 
+    /// Returns the XOR of the `addr` with the `transaction` and the hardcoded XOR constant.
     pub fn xor_addr(addr: SocketAddr, transaction: TransactionId) -> SocketAddr {
         match addr {
             SocketAddr::V4(addr) => {

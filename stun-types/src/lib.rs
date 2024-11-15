@@ -7,6 +7,7 @@
 // except according to those terms.
 
 #![deny(missing_debug_implementations)]
+#![deny(missing_docs)]
 
 //! # stun-types
 //!
@@ -72,6 +73,7 @@ impl std::fmt::Display for TransportType {
     }
 }
 
+/// Prelude module for traits
 pub mod prelude {
     pub use crate::attribute::{
         Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeWrite,
