@@ -47,7 +47,7 @@ impl std::fmt::Display for AddressFamily {
     }
 }
 
-/// Helper struct for `SocketAddr`s that are stored is an attribute.
+/// Helper struct for `SocketAddr`s that are stored as an attribute.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MappedSocketAddr {
     addr: SocketAddr,
