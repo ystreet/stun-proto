@@ -12,8 +12,8 @@ use std::net::SocketAddr;
 use crate::message::{StunParseError, TransactionId};
 
 use super::{
-    Attribute, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
-    XorSocketAddr,
+    Attribute, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute, XorSocketAddr,
 };
 
 /// The XorMappedAddress [`Attribute`]
@@ -22,9 +22,11 @@ pub struct XorMappedAddress {
     // stored XOR-ed as we need the transaction id to get the original value
     addr: XorSocketAddr,
 }
+
 impl AttributeStaticType for XorMappedAddress {
     const TYPE: AttributeType = AttributeType(0x0020);
 }
+
 impl Attribute for XorMappedAddress {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -34,6 +36,7 @@ impl Attribute for XorMappedAddress {
         self.addr.length()
     }
 }
+
 impl AttributeWrite for XorMappedAddress {
     fn to_raw(&self) -> RawAttribute {
         self.addr.to_raw(XorMappedAddress::TYPE)
@@ -44,6 +47,16 @@ impl AttributeWrite for XorMappedAddress {
         self.addr.write_into_unchecked(&mut dest[4..])
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for XorMappedAddress {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for XorMappedAddress {
     type Error = StunParseError;
 

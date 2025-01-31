@@ -13,8 +13,8 @@ use byteorder::{BigEndian, ByteOrder};
 use crate::message::{StunParseError, StunWriteError};
 
 use super::{
-    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
-    RawAttribute,
+    Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
 };
 
 /// The ErrorCode [`Attribute`]
@@ -56,6 +56,16 @@ impl AttributeWrite for ErrorCode {
         }
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for ErrorCode {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for ErrorCode {
     type Error = StunParseError;
 
@@ -311,6 +321,16 @@ impl AttributeWrite for UnknownAttributes {
         }
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for UnknownAttributes {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for UnknownAttributes {
     type Error = StunParseError;
 

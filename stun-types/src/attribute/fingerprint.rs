@@ -11,7 +11,8 @@ use std::convert::TryFrom;
 use crate::message::StunParseError;
 
 use super::{
-    Attribute, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
+    Attribute, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
 };
 
 /// The Fingerprint [`Attribute`]
@@ -46,6 +47,16 @@ impl AttributeWrite for Fingerprint {
         dest[offset..offset + 4].copy_from_slice(&buf);
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for Fingerprint {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for Fingerprint {
     type Error = StunParseError;
 

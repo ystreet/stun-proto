@@ -12,8 +12,8 @@ use std::net::SocketAddr;
 use crate::message::StunParseError;
 
 use super::{
-    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
-    MappedSocketAddr, RawAttribute,
+    Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, MappedSocketAddr, RawAttribute,
 };
 
 /// The AlternateServer [`Attribute`]
@@ -42,6 +42,12 @@ impl AttributeWrite for AlternateServer {
     fn write_into_unchecked(&self, dest: &mut [u8]) {
         self.write_header_unchecked(dest);
         self.addr.write_into_unchecked(&mut dest[4..]);
+    }
+}
+
+impl<'a> AttributeFromRaw<'a> for AlternateServer {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError> {
+        Self::try_from(raw)
     }
 }
 
@@ -109,6 +115,14 @@ impl Attribute for AlternateDomain {
     }
     fn length(&self) -> u16 {
         self.domain.len() as u16
+    }
+}
+impl<'a> AttributeFromRaw<'a> for AlternateDomain {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
     }
 }
 impl<'a> TryFrom<&RawAttribute<'a>> for AlternateDomain {
