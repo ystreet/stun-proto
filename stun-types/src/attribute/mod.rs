@@ -110,7 +110,7 @@ macro_rules! bytewise_xor {
 }
 
 mod address;
-pub use address::{MappedSocketAddr, XorSocketAddr};
+pub use address::{MappedSocketAddr, XorSocketAddr, AddressFamily};
 mod alternate;
 pub use alternate::{AlternateDomain, AlternateServer};
 mod error;

@@ -17,7 +17,9 @@ use super::{check_len, AttributeType, RawAttribute};
 /// The address family of the socket
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressFamily {
+    /// IP version 4 address.
     IPV4,
+    /// IP version 6 address.
     IPV6,
 }
 
