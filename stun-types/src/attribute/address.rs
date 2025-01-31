@@ -206,7 +206,8 @@ impl XorSocketAddr {
         }
     }
 
-    pub(crate) fn addr(&self, transaction: TransactionId) -> SocketAddr {
+    /// Retrieve the `SocketAddr` from this [`XorSocketAddr`]
+    pub fn addr(&self, transaction: TransactionId) -> SocketAddr {
         XorSocketAddr::xor_addr(self.addr.addr(), transaction)
     }
 
