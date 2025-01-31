@@ -367,8 +367,7 @@ impl<A: Attribute + ?Sized> AttributeExt for A {
 
 /// Trait required when implementing writing an [`Attribute`] to a sequence of bytes
 pub trait AttributeWrite: Attribute {
-    /// Write the 4 byte attribute header into the provided destination buffer returning the
-    /// number of bytes written.
+    /// Write attribute to the provided destination buffer.
     ///
     /// Panics if the destination buffer is not large enough
     fn write_into_unchecked(&self, dest: &mut [u8]);
