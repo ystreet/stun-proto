@@ -117,7 +117,8 @@ impl MappedSocketAddr {
         self.addr
     }
 
-    pub(crate) fn write_into_unchecked(&self, dest: &mut [u8]) {
+    /// Write the [`MappedSocketAddr`] to the provided destination buffer.
+    pub fn write_into_unchecked(&self, dest: &mut [u8]) {
         match self.addr {
             SocketAddr::V4(addr) => {
                 dest[0] = 0x0;
@@ -207,7 +208,8 @@ impl XorSocketAddr {
         XorSocketAddr::xor_addr(self.addr.addr(), transaction)
     }
 
-    pub(crate) fn write_into_unchecked(&self, dest: &mut [u8]) {
+    /// Write the [`XorSocketAddr`] to the provided destination buffer.
+    pub fn write_into_unchecked(&self, dest: &mut [u8]) {
         self.addr.write_into_unchecked(dest)
     }
 }
