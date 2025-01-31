@@ -11,8 +11,8 @@ use std::convert::TryFrom;
 use crate::message::{StunParseError, StunWriteError};
 
 use super::{
-    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
-    RawAttribute,
+    Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
 };
 
 /// The Nonce [`Attribute`]
@@ -24,6 +24,7 @@ pub struct Nonce {
 impl AttributeStaticType for Nonce {
     const TYPE: AttributeType = AttributeType(0x0015);
 }
+
 impl Attribute for Nonce {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -33,10 +34,12 @@ impl Attribute for Nonce {
         self.nonce.len() as u16
     }
 }
+
 impl AttributeWrite for Nonce {
     fn to_raw(&self) -> RawAttribute {
         RawAttribute::new(Nonce::TYPE, self.nonce.as_bytes())
     }
+
     fn write_into_unchecked(&self, dest: &mut [u8]) {
         let len = self.padded_len();
         self.write_header_unchecked(dest);
@@ -47,6 +50,16 @@ impl AttributeWrite for Nonce {
         }
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for Nonce {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for Nonce {
     type Error = StunParseError;
 

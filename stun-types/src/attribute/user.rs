@@ -11,8 +11,8 @@ use std::convert::TryFrom;
 use crate::message::{StunParseError, StunWriteError};
 
 use super::{
-    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
-    RawAttribute,
+    Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
 };
 
 /// The username [`Attribute`]
@@ -20,9 +20,11 @@ use super::{
 pub struct Username {
     user: String,
 }
+
 impl AttributeStaticType for Username {
     const TYPE: AttributeType = AttributeType(0x0006);
 }
+
 impl Attribute for Username {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -32,6 +34,7 @@ impl Attribute for Username {
         self.user.len() as u16
     }
 }
+
 impl AttributeWrite for Username {
     fn to_raw(&self) -> RawAttribute {
         RawAttribute::new(Username::TYPE, self.user.as_bytes())
@@ -46,6 +49,16 @@ impl AttributeWrite for Username {
         }
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for Username {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for Username {
     type Error = StunParseError;
 
@@ -117,6 +130,7 @@ pub struct Userhash {
 impl AttributeStaticType for Userhash {
     const TYPE: AttributeType = AttributeType(0x001E);
 }
+
 impl Attribute for Userhash {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -126,6 +140,7 @@ impl Attribute for Userhash {
         32
     }
 }
+
 impl AttributeWrite for Userhash {
     fn to_raw(&self) -> RawAttribute {
         RawAttribute::new(Userhash::TYPE, &self.hash)
@@ -134,6 +149,15 @@ impl AttributeWrite for Userhash {
     fn write_into_unchecked(&self, dest: &mut [u8]) {
         self.write_header_unchecked(dest);
         dest[4..4 + self.hash.len()].copy_from_slice(&self.hash);
+    }
+}
+
+impl<'a> AttributeFromRaw<'a> for Userhash {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
     }
 }
 

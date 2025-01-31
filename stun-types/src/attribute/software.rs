@@ -11,8 +11,8 @@ use std::convert::TryFrom;
 use crate::message::{StunParseError, StunWriteError};
 
 use super::{
-    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
-    RawAttribute,
+    Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
 };
 
 /// The Software [`Attribute`]
@@ -20,9 +20,11 @@ use super::{
 pub struct Software {
     software: String,
 }
+
 impl AttributeStaticType for Software {
     const TYPE: AttributeType = AttributeType(0x8022);
 }
+
 impl Attribute for Software {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -46,6 +48,15 @@ impl AttributeWrite for Software {
         if len > offset {
             dest[offset..len].fill(0);
         }
+    }
+}
+
+impl<'a> AttributeFromRaw<'a> for Software {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
     }
 }
 

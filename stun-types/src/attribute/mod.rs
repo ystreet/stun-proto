@@ -37,7 +37,7 @@
 //! assert_eq!(raw.to_bytes(), attribute_data);
 //!
 //! // Can also parse data into a typed attribute as needed
-//! let software = Software::from_raw(&raw).unwrap();
+//! let software = Software::from_raw(raw).unwrap();
 //! assert_eq!(software.software(), software_name);
 //! ```
 //!
@@ -75,9 +75,11 @@
 //!         BigEndian::write_u32(&mut dest[4..], self.value);
 //!     }
 //! }
-//! impl<'a> TryFrom<&RawAttribute<'a>> for MyAttribute {
-//!     type Error = StunParseError;
-//!     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
+//! impl<'a> AttributeFromRaw<'a> for MyAttribute {
+//!     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+//!     where
+//!         Self: Sized,
+//!     {
 //!         raw.check_type_and_len(Self::TYPE, 4..=4)?;
 //!         let value = BigEndian::read_u32(&raw.value);
 //!         Ok(Self {
@@ -95,7 +97,7 @@
 //! ];
 //! assert_eq!(raw.to_bytes(), attribute_data);
 //!
-//! let my_attr = MyAttribute::from_raw(&raw).unwrap();
+//! let my_attr = MyAttribute::from_raw(raw).unwrap();
 //! assert_eq!(my_attr.value, 0x4729);
 //! ```
 
@@ -110,7 +112,7 @@ macro_rules! bytewise_xor {
 }
 
 mod address;
-pub use address::{MappedSocketAddr, XorSocketAddr, AddressFamily};
+pub use address::{AddressFamily, MappedSocketAddr, XorSocketAddr};
 mod alternate;
 pub use alternate::{AlternateDomain, AlternateServer};
 mod error;
@@ -305,42 +307,20 @@ pub trait Attribute: std::fmt::Debug + std::marker::Sync {
     /// `Message` and does not include the size of the attribute header.
     fn length(&self) -> u16;
 }
-/*
-/// Automatically implemented trait for converting from a concrete [`Attribute`] to a
-/// [`RawAttribute`]
-pub trait AttributeToRaw<'b>: Attribute + Into<RawAttribute<'b>>
-where
-    RawAttribute<'b>: for<'a> From<&'a Self>,
-{
-    /// Convert an `Attribute` to a `RawAttribute`
-    fn to_raw(&self) -> RawAttribute<'b>;
-}
-impl<'b, T: Attribute + Into<RawAttribute<'b>> + ?Sized> AttributeToRaw<'b> for T
-where
-    RawAttribute<'b>: for<'a> From<&'a Self>,
-{
-    fn to_raw(&self) -> RawAttribute<'b>
-    where
-        RawAttribute<'b>: for<'a> From<&'a Self>,
-    {
-        self.into()
-    }
-}
-*/
-/// Automatically implemented trait for converting to a concrete [`Attribute`] from a
-/// [`RawAttribute`]
-pub trait AttributeFromRaw<E>:
-    Attribute + for<'a> TryFrom<&'a RawAttribute<'a>, Error = E>
-{
+
+/// A trait for converting to a concrete [`Attribute`] from a [`RawAttribute`]
+pub trait AttributeFromRaw<'a>: Attribute {
     /// Convert an `Attribute` from a `RawAttribute`
-    fn from_raw(raw: &RawAttribute) -> Result<Self, E>
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized;
-}
 
-impl<E, T: Attribute + for<'a> TryFrom<&'a RawAttribute<'a>, Error = E>> AttributeFromRaw<E> for T {
-    fn from_raw(raw: &RawAttribute) -> Result<T, E> {
-        Self::try_from(raw)
+    /// Convert an `Attribute` from a `RawAttribute`
+    fn from_raw(raw: RawAttribute<'a>) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::from_raw_ref(&raw)
     }
 }
 
@@ -435,7 +415,7 @@ pub struct RawAttribute<'a> {
 
 macro_rules! display_attr {
     ($this:ident, $CamelType:ty, $default:ident) => {{
-        if let Ok(attr) = <$CamelType>::from_raw($this) {
+        if let Ok(attr) = <$CamelType>::from_raw_ref($this) {
             format!("{}", attr)
         } else {
             $default

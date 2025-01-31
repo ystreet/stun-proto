@@ -11,7 +11,8 @@ use std::convert::TryFrom;
 use crate::message::{StunParseError, StunWriteError};
 
 use super::{
-    Attribute, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
+    Attribute, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
 };
 
 use tracing::error;
@@ -25,6 +26,7 @@ pub struct MessageIntegrity {
 impl AttributeStaticType for MessageIntegrity {
     const TYPE: AttributeType = AttributeType(0x0008);
 }
+
 impl Attribute for MessageIntegrity {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -34,6 +36,7 @@ impl Attribute for MessageIntegrity {
         20
     }
 }
+
 impl AttributeWrite for MessageIntegrity {
     fn to_raw(&self) -> RawAttribute {
         RawAttribute::new(MessageIntegrity::TYPE, &self.hmac)
@@ -43,6 +46,16 @@ impl AttributeWrite for MessageIntegrity {
         dest[4..4 + self.hmac.len()].copy_from_slice(&self.hmac);
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for MessageIntegrity {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for MessageIntegrity {
     type Error = StunParseError;
 
@@ -160,6 +173,7 @@ pub struct MessageIntegritySha256 {
 impl AttributeStaticType for MessageIntegritySha256 {
     const TYPE: AttributeType = AttributeType(0x001C);
 }
+
 impl Attribute for MessageIntegritySha256 {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -169,6 +183,7 @@ impl Attribute for MessageIntegritySha256 {
         self.hmac.len() as u16
     }
 }
+
 impl AttributeWrite for MessageIntegritySha256 {
     fn to_raw(&self) -> RawAttribute {
         RawAttribute::new(MessageIntegritySha256::TYPE, &self.hmac)
@@ -178,6 +193,16 @@ impl AttributeWrite for MessageIntegritySha256 {
         dest[4..4 + self.hmac.len()].copy_from_slice(&self.hmac);
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for MessageIntegritySha256 {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for MessageIntegritySha256 {
     type Error = StunParseError;
 

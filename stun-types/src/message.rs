@@ -960,7 +960,7 @@ impl<'a> Message<'a> {
                 });
             }
             if attr.get_type() == Fingerprint::TYPE {
-                let f = Fingerprint::from_raw(&attr)?;
+                let f = Fingerprint::from_raw_ref(&attr)?;
                 let msg_fingerprint = f.fingerprint();
                 let mut fingerprint_data = orig_data[..data_offset].to_vec();
                 BigEndian::write_u16(
@@ -1145,13 +1145,13 @@ impl<'a> Message<'a> {
             attribute_type = %A::TYPE,
         )
     )]
-    pub fn attribute<A: AttributeFromRaw<StunParseError> + AttributeStaticType>(
-        &self,
+    pub fn attribute<A: AttributeFromRaw<'a> + AttributeStaticType>(
+        &'a self,
     ) -> Result<A, StunParseError> {
         self.iter_attributes()
             .find(|attr| attr.get_type() == A::TYPE)
             .ok_or(StunParseError::MissingAttribute(A::TYPE))
-            .and_then(|raw| A::from_raw(&raw))
+            .and_then(|raw| A::from_raw(raw))
     }
 
     /// Returns an iterator over the attributes in the [`Message`].

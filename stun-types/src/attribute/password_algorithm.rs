@@ -13,8 +13,8 @@ use byteorder::{BigEndian, ByteOrder};
 use crate::message::StunParseError;
 
 use super::{
-    padded_attr_len, Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite,
-    AttributeWriteExt, RawAttribute,
+    padded_attr_len, Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType,
+    AttributeWrite, AttributeWriteExt, RawAttribute,
 };
 
 /// The hashing algorithm for the password
@@ -78,6 +78,7 @@ pub struct PasswordAlgorithms {
 impl AttributeStaticType for PasswordAlgorithms {
     const TYPE: AttributeType = AttributeType(0x8002);
 }
+
 impl Attribute for PasswordAlgorithms {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -91,6 +92,7 @@ impl Attribute for PasswordAlgorithms {
         len as u16
     }
 }
+
 impl AttributeWrite for PasswordAlgorithms {
     fn to_raw(&self) -> RawAttribute {
         let len = self.length() as usize;
@@ -107,6 +109,16 @@ impl AttributeWrite for PasswordAlgorithms {
         }
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for PasswordAlgorithms {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for PasswordAlgorithms {
     type Error = StunParseError;
 
@@ -188,6 +200,7 @@ pub struct PasswordAlgorithm {
 impl AttributeStaticType for PasswordAlgorithm {
     const TYPE: AttributeType = AttributeType(0x001D);
 }
+
 impl Attribute for PasswordAlgorithm {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -215,6 +228,16 @@ impl AttributeWrite for PasswordAlgorithm {
         }
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for PasswordAlgorithm {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for PasswordAlgorithm {
     type Error = StunParseError;
 

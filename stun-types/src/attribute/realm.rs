@@ -11,8 +11,8 @@ use std::convert::TryFrom;
 use crate::message::{StunParseError, StunWriteError};
 
 use super::{
-    Attribute, AttributeExt, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt,
-    RawAttribute,
+    Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
 };
 
 /// The Realm [`Attribute`]
@@ -24,6 +24,7 @@ pub struct Realm {
 impl AttributeStaticType for Realm {
     const TYPE: AttributeType = AttributeType(0x0014);
 }
+
 impl Attribute for Realm {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -33,6 +34,7 @@ impl Attribute for Realm {
         self.realm.len() as u16
     }
 }
+
 impl AttributeWrite for Realm {
     fn to_raw(&self) -> RawAttribute {
         RawAttribute::new(Realm::TYPE, self.realm.as_bytes())
@@ -47,6 +49,16 @@ impl AttributeWrite for Realm {
         }
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for Realm {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for Realm {
     type Error = StunParseError;
 
@@ -59,6 +71,7 @@ impl<'a> TryFrom<&RawAttribute<'a>> for Realm {
         })
     }
 }
+
 impl Realm {
     /// Create a new Realm [`Attribute`]
     ///

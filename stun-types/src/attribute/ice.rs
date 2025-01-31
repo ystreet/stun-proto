@@ -13,7 +13,8 @@ use byteorder::{BigEndian, ByteOrder};
 use crate::message::StunParseError;
 
 use super::{
-    Attribute, AttributeStaticType, AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
+    Attribute, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute,
 };
 
 /// The Priority [`Attribute`]
@@ -45,6 +46,16 @@ impl AttributeWrite for Priority {
         BigEndian::write_u32(&mut dest[4..8], self.priority);
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for Priority {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for Priority {
     type Error = StunParseError;
 
@@ -115,6 +126,16 @@ impl AttributeWrite for UseCandidate {
         self.write_header_unchecked(dest);
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for UseCandidate {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for UseCandidate {
     type Error = StunParseError;
 
@@ -179,6 +200,16 @@ impl AttributeWrite for IceControlled {
         BigEndian::write_u64(&mut dest[4..12], self.tie_breaker);
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for IceControlled {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for IceControlled {
     type Error = StunParseError;
 
@@ -233,6 +264,7 @@ pub struct IceControlling {
 impl AttributeStaticType for IceControlling {
     const TYPE: AttributeType = AttributeType(0x802A);
 }
+
 impl Attribute for IceControlling {
     fn get_type(&self) -> AttributeType {
         Self::TYPE
@@ -242,6 +274,7 @@ impl Attribute for IceControlling {
         8
     }
 }
+
 impl AttributeWrite for IceControlling {
     fn to_raw(&self) -> RawAttribute {
         let mut buf = [0; 8];
@@ -253,6 +286,16 @@ impl AttributeWrite for IceControlling {
         BigEndian::write_u64(&mut dest[4..12], self.tie_breaker);
     }
 }
+
+impl<'a> AttributeFromRaw<'a> for IceControlling {
+    fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+    where
+        Self: Sized,
+    {
+        Self::try_from(raw)
+    }
+}
+
 impl<'a> TryFrom<&RawAttribute<'a>> for IceControlling {
     type Error = StunParseError;
 
