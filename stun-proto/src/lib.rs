@@ -66,7 +66,7 @@
 //! // peer.
 //! let data = vec![42; 8];
 //! let transmit = agent.send_data(&data, remote_addr);
-//! assert_eq!(transmit.data(), &data);
+//! assert_eq!(transmit.data, &data);
 //! assert_eq!(transmit.from, local_addr);
 //! assert_eq!(transmit.to, remote_addr);
 //! ```

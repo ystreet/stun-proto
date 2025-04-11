@@ -118,6 +118,12 @@ impl<'a> From<Box<[u8]>> for Data<'a> {
     }
 }
 
+impl AsRef<[u8]> for Data<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
