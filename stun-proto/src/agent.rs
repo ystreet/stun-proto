@@ -126,19 +126,23 @@ impl StunAgent {
     }
 
     /// Perform any operations needed to be able to send data to a peer
-    pub fn send_data<'a>(&self, bytes: &'a [u8], to: SocketAddr) -> Transmit<'a> {
+    pub fn send_data<T: AsRef<[u8]>>(&self, bytes: T, to: SocketAddr) -> Transmit<T> {
         send_data(self.transport, bytes, self.local_addr, to)
     }
 
     /// Perform any operations needed to be able to send a [`Message`] to a peer.
     ///
     /// If a request message is successfully sent, then [`StunAgent::poll`] needs to be called.
-    pub fn send(
-        &mut self,
+    #[tracing::instrument(
+        name = "stun_agent_send",
+        skip(self, msg)
+    )]
+    pub fn send<'a>(
+        &'a mut self,
         msg: MessageBuilder<'_>,
         to: SocketAddr,
         now: Instant,
-    ) -> Result<Transmit<'_>, StunError> {
+    ) -> Result<Transmit<Data<'a>>, StunError> {
         if msg.has_class(MessageClass::Request) {
             if self
                 .outstanding_requests
@@ -147,16 +151,22 @@ impl StunAgent {
                 return Err(StunError::AlreadyInProgress);
             }
             let transaction_id = msg.transaction_id();
-            let mut state = StunRequestState::new(msg, self.transport, self.local_addr, to);
-            let StunRequestPollRet::SendData(transmit) = state.poll(now) else {
-                return Err(StunError::ProtocolViolation);
+            let state = StunRequestState::new(msg, self.transport, self.local_addr, to);
+            let state = match self.outstanding_requests.entry(transaction_id) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(state)
+                }
+                std::collections::hash_map::Entry::Occupied(_entry) => {
+                    return Err(StunError::AlreadyInProgress);
+                }
             };
-            let transmit = transmit.into_owned();
-            self.outstanding_requests.insert(transaction_id, state);
-            return Ok(transmit);
+            let Some(transmit) = state.poll_transmit(now) else {
+                unreachable!();
+            };
+            return Ok(send_data(transmit.transport, transmit.data.into(), transmit.from, transmit.to));
         }
-        let data = msg.build();
-        Ok(self.send_data(&data, to).into_owned())
+        let data = msg.build().into_boxed_slice();
+        Ok(self.send_data(data.into(), to))
     }
 
     /// Returns whether this agent has received or send a STUN message to this peer. Failure may
@@ -294,24 +304,20 @@ impl StunAgent {
     /// Poll the agent for making further progress on any outstanding requests. The returned value
     /// indicates the current state and anything the caller needs to perform.
     #[tracing::instrument(
-        name = "stun_request_poll"
+        name = "stun_agent_poll"
         level = "info",
-        ret,
         skip(self),
     )]
-    pub fn poll<'a>(&mut self, now: Instant) -> StunAgentPollRet<'a> {
+    pub fn poll(&mut self, now: Instant) -> StunAgentPollRet {
         let mut lowest_wait = now + Duration::from_secs(3600);
         let mut timeout = None;
         let mut cancelled = None;
-        for request in self.outstanding_requests.values_mut() {
-            let transaction_id = request.transaction_id;
+        for (transaction_id, request) in self.outstanding_requests.iter_mut() {
+            debug_assert_eq!(transaction_id, &request.transaction_id);
             match request.poll(now) {
                 StunRequestPollRet::Cancelled => {
-                    cancelled = Some(transaction_id);
+                    cancelled = Some(*transaction_id);
                     break;
-                }
-                StunRequestPollRet::SendData(transmit) => {
-                    return StunAgentPollRet::SendData(transmit.into_owned())
                 }
                 StunRequestPollRet::WaitUntil(wait_until) => {
                     if wait_until < lowest_wait {
@@ -319,7 +325,7 @@ impl StunAgent {
                     }
                 }
                 StunRequestPollRet::TimedOut => {
-                    timeout = Some(transaction_id);
+                    timeout = Some(*transaction_id);
                     break;
                 }
             }
@@ -336,22 +342,30 @@ impl StunAgent {
         }
         StunAgentPollRet::WaitUntil(lowest_wait)
     }
+
+    /// Poll for any transmissions that may need to be performed.
+    #[tracing::instrument(
+        name = "stun_agent_poll_transmit"
+        level = "info",
+        skip(self),
+    )]
+    pub fn poll_transmit(&mut self, now: Instant) -> Option<Transmit<&[u8]>> {
+        self.outstanding_requests.values_mut().filter_map(|request| request.poll_transmit(now)).next()
+    }
 }
 
 /// Return value for [`StunAgent::poll`]
 #[derive(Debug)]
-pub enum StunAgentPollRet<'a> {
+pub enum StunAgentPollRet {
     /// An oustanding transaction timed out and has been removed from the agent.
     TransactionTimedOut(TransactionId),
     /// An oustanding transaction was cancelled and has been removed from the agent.
     TransactionCancelled(TransactionId),
-    /// Send data using the specified 5-tuple
-    SendData(Transmit<'a>),
     /// Wait until the specified time has passed
     WaitUntil(Instant),
 }
 
-fn send_data(transport: TransportType, bytes: &[u8], from: SocketAddr, to: SocketAddr) -> Transmit {
+fn send_data<T: AsRef<[u8]>>(transport: TransportType, bytes: T, from: SocketAddr, to: SocketAddr) -> Transmit<T> {
     Transmit::new(bytes, transport, from, to)
 }
 
@@ -420,9 +434,9 @@ impl Default for TcpBuffer {
 
 /// A piece of data that needs to, or has been transmitted
 #[derive(Debug)]
-pub struct Transmit<'a> {
+pub struct Transmit<T: AsRef<[u8]>> {
     /// The data blob
-    pub data: Data<'a>,
+    pub data: T,
     /// The transport for the transmission
     pub transport: TransportType,
     /// The source address of the transmission
@@ -431,65 +445,40 @@ pub struct Transmit<'a> {
     pub to: SocketAddr,
 }
 
-impl<'a> Transmit<'a> {
+impl<T: AsRef<[u8]>> Transmit<T> {
     /// Construct a new [`Transmit`] with the specifid data and 5-tuple.
     pub fn new(
-        data: impl Into<Data<'a>>,
+        data: T,
         transport: TransportType,
         from: SocketAddr,
         to: SocketAddr,
     ) -> Self {
         Self {
-            data: data.into(),
+            data,
             transport,
             from,
             to,
         }
     }
 
-    /// Construct a new [`Transmit`] with the specifid 5-tuple and data converted to owned.
-    pub fn new_owned(
-        data: impl Into<Data<'a>>,
-        transport: TransportType,
-        from: SocketAddr,
-        to: SocketAddr,
-    ) -> Transmit<'static> {
+    /// Construct a new owned [`Transmit`] from a provided [`Transmit`]
+    pub fn into_owned(self) -> Transmit<Data<'static>> {
         Transmit {
-            data: data.into().into_owned(),
-            transport,
-            from,
-            to,
-        }
-    }
-
-    /// Consume this [`Transmit`] and produce and owned version.
-    pub fn into_owned<'b>(self) -> Transmit<'b> {
-        Transmit {
-            data: self.data.into_owned(),
+            data: Data::from(self.data.as_ref()).into_owned(),
             transport: self.transport,
             from: self.from,
             to: self.to,
-        }
-    }
-
-    /// The bytes to transmit
-    pub fn data(&self) -> &[u8] {
-        match &self.data {
-            Data::Owned(owned) => owned,
-            Data::Borrowed(borrowed) => borrowed,
         }
     }
 }
 
 /// Return value for [`StunRequest::poll`]
 #[derive(Debug)]
-enum StunRequestPollRet<'a> {
+enum StunRequestPollRet {
     /// Wait until the specified time has passed
     WaitUntil(Instant),
     /// The request has been cancelled and will not make further progress
     Cancelled,
-    /// Send data using the specified 5-tuple
-    SendData(Transmit<'a>),
     /// The request timed out.
     TimedOut,
 }
@@ -541,39 +530,73 @@ impl StunRequestState {
     }
 
     #[tracing::instrument(
+        skip(self),
+        level = "trace",
+        ret,
+    )]
+    fn next_send_time(&self, now: Instant) -> Option<Instant> {
+        let Some(last_send) = self.last_send_time else {
+            trace!("not sent yet -> send immediately");
+            return Some(now);
+        };
+        if self.timeout_i >= self.timeouts_ms.len() {
+            let next_send = last_send + Duration::from_millis(self.last_retransmit_timeout_ms);
+            trace!("final retransmission, final timeout ends at {next_send:?}");
+            if next_send > now {
+                return Some(next_send);
+            }
+            return None;
+        }
+        let next_send = last_send + Duration::from_millis(self.timeouts_ms[self.timeout_i]);
+        Some(next_send)
+    }
+
+    #[tracing::instrument(
         name = "stun_request_poll"
         level = "info",
         ret,
-        skip(self),
+        skip(self, now),
         fields(transaction_id = %self.transaction_id),
     )]
     fn poll(&mut self, now: Instant) -> StunRequestPollRet {
-        if self.recv_cancelled {
-            return StunRequestPollRet::Cancelled;
-        }
-        // TODO: account for TCP connect in timeout
-        if let Some(last_send) = self.last_send_time {
-            if self.timeout_i >= self.timeouts_ms.len() {
-                let next_send = last_send + Duration::from_millis(self.last_retransmit_timeout_ms);
-                if next_send > now {
-                    return StunRequestPollRet::WaitUntil(next_send);
-                }
-                return StunRequestPollRet::TimedOut;
+        loop {
+            if self.recv_cancelled {
+                return StunRequestPollRet::Cancelled;
             }
-            let next_send = last_send + Duration::from_millis(self.timeouts_ms[self.timeout_i]);
+            // TODO: account for TCP connect in timeout
+            let Some(next_send) = self.next_send_time(now) else {
+                return StunRequestPollRet::TimedOut;
+            };
             if next_send > now {
                 return StunRequestPollRet::WaitUntil(next_send);
             }
+            if self.send_cancelled {
+                // this cancellation may need a different value
+                return StunRequestPollRet::Cancelled;
+            }
+        };
+    }
+
+    #[tracing::instrument(
+        name = "stun_request_poll_transmit",
+        skip(self, now),
+        fields(transaction_id = %self.transaction_id)
+    )]
+    fn poll_transmit(&mut self, now: Instant) -> Option<Transmit<&[u8]>> {
+        if self.recv_cancelled || self.send_cancelled {
+            return None;
+        };
+        let next_send = self.next_send_time(now)?;
+
+        if next_send > now {
+            return None;
+        }
+        if self.last_send_time.is_some() {
             self.timeout_i += 1;
         }
-        if self.send_cancelled {
-            // this cancellation may need a different value
-            return StunRequestPollRet::Cancelled;
-        }
         self.last_send_time = Some(now);
-        StunRequestPollRet::SendData(
-            send_data(self.transport, &self.bytes, self.from, self.to).into_owned(),
-        )
+        trace!("sending {} bytes over {:?} from {:?} to {:?}", self.bytes.len(), self.transport, self.from, self.to);
+        Some(send_data(self.transport, self.bytes.as_slice(), self.from, self.to))
     }
 }
 
@@ -649,7 +672,8 @@ impl<'a> StunRequestMut<'a> {
                     state.timeouts_ms = (0..retransmits)
                         .map(|i| (initial_rto * 2u32.pow(i)).as_millis() as u64)
                         .collect::<Vec<_>>();
-                    state.last_retransmit_timeout_ms = last_retransmit_timeout.as_millis() as u64
+                    state.last_retransmit_timeout_ms = last_retransmit_timeout.as_millis() as u64;
+                    tracing::error!("new timeouts {:?}, i: {}", state.timeouts_ms, state.timeout_i);
                 }
                 TransportType::Tcp => {
                     state.timeouts_ms = vec![];
@@ -865,11 +889,11 @@ pub(crate) mod tests {
         agent.send(msg, remote_addr, Instant::now()).unwrap();
         let mut now = Instant::now();
         loop {
+            let _ = agent.poll_transmit(now);
             match agent.poll(now) {
                 StunAgentPollRet::WaitUntil(new_now) => {
                     now = new_now;
                 }
-                StunAgentPollRet::SendData(_) => (),
                 StunAgentPollRet::TransactionTimedOut(_) => break,
                 _ => unreachable!(),
             }
@@ -900,7 +924,7 @@ pub(crate) mod tests {
         };
         assert_eq!(wait - now, Duration::from_secs(1));
         now = wait;
-        let StunAgentPollRet::SendData(_) = agent.poll(now) else {
+        let Some(_) = agent.poll_transmit(now) else {
             unreachable!();
         };
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
@@ -908,7 +932,7 @@ pub(crate) mod tests {
         };
         assert_eq!(wait - now, Duration::from_secs(2));
         now = wait;
-        let StunAgentPollRet::SendData(_) = agent.poll(now) else {
+        let Some(_) = agent.poll_transmit(now) else {
             unreachable!();
         };
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
@@ -1237,7 +1261,7 @@ pub(crate) mod tests {
             .send(msg.clone(), remote_addr, Instant::now())
             .unwrap();
         let to = transmit.to;
-        let request = Message::from_bytes(transmit.data()).unwrap();
+        let request = Message::from_bytes(&transmit.data).unwrap();
 
         let mut response = Message::builder_success(&request);
         let xor_addr = XorMappedAddress::new(transmit.from, transaction_id);
