@@ -51,7 +51,7 @@ impl AttributeWrite for Nonce {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for Nonce {
+impl AttributeFromRaw<'_> for Nonce {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -60,7 +60,7 @@ impl<'a> AttributeFromRaw<'a> for Nonce {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for Nonce {
+impl TryFrom<&RawAttribute<'_>> for Nonce {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

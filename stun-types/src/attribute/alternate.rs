@@ -45,13 +45,13 @@ impl AttributeWrite for AlternateServer {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for AlternateServer {
+impl AttributeFromRaw<'_> for AlternateServer {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError> {
         Self::try_from(raw)
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for AlternateServer {
+impl TryFrom<&RawAttribute<'_>> for AlternateServer {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -117,7 +117,7 @@ impl Attribute for AlternateDomain {
         self.domain.len() as u16
     }
 }
-impl<'a> AttributeFromRaw<'a> for AlternateDomain {
+impl AttributeFromRaw<'_> for AlternateDomain {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -125,7 +125,7 @@ impl<'a> AttributeFromRaw<'a> for AlternateDomain {
         Self::try_from(raw)
     }
 }
-impl<'a> TryFrom<&RawAttribute<'a>> for AlternateDomain {
+impl TryFrom<&RawAttribute<'_>> for AlternateDomain {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

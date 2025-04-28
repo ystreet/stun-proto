@@ -48,7 +48,7 @@ impl AttributeWrite for XorMappedAddress {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for XorMappedAddress {
+impl AttributeFromRaw<'_> for XorMappedAddress {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -57,7 +57,7 @@ impl<'a> AttributeFromRaw<'a> for XorMappedAddress {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for XorMappedAddress {
+impl TryFrom<&RawAttribute<'_>> for XorMappedAddress {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

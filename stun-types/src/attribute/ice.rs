@@ -47,7 +47,7 @@ impl AttributeWrite for Priority {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for Priority {
+impl AttributeFromRaw<'_> for Priority {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -56,7 +56,7 @@ impl<'a> AttributeFromRaw<'a> for Priority {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for Priority {
+impl TryFrom<&RawAttribute<'_>> for Priority {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -127,7 +127,7 @@ impl AttributeWrite for UseCandidate {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for UseCandidate {
+impl AttributeFromRaw<'_> for UseCandidate {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -136,7 +136,7 @@ impl<'a> AttributeFromRaw<'a> for UseCandidate {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for UseCandidate {
+impl TryFrom<&RawAttribute<'_>> for UseCandidate {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -201,7 +201,7 @@ impl AttributeWrite for IceControlled {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for IceControlled {
+impl AttributeFromRaw<'_> for IceControlled {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -210,7 +210,7 @@ impl<'a> AttributeFromRaw<'a> for IceControlled {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for IceControlled {
+impl TryFrom<&RawAttribute<'_>> for IceControlled {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -287,7 +287,7 @@ impl AttributeWrite for IceControlling {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for IceControlling {
+impl AttributeFromRaw<'_> for IceControlling {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -296,7 +296,7 @@ impl<'a> AttributeFromRaw<'a> for IceControlling {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for IceControlling {
+impl TryFrom<&RawAttribute<'_>> for IceControlling {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

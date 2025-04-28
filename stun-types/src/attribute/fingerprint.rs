@@ -48,7 +48,7 @@ impl AttributeWrite for Fingerprint {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for Fingerprint {
+impl AttributeFromRaw<'_> for Fingerprint {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -57,7 +57,7 @@ impl<'a> AttributeFromRaw<'a> for Fingerprint {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for Fingerprint {
+impl TryFrom<&RawAttribute<'_>> for Fingerprint {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

@@ -423,7 +423,7 @@ macro_rules! display_attr {
     }};
 }
 
-impl<'a> std::fmt::Display for RawAttribute<'a> {
+impl std::fmt::Display for RawAttribute<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // try to get a more specialised display
         let malformed_str = format!(
@@ -558,7 +558,7 @@ impl<'a> RawAttribute<'a> {
     }
 }
 
-impl<'a> Attribute for RawAttribute<'a> {
+impl Attribute for RawAttribute<'_> {
     /// Returns the [`AttributeType`] of this [`RawAttribute`]
     fn get_type(&self) -> AttributeType {
         self.header.get_type()
@@ -639,7 +639,7 @@ fn check_len(
     Ok(())
 }
 
-impl<'a> From<RawAttribute<'a>> for Vec<u8> {
+impl From<RawAttribute<'_>> for Vec<u8> {
     fn from(f: RawAttribute) -> Self {
         f.to_bytes()
     }

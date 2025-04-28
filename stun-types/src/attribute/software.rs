@@ -51,7 +51,7 @@ impl AttributeWrite for Software {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for Software {
+impl AttributeFromRaw<'_> for Software {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -60,7 +60,7 @@ impl<'a> AttributeFromRaw<'a> for Software {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for Software {
+impl TryFrom<&RawAttribute<'_>> for Software {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

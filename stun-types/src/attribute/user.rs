@@ -50,7 +50,7 @@ impl AttributeWrite for Username {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for Username {
+impl AttributeFromRaw<'_> for Username {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -59,7 +59,7 @@ impl<'a> AttributeFromRaw<'a> for Username {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for Username {
+impl TryFrom<&RawAttribute<'_>> for Username {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -152,7 +152,7 @@ impl AttributeWrite for Userhash {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for Userhash {
+impl AttributeFromRaw<'_> for Userhash {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -161,7 +161,7 @@ impl<'a> AttributeFromRaw<'a> for Userhash {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for Userhash {
+impl TryFrom<&RawAttribute<'_>> for Userhash {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

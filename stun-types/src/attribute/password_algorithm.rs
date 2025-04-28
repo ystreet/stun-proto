@@ -110,7 +110,7 @@ impl AttributeWrite for PasswordAlgorithms {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for PasswordAlgorithms {
+impl AttributeFromRaw<'_> for PasswordAlgorithms {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -119,7 +119,7 @@ impl<'a> AttributeFromRaw<'a> for PasswordAlgorithms {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for PasswordAlgorithms {
+impl TryFrom<&RawAttribute<'_>> for PasswordAlgorithms {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -229,7 +229,7 @@ impl AttributeWrite for PasswordAlgorithm {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for PasswordAlgorithm {
+impl AttributeFromRaw<'_> for PasswordAlgorithm {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -238,7 +238,7 @@ impl<'a> AttributeFromRaw<'a> for PasswordAlgorithm {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for PasswordAlgorithm {
+impl TryFrom<&RawAttribute<'_>> for PasswordAlgorithm {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

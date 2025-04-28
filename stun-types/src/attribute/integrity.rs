@@ -47,7 +47,7 @@ impl AttributeWrite for MessageIntegrity {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for MessageIntegrity {
+impl AttributeFromRaw<'_> for MessageIntegrity {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -56,7 +56,7 @@ impl<'a> AttributeFromRaw<'a> for MessageIntegrity {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for MessageIntegrity {
+impl TryFrom<&RawAttribute<'_>> for MessageIntegrity {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -194,7 +194,7 @@ impl AttributeWrite for MessageIntegritySha256 {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for MessageIntegritySha256 {
+impl AttributeFromRaw<'_> for MessageIntegritySha256 {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -203,7 +203,7 @@ impl<'a> AttributeFromRaw<'a> for MessageIntegritySha256 {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for MessageIntegritySha256 {
+impl TryFrom<&RawAttribute<'_>> for MessageIntegritySha256 {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
