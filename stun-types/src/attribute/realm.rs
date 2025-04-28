@@ -50,7 +50,7 @@ impl AttributeWrite for Realm {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for Realm {
+impl AttributeFromRaw<'_> for Realm {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -59,7 +59,7 @@ impl<'a> AttributeFromRaw<'a> for Realm {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for Realm {
+impl TryFrom<&RawAttribute<'_>> for Realm {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

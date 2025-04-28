@@ -57,7 +57,7 @@ impl AttributeWrite for ErrorCode {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for ErrorCode {
+impl AttributeFromRaw<'_> for ErrorCode {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -66,7 +66,7 @@ impl<'a> AttributeFromRaw<'a> for ErrorCode {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for ErrorCode {
+impl TryFrom<&RawAttribute<'_>> for ErrorCode {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
@@ -322,7 +322,7 @@ impl AttributeWrite for UnknownAttributes {
     }
 }
 
-impl<'a> AttributeFromRaw<'a> for UnknownAttributes {
+impl AttributeFromRaw<'_> for UnknownAttributes {
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -331,7 +331,7 @@ impl<'a> AttributeFromRaw<'a> for UnknownAttributes {
     }
 }
 
-impl<'a> TryFrom<&RawAttribute<'a>> for UnknownAttributes {
+impl TryFrom<&RawAttribute<'_>> for UnknownAttributes {
     type Error = StunParseError;
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {

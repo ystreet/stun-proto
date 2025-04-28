@@ -595,7 +595,7 @@ pub struct Message<'a> {
     data: &'a [u8],
 }
 
-impl<'a> std::fmt::Display for Message<'a> {
+impl std::fmt::Display for Message<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -1375,7 +1375,7 @@ enum AttrOrRaw<'a> {
     Raw(RawAttribute<'a>),
 }
 
-impl<'a> AttrOrRaw<'a> {
+impl AttrOrRaw<'_> {
     fn into_owned<'b>(self) -> AttrOrRaw<'b> {
         match self {
             AttrOrRaw::Raw(raw) => AttrOrRaw::Raw(raw.into_owned()),
@@ -1391,7 +1391,7 @@ impl<'a> AttrOrRaw<'a> {
     }
 }
 
-impl<'a> Attribute for AttrOrRaw<'a> {
+impl Attribute for AttrOrRaw<'_> {
     fn length(&self) -> u16 {
         match self {
             Self::Attr(attr) => attr.length(),

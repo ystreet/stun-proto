@@ -27,7 +27,7 @@ impl<'a> DataSlice<'a> {
     }
 }
 
-impl<'a> std::ops::Deref for DataSlice<'a> {
+impl std::ops::Deref for DataSlice<'_> {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         self.0
@@ -86,7 +86,7 @@ pub enum Data<'a> {
     Owned(DataOwned),
 }
 
-impl<'a> std::ops::Deref for Data<'a> {
+impl std::ops::Deref for Data<'_> {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         match self {
@@ -96,7 +96,7 @@ impl<'a> std::ops::Deref for Data<'a> {
     }
 }
 
-impl<'a> Data<'a> {
+impl Data<'_> {
     /// Create a new owned version of this data
     pub fn into_owned<'b>(self) -> Data<'b> {
         match self {
@@ -112,7 +112,7 @@ impl<'a> From<&'a [u8]> for Data<'a> {
     }
 }
 
-impl<'a> From<Box<[u8]>> for Data<'a> {
+impl From<Box<[u8]>> for Data<'_> {
     fn from(value: Box<[u8]>) -> Self {
         Self::Owned(value.into())
     }

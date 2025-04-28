@@ -607,7 +607,7 @@ pub struct StunRequest<'a> {
     transaction_id: TransactionId,
 }
 
-impl<'a> StunRequest<'a> {
+impl StunRequest<'_> {
     /// The remote address the request is sent to
     pub fn peer_address(&self) -> SocketAddr {
         let state = self.agent.request_state(self.transaction_id).unwrap();
@@ -622,7 +622,7 @@ pub struct StunRequestMut<'a> {
     transaction_id: TransactionId,
 }
 
-impl<'a> StunRequestMut<'a> {
+impl StunRequestMut<'_> {
     /// The remote address the request is sent to
     pub fn peer_address(&self) -> SocketAddr {
         let state = self.agent.request_state(self.transaction_id).unwrap();
