@@ -132,7 +132,7 @@ impl StunAgent {
 
     /// Perform any operations needed to be able to send a [`Message`] to a peer.
     ///
-    /// If a request message is successfully sent, then [`StunAgent::poll`] needs to be called.
+    /// The returned [`Transmit`] must be sent to the respective peer after this call.
     #[tracing::instrument(
         name = "stun_agent_send",
         skip(self, msg)
@@ -144,17 +144,10 @@ impl StunAgent {
         now: Instant,
     ) -> Result<Transmit<Data<'a>>, StunError> {
         if msg.has_class(MessageClass::Request) {
-            if self
-                .outstanding_requests
-                .contains_key(&msg.transaction_id())
-            {
-                return Err(StunError::AlreadyInProgress);
-            }
             let transaction_id = msg.transaction_id();
-            let state = StunRequestState::new(msg, self.transport, self.local_addr, to);
             let state = match self.outstanding_requests.entry(transaction_id) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(state)
+                    entry.insert(StunRequestState::new(msg, self.transport, self.local_addr, to))
                 }
                 std::collections::hash_map::Entry::Occupied(_entry) => {
                     return Err(StunError::AlreadyInProgress);
