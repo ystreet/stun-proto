@@ -133,33 +133,46 @@ impl StunAgent {
     /// Perform any operations needed to be able to send a [`Message`] to a peer.
     ///
     /// The returned [`Transmit`] must be sent to the respective peer after this call.
-    #[tracing::instrument(
-        name = "stun_agent_send",
-        skip(self, msg)
-    )]
+    #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
     pub fn send<'a>(
+        &'a mut self,
+        msg: MessageBuilder<'a>,
+        to: SocketAddr,
+        now: Instant,
+    ) -> Result<TransmitBuild<MessageBuilder<'a>>, StunError> {
+        assert!(!msg.has_class(MessageClass::Request));
+        Ok(TransmitBuild::new(msg, self.transport, self.local_addr, to))
+    }
+
+    /// Perform any operations needed to be able to send a request [`Message`] to a peer.
+    ///
+    /// The returned [`Transmit`] must be sent to the respective peer after this call.
+    #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
+    pub fn send_request<'a>(
         &'a mut self,
         msg: MessageBuilder<'_>,
         to: SocketAddr,
         now: Instant,
     ) -> Result<Transmit<Data<'a>>, StunError> {
-        if msg.has_class(MessageClass::Request) {
-            let transaction_id = msg.transaction_id();
-            let state = match self.outstanding_requests.entry(transaction_id) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(StunRequestState::new(msg, self.transport, self.local_addr, to))
-                }
-                std::collections::hash_map::Entry::Occupied(_entry) => {
-                    return Err(StunError::AlreadyInProgress);
-                }
-            };
-            let Some(transmit) = state.poll_transmit(now) else {
-                unreachable!();
-            };
-            return Ok(send_data(transmit.transport, transmit.data.into(), transmit.from, transmit.to));
-        }
-        let data = msg.build().into_boxed_slice();
-        Ok(self.send_data(data.into(), to))
+        assert!(msg.has_class(MessageClass::Request));
+        let transaction_id = msg.transaction_id();
+        let state = match self.outstanding_requests.entry(transaction_id) {
+            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(
+                StunRequestState::new(msg, self.transport, self.local_addr, to),
+            ),
+            std::collections::hash_map::Entry::Occupied(_entry) => {
+                return Err(StunError::AlreadyInProgress);
+            }
+        };
+        let Some(transmit) = state.poll_transmit(now) else {
+            unreachable!();
+        };
+        return Ok(Transmit::new(
+            Data::from(transmit.data),
+            transmit.transport,
+            transmit.from,
+            transmit.to,
+        ));
     }
 
     /// Returns whether this agent has received or send a STUN message to this peer. Failure may
@@ -343,7 +356,29 @@ impl StunAgent {
         skip(self),
     )]
     pub fn poll_transmit(&mut self, now: Instant) -> Option<Transmit<&[u8]>> {
-        self.outstanding_requests.values_mut().filter_map(|request| request.poll_transmit(now)).next()
+        self.outstanding_requests
+            .values_mut()
+            .filter_map(|request| request.poll_transmit(now))
+            .next()
+    }
+}
+
+/// Enum for either a message builder or a blob of data.
+#[derive(Debug)]
+pub enum TransmitMessageOrData<'a> {
+    /// A sequence of bytes.
+    Data(Data<'a>),
+    /// A yet to be constructed message.
+    Message(MessageBuilder<'a>),
+}
+
+impl TransmitMessageOrData<'_> {
+    /// Create an owned copy.
+    pub fn into_owned<'b>(self) -> TransmitMessageOrData<'b> {
+        match self {
+            Self::Data(data) => TransmitMessageOrData::Data(data.into_owned()),
+            Self::Message(msg) => TransmitMessageOrData::Message(msg.into_owned()),
+        }
     }
 }
 
@@ -358,7 +393,12 @@ pub enum StunAgentPollRet {
     WaitUntil(Instant),
 }
 
-fn send_data<T: AsRef<[u8]>>(transport: TransportType, bytes: T, from: SocketAddr, to: SocketAddr) -> Transmit<T> {
+fn send_data<T: AsRef<[u8]>>(
+    transport: TransportType,
+    bytes: T,
+    from: SocketAddr,
+    to: SocketAddr,
+) -> Transmit<T> {
     Transmit::new(bytes, transport, from, to)
 }
 
@@ -425,6 +465,137 @@ impl Default for TcpBuffer {
     }
 }
 
+/// A trait for delaying building a byte sequence for transmission
+pub trait DelayedTransmitBuild: std::fmt::Debug {
+    /// Write the packet in to a new Vec.
+    fn build(self) -> Vec<u8>;
+    /// The length of any generated data
+    fn len(&self) -> usize;
+    /// Whether the resulting data would be empty
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    /// Write the data into a provided output buffer. Returns the number of bytes written.
+    fn write_into(self, data: &mut [u8]) -> usize;
+}
+
+impl DelayedTransmitBuild for Data<'_> {
+    fn build(self) -> Vec<u8> {
+        self.to_vec()
+    }
+
+    fn len(&self) -> usize {
+        (*self).as_ref().len()
+    }
+
+    fn write_into(self, data: &mut [u8]) -> usize {
+        let len = self.len();
+        data[..len].copy_from_slice(&self);
+        len
+    }
+}
+
+impl DelayedTransmitBuild for Box<[u8]> {
+    fn build(self) -> Vec<u8> {
+        self.to_vec()
+    }
+
+    fn len(&self) -> usize {
+        std::ops::Deref::deref(self).len()
+    }
+
+    fn write_into(self, data: &mut [u8]) -> usize {
+        let len = self.len();
+        data[..len].copy_from_slice(&self);
+        len
+    }
+}
+
+impl DelayedTransmitBuild for Vec<u8> {
+    fn build(self) -> Vec<u8> {
+        self
+    }
+
+    fn len(&self) -> usize {
+        (*self).len()
+    }
+
+    fn write_into(self, data: &mut [u8]) -> usize {
+        let len = self.len();
+        data[..len].copy_from_slice(&self);
+        len
+    }
+}
+
+impl DelayedTransmitBuild for &[u8] {
+    fn build(self) -> Vec<u8> {
+        self.to_vec()
+    }
+
+    fn len(&self) -> usize {
+        (*self).len()
+    }
+
+    fn write_into(self, data: &mut [u8]) -> usize {
+        let len = self.len();
+        data[..len].copy_from_slice(self);
+        len
+    }
+}
+
+impl<const N: usize> DelayedTransmitBuild for [u8; N] {
+    fn build(self) -> Vec<u8> {
+        self.to_vec()
+    }
+
+    fn len(&self) -> usize {
+        N
+    }
+
+    fn write_into(self, data: &mut [u8]) -> usize {
+        let len = self.len();
+        data[..len].copy_from_slice(&self);
+        len
+    }
+}
+
+impl DelayedTransmitBuild for MessageBuilder<'_> {
+    fn build(self) -> Vec<u8> {
+        MessageBuilder::build(&self)
+    }
+
+    fn len(&self) -> usize {
+        self.byte_len()
+    }
+
+    fn write_into(self, data: &mut [u8]) -> usize {
+        MessageBuilder::write_into(&self, data).unwrap()
+    }
+}
+
+impl DelayedTransmitBuild for TransmitMessageOrData<'_> {
+    fn build(self) -> Vec<u8> {
+        match self {
+            Self::Data(data) => data.build(),
+            Self::Message(msg) => msg.build(),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Data(data) => data.len(),
+            Self::Message(msg) => msg.len(),
+        }
+    }
+
+    fn write_into(self, dest: &mut [u8]) -> usize {
+        match self {
+            Self::Data(data) => data.write_into(dest),
+            Self::Message(msg) => msg.write_into(dest),
+        }
+    }
+}
+
 /// A piece of data that needs to, or has been transmitted
 #[derive(Debug)]
 pub struct Transmit<T: AsRef<[u8]>> {
@@ -440,12 +611,7 @@ pub struct Transmit<T: AsRef<[u8]>> {
 
 impl<T: AsRef<[u8]>> Transmit<T> {
     /// Construct a new [`Transmit`] with the specifid data and 5-tuple.
-    pub fn new(
-        data: T,
-        transport: TransportType,
-        from: SocketAddr,
-        to: SocketAddr,
-    ) -> Self {
+    pub fn new(data: T, transport: TransportType, from: SocketAddr, to: SocketAddr) -> Self {
         Self {
             data,
             transport,
@@ -453,11 +619,50 @@ impl<T: AsRef<[u8]>> Transmit<T> {
             to,
         }
     }
+}
 
+impl Transmit<Data<'_>> {
     /// Construct a new owned [`Transmit`] from a provided [`Transmit`]
-    pub fn into_owned(self) -> Transmit<Data<'static>> {
+    pub fn into_owned<'b>(self) -> Transmit<Data<'b>> {
         Transmit {
             data: Data::from(self.data.as_ref()).into_owned(),
+            transport: self.transport,
+            from: self.from,
+            to: self.to,
+        }
+    }
+}
+
+/// A piece of data that needs to be built before it can be transmitted.
+#[derive(Debug)]
+pub struct TransmitBuild<T: DelayedTransmitBuild> {
+    /// The data blob
+    pub data: T,
+    /// The transport for the transmission
+    pub transport: TransportType,
+    /// The source address of the transmission
+    pub from: SocketAddr,
+    /// The destination address of the transmission
+    pub to: SocketAddr,
+}
+
+impl<T: DelayedTransmitBuild> TransmitBuild<T> {
+    /// Construct a new [`Transmit`] with the specifid data and 5-tuple.
+    pub fn new(data: T, transport: TransportType, from: SocketAddr, to: SocketAddr) -> Self {
+        Self {
+            data,
+            transport,
+            from,
+            to,
+        }
+    }
+}
+
+impl TransmitBuild<TransmitMessageOrData<'_>> {
+    /// Construct a new owned [`Transmit`] from a provided [`Transmit`]
+    pub fn into_owned<'b>(self) -> TransmitBuild<TransmitMessageOrData<'b>> {
+        TransmitBuild {
+            data: self.data.into_owned(),
             transport: self.transport,
             from: self.from,
             to: self.to,
@@ -499,7 +704,7 @@ impl StunRequestState {
         from: SocketAddr,
         to: SocketAddr,
     ) -> Self {
-        let data = request.build();
+        let data = MessageBuilder::build(&request);
         let (timeouts_ms, last_retransmit_timeout_ms) = if transport == TransportType::Tcp {
             (vec![], 39500)
         } else {
@@ -522,11 +727,7 @@ impl StunRequestState {
         }
     }
 
-    #[tracing::instrument(
-        skip(self),
-        level = "trace",
-        ret,
-    )]
+    #[tracing::instrument(skip(self), level = "trace", ret)]
     fn next_send_time(&self, now: Instant) -> Option<Instant> {
         let Some(last_send) = self.last_send_time else {
             trace!("not sent yet -> send immediately");
@@ -567,7 +768,7 @@ impl StunRequestState {
                 // this cancellation may need a different value
                 return StunRequestPollRet::Cancelled;
             }
-        };
+        }
     }
 
     #[tracing::instrument(
@@ -588,8 +789,19 @@ impl StunRequestState {
             self.timeout_i += 1;
         }
         self.last_send_time = Some(now);
-        trace!("sending {} bytes over {:?} from {:?} to {:?}", self.bytes.len(), self.transport, self.from, self.to);
-        Some(send_data(self.transport, self.bytes.as_slice(), self.from, self.to))
+        trace!(
+            "sending {} bytes over {:?} from {:?} to {:?}",
+            self.bytes.len(),
+            self.transport,
+            self.from,
+            self.to
+        );
+        Some(send_data(
+            self.transport,
+            self.bytes.as_slice(),
+            self.from,
+            self.to,
+        ))
     }
 }
 
@@ -666,7 +878,11 @@ impl StunRequestMut<'_> {
                         .map(|i| (initial_rto * 2u32.pow(i)).as_millis() as u64)
                         .collect::<Vec<_>>();
                     state.last_retransmit_timeout_ms = last_retransmit_timeout.as_millis() as u64;
-                    tracing::error!("new timeouts {:?}, i: {}", state.timeouts_ms, state.timeout_i);
+                    tracing::error!(
+                        "new timeouts {:?}, i: {}",
+                        state.timeouts_ms,
+                        state.timeout_i
+                    );
                 }
                 TransportType::Tcp => {
                     state.timeouts_ms = vec![];
@@ -769,7 +985,9 @@ pub(crate) mod tests {
             .build();
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
         let now = Instant::now();
         assert_eq!(transmit.transport, TransportType::Udp);
         assert_eq!(transmit.from, local_addr);
@@ -804,7 +1022,8 @@ pub(crate) mod tests {
         assert_eq!(transmit.transport, TransportType::Udp);
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
-        let _indication = Message::from_bytes(&transmit.data).unwrap();
+        let data = transmit.data.build();
+        let _indication = Message::from_bytes(&data).unwrap();
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
         // you should definitely never do this ;). Indications should never get replies.
@@ -839,7 +1058,9 @@ pub(crate) mod tests {
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         println!("send");
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
         println!("sent");
 
         let request = Message::from_bytes(&transmit.data).unwrap();
@@ -879,7 +1100,9 @@ pub(crate) mod tests {
             .build();
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        agent.send(msg, remote_addr, Instant::now()).unwrap();
+        agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
         let mut now = Instant::now();
         loop {
             let _ = agent.poll_transmit(now);
@@ -909,7 +1132,7 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let mut now = Instant::now();
-        agent.send(msg, remote_addr, now).unwrap();
+        agent.send_request(msg, remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 2, Duration::from_secs(10));
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
@@ -956,7 +1179,7 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let mut now = Instant::now();
-        agent.send(msg, remote_addr, now).unwrap();
+        agent.send_request(msg, remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 0, Duration::from_secs(10));
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
@@ -987,7 +1210,7 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let mut now = Instant::now();
-        agent.send(msg, remote_addr, now).unwrap();
+        agent.send_request(msg, remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 3, Duration::from_secs(3));
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
@@ -1020,7 +1243,9 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
@@ -1056,9 +1281,12 @@ pub(crate) mod tests {
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
+        let data = transmit.data.build();
 
-        let request = Message::from_bytes(&transmit.data).unwrap();
+        let request = Message::from_bytes(&data).unwrap();
 
         let mut response = Message::builder_success(&request);
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
@@ -1091,9 +1319,12 @@ pub(crate) mod tests {
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
+        let data = transmit.data.build();
 
-        let request = Message::from_bytes(&transmit.data).unwrap();
+        let request = Message::from_bytes(&data).unwrap();
 
         let mut response = Message::builder_success(&request);
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
@@ -1127,9 +1358,12 @@ pub(crate) mod tests {
         let mut msg = Message::builder_request(BINDING);
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
+        let data = transmit.data.build();
 
-        let request = Message::from_bytes(&transmit.data).unwrap();
+        let request = Message::from_bytes(&data).unwrap();
 
         let mut response = Message::builder_success(&request);
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
@@ -1160,9 +1394,12 @@ pub(crate) mod tests {
         assert!(!agent.is_validated_peer(remote_addr));
 
         let msg = Message::builder_request(BINDING);
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
+        let data = transmit.data.build();
 
-        let request = Message::from_bytes(&transmit.data).unwrap();
+        let request = Message::from_bytes(&data).unwrap();
 
         let mut response = Message::builder_success(&request);
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
@@ -1189,7 +1426,9 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let _transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let _transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
         assert_eq!(request.agent().local_addr(), local_addr);
@@ -1217,7 +1456,9 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let _transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let _transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
         assert_eq!(request.agent().local_addr(), local_addr);
@@ -1251,7 +1492,7 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
         let transmit = agent
-            .send(msg.clone(), remote_addr, Instant::now())
+            .send_request(msg.clone(), remote_addr, Instant::now())
             .unwrap();
         let to = transmit.to;
         let request = Message::from_bytes(&transmit.data).unwrap();
@@ -1261,7 +1502,7 @@ pub(crate) mod tests {
         response.add_attribute(&xor_addr).unwrap();
 
         assert!(matches!(
-            agent.send(msg, remote_addr, Instant::now()),
+            agent.send_request(msg, remote_addr, Instant::now()),
             Err(StunError::AlreadyInProgress)
         ));
 
@@ -1289,7 +1530,7 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
         let msg = Message::builder_request(BINDING);
-        let data = msg.build();
+        let data = MessageBuilder::build(&msg);
         let stun = Message::from_bytes(&data).unwrap();
         println!("{stun:?}");
         let HandleStunReply::IncomingStun(request) = agent.handle_stun(stun, remote_addr) else {
@@ -1310,7 +1551,9 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING);
         let transaction_id = msg.transaction_id();
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send_request(msg, remote_addr, Instant::now())
+            .unwrap();
         assert_eq!(transmit.transport, TransportType::Tcp);
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
