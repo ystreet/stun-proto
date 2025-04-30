@@ -26,7 +26,9 @@
 //! use stun_proto::types::message::{
 //!     BINDING, IntegrityAlgorithm, Message, MessageIntegrityCredentials, ShortTermCredentials
 //! };
+//! use stun_proto::prelude::*;
 //! use stun_proto::agent::{HandleStunReply, StunAgent};
+//!
 //! let local_addr = "10.0.0.1:12345".parse().unwrap();
 //! let remote_addr = "10.0.0.2:3478".parse().unwrap();
 //!
@@ -41,7 +43,7 @@
 //! // and we can send a Message
 //! let mut msg = Message::builder_request(BINDING);
 //! msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
-//! let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+//! let transmit = agent.send_request(msg, remote_addr, Instant::now()).unwrap();
 //!
 //! // The transmit struct indicates what data and where to send it.
 //! let request = Message::from_bytes(&transmit.data).unwrap();
@@ -65,7 +67,7 @@
 //! // Once valid STUN data has been sent and received, then data can be sent and received from the
 //! // peer.
 //! let data = vec![42; 8];
-//! let transmit = agent.send_data(&data, remote_addr);
+//! let transmit = agent.send_data(data.as_slice(), remote_addr);
 //! assert_eq!(transmit.data, &data);
 //! assert_eq!(transmit.from, local_addr);
 //! assert_eq!(transmit.to, remote_addr);
@@ -98,6 +100,11 @@ impl<T> DebugWrapper<T> {
     pub(crate) fn wrap(obj: T, name: &'static str) -> Self {
         Self(name, obj)
     }
+}
+
+/// Public prelude
+pub mod prelude {
+    pub use crate::agent::DelayedTransmitBuild;
 }
 
 #[cfg(test)]

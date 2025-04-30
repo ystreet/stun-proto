@@ -22,6 +22,7 @@ use stun_types::attribute::*;
 use stun_types::message::*;
 
 use stun_proto::agent::{HandleStunReply, StunAgent, StunError};
+use stun_proto::prelude::*;
 
 fn warn_on_err<T, E>(res: Result<T, E>, default: T) -> T
 where
@@ -151,8 +152,9 @@ fn main() -> io::Result<()> {
             if let Some((response, to)) =
                 handle_incoming_data(&data[..size], remote_addr, &mut tcp_stun_agent)
             {
-                if let Ok(data) = tcp_stun_agent.send(response, to, Instant::now()) {
-                    warn_on_err(stream.write_all(&data.data), ());
+                if let Ok(transmit) = tcp_stun_agent.send(response, to, Instant::now()) {
+                    let data = transmit.data.build();
+                    warn_on_err(stream.write_all(&data), ());
                 }
             }
             // XXX: Assumes that the stun packet arrives in a single packet
