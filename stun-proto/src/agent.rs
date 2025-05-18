@@ -457,6 +457,11 @@ impl TcpBuffer {
         self.buf = DebugWrapper::wrap(rest.to_vec(), "...");
         data
     }
+
+    /// Consume the [`TcpBuffer`] and return the unconsumed data.
+    pub fn into_inner(self) -> Vec<u8> {
+        self.buf.1
+    }
 }
 
 impl Default for TcpBuffer {
