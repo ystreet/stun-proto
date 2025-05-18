@@ -412,9 +412,7 @@ pub struct TcpBuffer {
 impl TcpBuffer {
     /// Construct a new [`TcpBuffer`]
     pub fn new() -> Self {
-        Self {
-            buf: DebugWrapper::wrap(vec![], "..."),
-        }
+        vec![].into()
     }
 
     /// Push a chunk of received data into the buffer.
@@ -467,6 +465,14 @@ impl TcpBuffer {
 impl Default for TcpBuffer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<Vec<u8>> for TcpBuffer {
+    fn from(value: Vec<u8>) -> Self {
+        Self {
+            buf: DebugWrapper::wrap(value, "..."),
+        }
     }
 }
 
