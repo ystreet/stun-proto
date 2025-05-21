@@ -75,7 +75,7 @@
 //!         BigEndian::write_u32(&mut dest[4..], self.value);
 //!     }
 //! }
-//! impl<'a> AttributeFromRaw<'a> for MyAttribute {
+//! impl AttributeFromRaw<'_> for MyAttribute {
 //!     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
 //!     where
 //!         Self: Sized,
@@ -87,6 +87,16 @@
 //!         })
 //!     }
 //! }
+//!
+//! // Optional: if you want this attribute to be displayed nicely when the corresponding
+//! // `RawAttribute` (based on `AttributeType`) is formatted using `RawAttribute`'s `Display`
+//! // implementation.
+//! impl std::fmt::Display for MyAttribute {
+//!     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//!         write!(f, "MyAttribute: {}", self.value)
+//!     }
+//! }
+//! stun_types::attribute_display!(MyAttribute);
 //!
 //! let my_attr = MyAttribute { value: 0x4729 };
 //! let raw = RawAttribute::from(&my_attr);
@@ -141,8 +151,97 @@ use crate::message::{StunParseError, StunWriteError};
 
 use byteorder::{BigEndian, ByteOrder};
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+/// A closure definition for an externally provided `Display` implementation for a [`RawAttribute`].
+///
+/// Typically, a concrete [`Attribute`] implements `Display` and
+/// [`attribute_display`](crate::attribute_display) can be used
+/// to generate and install this closure.
+///
+/// See the module level documentation for an example.
+pub type AttributeDisplay =
+    fn(&RawAttribute<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+static ATTRIBUTE_EXTERNAL_DISPLAY_IMPL: OnceLock<Mutex<HashMap<AttributeType, AttributeDisplay>>> =
+    OnceLock::new();
+
+/// Adds an externally provided Display implementation for a particular [`AttributeType`].  Any
+/// previous implementation is overidden.
+pub fn add_display_impl(atype: AttributeType, imp: AttributeDisplay) {
+    let mut display_impls = ATTRIBUTE_EXTERNAL_DISPLAY_IMPL
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap();
+    display_impls.insert(atype, imp);
+}
+
+/// Implement an [`AttributeDisplay`] closure for an [`Attribute`] from a [`RawAttribute`] and calls
+/// [`add_display_impl`] with the generated closure.
+///
+/// # Examples
+/// ```
+/// use stun_types::attribute::{AttributeType, Attribute, AttributeStaticType, AttributeFromRaw};
+/// use stun_types::attribute::RawAttribute;
+/// use stun_types::message::StunParseError;
+/// #[derive(Debug)]
+/// struct MyAttribute {}
+/// impl AttributeStaticType for MyAttribute {
+///    const TYPE: AttributeType = AttributeType::new(0x8852);
+/// }
+/// impl Attribute for MyAttribute {
+///    fn get_type(&self) -> AttributeType {
+///        Self::TYPE
+///    }
+///    fn length(&self) -> u16 {
+///        0
+///    }
+/// }
+/// impl AttributeFromRaw<'_> for MyAttribute {
+///     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
+///     where
+///         Self: Sized,
+///     {
+///         raw.check_type_and_len(Self::TYPE, 0..=0)?;
+///         Ok(Self {})
+///    }
+/// }
+/// // An Attribute would also implement AttributeWrite but that has been omitted for brevity.
+/// impl std::fmt::Display for MyAttribute {
+///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+///         write!(f, "MyAttribute")
+///     }
+/// }
+/// stun_types::attribute_display!(MyAttribute);
+/// let attr = RawAttribute::new(MyAttribute::TYPE, &[]);
+/// let display_str = format!("{}", attr);
+/// assert_eq!(display_str, "MyAttribute");
+/// ```
+#[macro_export]
+macro_rules! attribute_display {
+    ($typ:ty) => {{
+        let imp = |attr: &$crate::attribute::RawAttribute<'_>,
+                   f: &mut std::fmt::Formatter<'_>|
+         -> std::fmt::Result {
+            if let Ok(attr) = <$typ>::from_raw_ref(attr) {
+                write!(f, "{}", attr)
+            } else {
+                write!(
+                    f,
+                    "{}(Malformed): len: {}, data: {:?})",
+                    attr.get_type(),
+                    attr.header.length(),
+                    attr.value
+                )
+            }
+        };
+
+        $crate::attribute::add_display_impl(<$typ>::TYPE, imp);
+    }};
+}
+
 /// The type of an [`Attribute`] in a STUN [`Message`](crate::message::Message)
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AttributeType(u16);
 
 impl std::fmt::Display for AttributeType {
@@ -414,11 +513,17 @@ pub struct RawAttribute<'a> {
 }
 
 macro_rules! display_attr {
-    ($this:ident, $CamelType:ty, $default:ident) => {{
+    ($this:ident, $f:ident, $CamelType:ty) => {{
         if let Ok(attr) = <$CamelType>::from_raw_ref($this) {
-            format!("{}", attr)
+            write!($f, "{}", attr)
         } else {
-            $default
+            write!(
+                $f,
+                "{}(Malformed): len: {}, data: {:?})",
+                $this.get_type(),
+                $this.header.length(),
+                $this.value
+            )
         }
     }};
 }
@@ -426,42 +531,46 @@ macro_rules! display_attr {
 impl std::fmt::Display for RawAttribute<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // try to get a more specialised display
-        let malformed_str = format!(
-            "{}(Malformed): len: {}, data: {:?})",
-            self.get_type(),
-            self.header.length(),
-            self.value
-        );
-        let display_str = match self.get_type() {
-            Username::TYPE => display_attr!(self, Username, malformed_str),
-            MessageIntegrity::TYPE => display_attr!(self, MessageIntegrity, malformed_str),
-            ErrorCode::TYPE => display_attr!(self, ErrorCode, malformed_str),
-            UnknownAttributes::TYPE => display_attr!(self, UnknownAttributes, malformed_str),
-            Realm::TYPE => display_attr!(self, Realm, malformed_str),
-            Nonce::TYPE => display_attr!(self, Nonce, malformed_str),
+        match self.get_type() {
+            Username::TYPE => display_attr!(self, f, Username),
+            MessageIntegrity::TYPE => display_attr!(self, f, MessageIntegrity),
+            ErrorCode::TYPE => display_attr!(self, f, ErrorCode),
+            UnknownAttributes::TYPE => display_attr!(self, f, UnknownAttributes),
+            Realm::TYPE => display_attr!(self, f, Realm),
+            Nonce::TYPE => display_attr!(self, f, Nonce),
             MessageIntegritySha256::TYPE => {
-                display_attr!(self, MessageIntegritySha256, malformed_str)
+                display_attr!(self, f, MessageIntegritySha256)
             }
-            PasswordAlgorithm::TYPE => display_attr!(self, PasswordAlgorithm, malformed_str),
-            //UserHash::TYPE => display_attr!(self, UserHash, malformed_str),
-            XorMappedAddress::TYPE => display_attr!(self, XorMappedAddress, malformed_str),
-            PasswordAlgorithms::TYPE => display_attr!(self, PasswordAlgorithms, malformed_str),
-            AlternateDomain::TYPE => display_attr!(self, AlternateDomain, malformed_str),
-            Software::TYPE => display_attr!(self, Software, malformed_str),
-            AlternateServer::TYPE => display_attr!(self, AlternateServer, malformed_str),
-            Fingerprint::TYPE => display_attr!(self, Fingerprint, malformed_str),
-            Priority::TYPE => display_attr!(self, Priority, malformed_str),
-            UseCandidate::TYPE => display_attr!(self, UseCandidate, malformed_str),
-            IceControlled::TYPE => display_attr!(self, IceControlled, malformed_str),
-            IceControlling::TYPE => display_attr!(self, IceControlling, malformed_str),
-            _ => format!(
-                "RawAttribute (type: {:?}, len: {}, data: {:?})",
-                self.header.get_type(),
-                self.header.length(),
-                &self.value
-            ),
-        };
-        write!(f, "{}", display_str)
+            PasswordAlgorithm::TYPE => display_attr!(self, f, PasswordAlgorithm),
+            //UserHash::TYPE => display_attr!(self, UserHash),
+            XorMappedAddress::TYPE => display_attr!(self, f, XorMappedAddress),
+            PasswordAlgorithms::TYPE => display_attr!(self, f, PasswordAlgorithms),
+            AlternateDomain::TYPE => display_attr!(self, f, AlternateDomain),
+            Software::TYPE => display_attr!(self, f, Software),
+            AlternateServer::TYPE => display_attr!(self, f, AlternateServer),
+            Fingerprint::TYPE => display_attr!(self, f, Fingerprint),
+            Priority::TYPE => display_attr!(self, f, Priority),
+            UseCandidate::TYPE => display_attr!(self, f, UseCandidate),
+            IceControlled::TYPE => display_attr!(self, f, IceControlled),
+            IceControlling::TYPE => display_attr!(self, f, IceControlling),
+            _ => {
+                let mut display_impls = ATTRIBUTE_EXTERNAL_DISPLAY_IMPL
+                    .get_or_init(|| Default::default())
+                    .lock()
+                    .unwrap();
+                if let Some(imp) = display_impls.get_mut(&self.get_type()) {
+                    imp(self, f)
+                } else {
+                    write!(
+                        f,
+                        "RawAttribute (type: {:?}, len: {}, data: {:?})",
+                        self.header.get_type(),
+                        self.header.length(),
+                        &self.value
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -734,5 +843,21 @@ mod tests {
                 actual: 4
             })
         ));
+    }
+
+    #[test]
+    fn test_external_display_impl() {
+        let _log = crate::tests::test_init_log();
+        let atype = AttributeType::new(0xFFFF);
+        let imp = |attr: &RawAttribute<'_>, f: &mut std::fmt::Formatter<'_>| -> std::fmt::Result {
+            write!(f, "Custom {}", attr.value[0])
+        };
+        add_display_impl(atype, imp);
+        let data = [4, 0];
+        let attr = RawAttribute::new(atype, &data);
+        let display_str = format!("{}", attr);
+        assert_eq!(display_str, "Custom 4");
+
+        attribute_display!(Fingerprint);
     }
 }

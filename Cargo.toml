@@ -7,7 +7,7 @@ resolver = "2"
 version = "0.4.0"
 repository = "https://github.com/ystreet/stun-proto"
 edition = "2021"
-rust-version = "1.65.0"
+rust-version = "1.70.0"
 
 [workspace.dependencies]
 arbitrary = { version = "1", features = ["derive"] }
