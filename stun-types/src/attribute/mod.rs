@@ -97,6 +97,7 @@
 //!     }
 //! }
 //! stun_types::attribute_display!(MyAttribute);
+//! MyAttribute::TYPE.add_name("MY-ATTRIBUTE");
 //!
 //! let my_attr = MyAttribute { value: 0x4729 };
 //! let raw = RawAttribute::from(&my_attr);
@@ -240,6 +241,9 @@ macro_rules! attribute_display {
     }};
 }
 
+static ATTRIBUTE_TYPE_NAME_MAP: OnceLock<Mutex<HashMap<AttributeType, &'static str>>> =
+    OnceLock::new();
+
 /// The type of an [`Attribute`] in a STUN [`Message`](crate::message::Message)
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AttributeType(u16);
@@ -251,6 +255,15 @@ impl std::fmt::Display for AttributeType {
 }
 
 impl AttributeType {
+    /// Add the name for a particular [`AttributeType`] for formatting purposes.
+    pub fn add_name(self, name: &'static str) {
+        let mut anames = ATTRIBUTE_TYPE_NAME_MAP
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap();
+        anames.insert(self, name);
+    }
+
     /// Create a new AttributeType from an existing value
     ///
     /// Note: the value passed in is not encoded as in a stun message
@@ -306,7 +319,17 @@ impl AttributeType {
             UseCandidate::TYPE => "USE-CANDIDATE",
             IceControlled::TYPE => "ICE-CONTROLLED",
             IceControlling::TYPE => "ICE-CONTROLLING",
-            _ => "unknown",
+            _ => {
+                let anames = ATTRIBUTE_TYPE_NAME_MAP
+                    .get_or_init(Default::default)
+                    .lock()
+                    .unwrap();
+                if let Some(name) = anames.get(&self) {
+                    name
+                } else {
+                    "unknown"
+                }
+            }
         }
     }
 
@@ -857,6 +880,9 @@ mod tests {
         let attr = RawAttribute::new(atype, &data);
         let display_str = format!("{}", attr);
         assert_eq!(display_str, "Custom 4");
+
+        atype.add_name("SOME-NAME");
+        assert_eq!(atype.name(), "SOME-NAME");
 
         attribute_display!(Fingerprint);
     }
