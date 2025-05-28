@@ -431,7 +431,7 @@ impl TcpBuffer {
             return None;
         }
 
-        let data_length = (BigEndian::read_u16(&self.buf[..2]) as usize) + 2;
+        let data_length = BigEndian::read_u16(&self.buf[..2]) as usize;
         if self.buf.len() < data_length {
             trace!(
                 "not enough data, buf length {} data specifies length {}",
@@ -442,18 +442,18 @@ impl TcpBuffer {
         }
 
         let bytes = self.take(data_length);
-        trace!("return {} bytes", data_length - 2);
-        Some(bytes[2..].to_vec())
+        trace!("return {} bytes", data_length);
+        Some(bytes)
     }
 
-    fn take(&mut self, offset: usize) -> Vec<u8> {
+    fn take(&mut self, data_length: usize) -> Vec<u8> {
+        let offset = data_length + 2;
         if offset > self.buf.len() {
             return vec![];
         }
-        let (data, rest) = self.buf.split_at(offset);
-        let data = data.to_vec();
-        self.buf = DebugWrapper::wrap(rest.to_vec(), "...");
-        data
+        let mut data = self.buf.split_off(offset);
+        std::mem::swap(&mut data, &mut self.buf.1);
+        data[2..].to_vec()
     }
 
     /// Consume the [`TcpBuffer`] and return the unconsumed data.
