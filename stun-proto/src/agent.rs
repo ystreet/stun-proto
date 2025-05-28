@@ -636,7 +636,7 @@ impl Transmit<Data<'_>> {
     /// Construct a new owned [`Transmit`] from a provided [`Transmit`]
     pub fn into_owned<'b>(self) -> Transmit<Data<'b>> {
         Transmit {
-            data: Data::from(self.data.as_ref()).into_owned(),
+            data: self.data.into_owned(),
             transport: self.transport,
             from: self.from,
             to: self.to,
