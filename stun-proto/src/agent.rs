@@ -1661,4 +1661,38 @@ pub(crate) mod tests {
             data.as_ref(),
         );
     }
+
+    #[test]
+    fn transmit_into_owned() {
+        let data = [0x10, 0x20];
+        let transport = TransportType::Udp;
+        let from = "127.0.0.1:1000".parse().unwrap();
+        let to = "127.0.0.1:2000".parse().unwrap();
+        let transmit = Transmit::new(Data::from(data.as_ref()), TransportType::Udp, from, to);
+        let owned = transmit.into_owned();
+        assert_eq!(owned.data.as_ref(), data.as_ref());
+        assert_eq!(owned.transport, transport);
+        assert_eq!(owned.from, from);
+        assert_eq!(owned.to, to);
+    }
+
+    #[test]
+    fn transmit_build_into_owned() {
+        let data = [0x10, 0x20];
+        let transport = TransportType::Udp;
+        let from = "127.0.0.1:1000".parse().unwrap();
+        let to = "127.0.0.1:2000".parse().unwrap();
+        let transmit = TransmitBuild::new(
+            TransmitMessageOrData::Data(Data::from(data.as_ref())),
+            TransportType::Udp,
+            from,
+            to,
+        );
+        let owned = transmit.into_owned();
+        let built = owned.data.build();
+        assert_eq!(&built, data.as_ref());
+        assert_eq!(owned.transport, transport);
+        assert_eq!(owned.from, from);
+        assert_eq!(owned.to, to);
+    }
 }
