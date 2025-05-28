@@ -1588,4 +1588,77 @@ pub(crate) mod tests {
         tcp_buffer.push_data(&data);
         assert_eq!(tcp_buffer.pull_data().unwrap(), &data);
     }
+
+    fn check_delayed_transmit_build(dtb: impl DelayedTransmitBuild, expected: &[u8]) {
+        assert_eq!(dtb.len(), expected.len());
+        assert_eq!(&dtb.build(), expected);
+    }
+
+    fn check_delayed_transmit_write_into(dtb: impl DelayedTransmitBuild, expected: &[u8]) {
+        assert_eq!(dtb.len(), expected.len());
+        let mut output = vec![0; dtb.len()];
+        dtb.write_into(&mut output);
+        assert_eq!(&output, expected);
+    }
+
+    #[test]
+    fn delayed_transmit_vec() {
+        let data = vec![3; 8];
+        check_delayed_transmit_build(data.clone(), &data);
+        check_delayed_transmit_write_into(data.clone(), &data);
+    }
+
+    #[test]
+    fn delayed_transmit_u8slice() {
+        let data = [0x10, 0x20, 0x30];
+        check_delayed_transmit_build(data.as_slice(), data.as_slice());
+        check_delayed_transmit_write_into(data.as_slice(), data.as_slice());
+    }
+
+    #[test]
+    fn delayed_transmit_const_slice() {
+        let data = [0x10, 0x20, 0x30];
+        check_delayed_transmit_build(data, data.as_slice());
+        check_delayed_transmit_write_into(data, data.as_slice());
+    }
+
+    #[test]
+    fn delayed_transmit_box_slice() {
+        let data: Box<[u8]> = Box::from([0x10, 0x20, 0x30]);
+        check_delayed_transmit_build(data.clone(), data.as_ref());
+        check_delayed_transmit_write_into(data.clone(), data.as_ref());
+    }
+
+    #[test]
+    fn delayed_transmit_message_builder() {
+        let msg = Message::builder(
+            MessageType::from_class_method(MessageClass::Indication, 0x1),
+            TransactionId::generate(),
+        );
+        let data = MessageBuilder::build(&msg);
+        check_delayed_transmit_build(msg.clone(), data.as_ref());
+        check_delayed_transmit_write_into(msg.clone(), data.as_ref());
+    }
+
+    #[test]
+    fn delayed_transmit_message_or_data() {
+        let msg = Message::builder(
+            MessageType::from_class_method(MessageClass::Indication, 0x1),
+            TransactionId::generate(),
+        );
+        let data = MessageBuilder::build(&msg);
+        check_delayed_transmit_build(TransmitMessageOrData::Message(msg.clone()), data.as_ref());
+        check_delayed_transmit_write_into(
+            TransmitMessageOrData::Message(msg.clone()),
+            data.as_ref(),
+        );
+        check_delayed_transmit_build(
+            TransmitMessageOrData::Data(Data::from(data.as_ref())),
+            data.as_ref(),
+        );
+        check_delayed_transmit_write_into(
+            TransmitMessageOrData::Data(Data::from(data.as_ref())),
+            data.as_ref(),
+        );
+    }
 }
