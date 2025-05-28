@@ -41,7 +41,7 @@ fn bench_agent_send(c: &mut Criterion) {
                 msg
             },
             |msg| {
-                let _ = agent.send(msg, remote_addr, now).unwrap();
+                let _ = agent.send_request(msg, remote_addr, now).unwrap();
             },
             BatchSize::SmallInput,
         )

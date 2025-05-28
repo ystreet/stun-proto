@@ -32,7 +32,7 @@ fn bench_agent_recv(c: &mut Criterion) {
     ));
     let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
     let builder = builder_with_attribute(&software);
-    let _ = agent.send(builder, remote_addr, now).unwrap();
+    let _ = agent.send_request(builder, remote_addr, now).unwrap();
 
     group.bench_with_input("Message/Software", &software, move |b, software| {
         b.iter_batched(
