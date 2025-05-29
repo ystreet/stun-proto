@@ -493,9 +493,9 @@ pub struct TransactionId {
 impl TransactionId {
     /// Generate a new STUN transaction identifier.
     pub fn generate() -> TransactionId {
-        use rand::{thread_rng, Rng};
-        let mut rng = thread_rng();
-        rng.gen::<u128>().into()
+        use rand::Rng;
+        let mut rng = rand::rng();
+        rng.random::<u128>().into()
     }
 }
 
