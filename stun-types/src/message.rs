@@ -1224,7 +1224,7 @@ impl<'a> Message<'a> {
             .iter_attributes()
             .map(|a| a.get_type())
             // attribute types that require comprehension but are not supported by the caller
-            .filter(|&at| at.comprehension_required() && !supported.iter().any(|&a| a == at))
+            .filter(|at| at.comprehension_required() && !supported.contains(at))
             .collect();
         if !unsupported.is_empty() {
             warn!(
@@ -1824,7 +1824,7 @@ impl<'a> MessageBuilder<'a> {
 
     /// Return whether this [`MessageBuilder`] contains a particular attribute.
     pub fn has_attribute(&self, atype: AttributeType) -> bool {
-        self.attribute_types.iter().any(|&ty| ty == atype)
+        self.attribute_types.contains(&atype)
     }
 
     /// Return whether this [`MessageBuilder`] contains any of the provided attributes and
