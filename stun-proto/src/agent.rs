@@ -167,12 +167,12 @@ impl StunAgent {
         let Some(transmit) = state.poll_transmit(now) else {
             unreachable!();
         };
-        return Ok(Transmit::new(
+        Ok(Transmit::new(
             Data::from(transmit.data),
             transmit.transport,
             transmit.from,
             transmit.to,
-        ));
+        ))
     }
 
     /// Returns whether this agent has received or send a STUN message to this peer. Failure may
