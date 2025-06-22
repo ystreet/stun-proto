@@ -42,4 +42,4 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: clippy
-      run: cargo clippy --verbose
+      run: cargo clippy --verbose -- -Dwarnings
