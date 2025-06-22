@@ -392,9 +392,10 @@ impl UnknownAttributes {
     /// # use stun_types::attribute::*;
     /// let unknown = UnknownAttributes::new(&[Username::TYPE]);
     /// assert!(unknown.has_attribute(Username::TYPE));
+    /// assert!(!unknown.has_attribute(ErrorCode::TYPE));
     /// ```
     pub fn has_attribute(&self, attr: AttributeType) -> bool {
-        self.attributes.iter().any(|&a| a == attr)
+        self.attributes.contains(&attr)
     }
 
     fn write_into_data(&self, dest: &mut [u8]) -> usize {
