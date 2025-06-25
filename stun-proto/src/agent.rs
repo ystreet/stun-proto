@@ -764,22 +764,21 @@ impl StunRequestState {
         fields(transaction_id = %self.transaction_id),
     )]
     fn poll(&mut self, now: Instant) -> StunRequestPollRet {
-        loop {
-            if self.recv_cancelled {
-                return StunRequestPollRet::Cancelled;
-            }
-            // TODO: account for TCP connect in timeout
-            let Some(next_send) = self.next_send_time(now) else {
-                return StunRequestPollRet::TimedOut;
-            };
-            if next_send > now {
-                return StunRequestPollRet::WaitUntil(next_send);
-            }
-            if self.send_cancelled {
+        if self.recv_cancelled {
+            return StunRequestPollRet::Cancelled;
+        }
+        // TODO: account for TCP connect in timeout
+        let Some(next_send) = self.next_send_time(now) else {
+            return StunRequestPollRet::TimedOut;
+        };
+        if next_send >= now {
+            if self.send_cancelled && self.timeout_i >= self.timeouts_ms.len() {
                 // this cancellation may need a different value
                 return StunRequestPollRet::Cancelled;
             }
+            return StunRequestPollRet::WaitUntil(next_send);
         }
+        StunRequestPollRet::WaitUntil(now)
     }
 
     #[tracing::instrument(
@@ -788,7 +787,7 @@ impl StunRequestState {
         fields(transaction_id = %self.transaction_id)
     )]
     fn poll_transmit(&mut self, now: Instant) -> Option<Transmit<&[u8]>> {
-        if self.recv_cancelled || self.send_cancelled {
+        if self.recv_cancelled {
             return None;
         };
         let next_send = self.next_send_time(now)?;
@@ -800,6 +799,9 @@ impl StunRequestState {
             self.timeout_i += 1;
         }
         self.last_send_time = Some(now);
+        if self.send_cancelled {
+            return None;
+        };
         trace!(
             "sending {} bytes over {:?} from {:?} to {:?}",
             self.bytes.len(),
@@ -1151,6 +1153,11 @@ pub(crate) mod tests {
         };
         assert_eq!(wait - now, Duration::from_secs(1));
         now = wait;
+        // a poll with the same instant should not busy loop
+        let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
+            unreachable!();
+        };
+        assert_eq!(wait, now);
         let Some(_) = agent.poll_transmit(now) else {
             unreachable!();
         };
@@ -1478,15 +1485,19 @@ pub(crate) mod tests {
         request.cancel_retransmissions();
 
         let mut now = Instant::now();
+        let start = now;
         loop {
             match agent.poll(now) {
                 StunAgentPollRet::WaitUntil(new_now) => {
+                    assert_ne!(new_now, now);
                     now = new_now;
                 }
                 StunAgentPollRet::TransactionCancelled(_) => break,
                 _ => unreachable!(),
             }
+            let _ = agent.poll_transmit(now);
         }
+        assert!(now - start > Duration::from_secs(20));
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
         assert!(!agent.is_validated_peer(remote_addr));
