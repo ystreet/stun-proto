@@ -94,7 +94,7 @@ impl Attribute for PasswordAlgorithms {
 }
 
 impl AttributeWrite for PasswordAlgorithms {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         let len = self.length() as usize;
         let mut data = vec![0; len];
         self.write_data_into_unchecked(&mut data);
@@ -184,7 +184,7 @@ impl std::fmt::Display for PasswordAlgorithms {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", algo)?;
+            write!(f, "{algo}")?;
         }
         write!(f, "]")?;
         Ok(())
@@ -212,7 +212,7 @@ impl Attribute for PasswordAlgorithm {
 }
 
 impl AttributeWrite for PasswordAlgorithm {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         let len = self.length() as usize;
         let mut data = vec![0; len];
         self.algorithm.write(&mut data);

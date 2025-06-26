@@ -36,7 +36,7 @@ impl Attribute for Realm {
 }
 
 impl AttributeWrite for Realm {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         RawAttribute::new(Realm::TYPE, self.realm.as_bytes())
     }
     fn write_into_unchecked(&self, dest: &mut [u8]) {

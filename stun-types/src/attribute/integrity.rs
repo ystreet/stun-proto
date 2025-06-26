@@ -38,7 +38,7 @@ impl Attribute for MessageIntegrity {
 }
 
 impl AttributeWrite for MessageIntegrity {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         RawAttribute::new(MessageIntegrity::TYPE, &self.hmac)
     }
     fn write_into_unchecked(&self, dest: &mut [u8]) {
@@ -158,7 +158,7 @@ impl std::fmt::Display for MessageIntegrity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: 0x", Self::TYPE)?;
         for val in self.hmac.iter() {
-            write!(f, "{:02x}", val)?;
+            write!(f, "{val:02x}")?;
         }
         Ok(())
     }
@@ -185,7 +185,7 @@ impl Attribute for MessageIntegritySha256 {
 }
 
 impl AttributeWrite for MessageIntegritySha256 {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         RawAttribute::new(MessageIntegritySha256::TYPE, &self.hmac)
     }
     fn write_into_unchecked(&self, dest: &mut [u8]) {
@@ -326,7 +326,7 @@ impl std::fmt::Display for MessageIntegritySha256 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: 0x", Self::TYPE)?;
         for val in self.hmac.iter() {
-            write!(f, "{:02x}", val)?;
+            write!(f, "{val:02x}")?;
         }
         Ok(())
     }

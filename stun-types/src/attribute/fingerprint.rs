@@ -36,7 +36,7 @@ impl Attribute for Fingerprint {
 }
 
 impl AttributeWrite for Fingerprint {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         let buf = bytewise_xor!(4, self.fingerprint, Fingerprint::XOR_CONSTANT, 0);
         RawAttribute::new(Fingerprint::TYPE, &buf).into_owned()
     }
@@ -119,7 +119,7 @@ impl std::fmt::Display for Fingerprint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: 0x", Self::TYPE)?;
         for val in self.fingerprint.iter() {
-            write!(f, "{:02x}", val)?;
+            write!(f, "{val:02x}")?;
         }
         Ok(())
     }

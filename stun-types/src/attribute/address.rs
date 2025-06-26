@@ -70,7 +70,7 @@ impl MappedSocketAddr {
     }
 
     /// Convert this [`MappedSocketAddr`] into a [`RawAttribute`]
-    pub fn to_raw<'a>(&self, atype: AttributeType) -> RawAttribute<'a> {
+    pub fn to_raw(&self, atype: AttributeType) -> RawAttribute<'_> {
         match self.addr {
             SocketAddr::V4(_addr) => {
                 let mut buf = [0; 8];
@@ -143,8 +143,8 @@ impl MappedSocketAddr {
 impl std::fmt::Display for MappedSocketAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.addr {
-            SocketAddr::V4(addr) => write!(f, "{:?}", addr),
-            SocketAddr::V6(addr) => write!(f, "{:?}", addr),
+            SocketAddr::V4(addr) => write!(f, "{addr:?}"),
+            SocketAddr::V6(addr) => write!(f, "{addr:?}"),
         }
     }
 }
@@ -173,7 +173,7 @@ impl XorSocketAddr {
     }
 
     /// Convert this [`XorSocketAddr`] into a [`RawAttribute`]
-    pub fn to_raw<'a>(&self, atype: AttributeType) -> RawAttribute<'a> {
+    pub fn to_raw(&self, atype: AttributeType) -> RawAttribute<'_> {
         self.addr.to_raw(atype)
     }
 
@@ -221,7 +221,7 @@ impl std::fmt::Display for XorSocketAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.addr.addr() {
             SocketAddr::V4(_) => write!(f, "{:?}", self.addr(0x0.into())),
-            SocketAddr::V6(addr) => write!(f, "XOR({:?})", addr),
+            SocketAddr::V6(addr) => write!(f, "XOR({addr:?})"),
         }
     }
 }

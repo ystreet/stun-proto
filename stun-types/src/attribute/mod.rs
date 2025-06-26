@@ -65,7 +65,7 @@
 //!    }
 //! }
 //! impl AttributeWrite for MyAttribute {
-//!     fn to_raw(&self) -> RawAttribute {
+//!     fn to_raw(&self) -> RawAttribute<'_> {
 //!         let mut ret = [0; 4];
 //!         BigEndian::write_u32(&mut ret, self.value);
 //!         RawAttribute::new(MyAttribute::TYPE, &ret).into_owned()
@@ -474,7 +474,7 @@ pub trait AttributeWrite: Attribute {
     /// Panics if the destination buffer is not large enough
     fn write_into_unchecked(&self, dest: &mut [u8]);
     /// Produce a [`RawAttribute`] from this [`Attribute`]
-    fn to_raw(&self) -> RawAttribute;
+    fn to_raw(&self) -> RawAttribute<'_>;
 }
 
 /// Automatically implemented trait providing helper functionality for writing an [`Attribute`] to
@@ -702,7 +702,7 @@ impl Attribute for RawAttribute<'_> {
     }
 }
 
-impl<'a> AttributeWrite for RawAttribute<'a> {
+impl AttributeWrite for RawAttribute<'_> {
     /// Write this [`RawAttribute`] into a byte slice.  Returns the number of bytes written.
     fn write_into_unchecked(&self, dest: &mut [u8]) {
         let len = self.padded_len();
@@ -715,7 +715,7 @@ impl<'a> AttributeWrite for RawAttribute<'a> {
         }
     }
 
-    fn to_raw(&self) -> RawAttribute<'a> {
+    fn to_raw(&self) -> RawAttribute<'_> {
         self.clone()
     }
 }

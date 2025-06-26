@@ -611,7 +611,7 @@ impl std::fmt::Display for Message<'_> {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", a)?;
+            write!(f, "{a}")?;
         }
         write!(f, "]")?;
         write!(f, ")")
@@ -1111,7 +1111,7 @@ impl<'a> Message<'a> {
             attribute_type = %atype,
         )
     )]
-    pub fn raw_attribute(&self, atype: AttributeType) -> Option<RawAttribute> {
+    pub fn raw_attribute(&self, atype: AttributeType) -> Option<RawAttribute<'_>> {
         self.iter_attributes().find(|attr| attr.get_type() == atype)
     }
 
@@ -1155,7 +1155,7 @@ impl<'a> Message<'a> {
     }
 
     /// Returns an iterator over the attributes in the [`Message`].
-    pub fn iter_attributes(&self) -> impl Iterator<Item = RawAttribute> {
+    pub fn iter_attributes(&self) -> impl Iterator<Item = RawAttribute<'_>> {
         MessageAttributesIter {
             data: self.data,
             data_i: MessageHeader::LENGTH,
