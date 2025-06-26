@@ -38,7 +38,7 @@ impl Attribute for XorMappedAddress {
 }
 
 impl AttributeWrite for XorMappedAddress {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         self.addr.to_raw(XorMappedAddress::TYPE)
     }
 

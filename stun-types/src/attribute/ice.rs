@@ -36,7 +36,7 @@ impl Attribute for Priority {
     }
 }
 impl AttributeWrite for Priority {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         let mut buf = [0; 4];
         BigEndian::write_u32(&mut buf[0..4], self.priority);
         RawAttribute::new(Priority::TYPE, &buf).into_owned()
@@ -118,7 +118,7 @@ impl Attribute for UseCandidate {
     }
 }
 impl AttributeWrite for UseCandidate {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         static BUF: [u8; 0] = [0; 0];
         RawAttribute::new(UseCandidate::TYPE, &BUF)
     }
@@ -190,7 +190,7 @@ impl Attribute for IceControlled {
     }
 }
 impl AttributeWrite for IceControlled {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         let mut buf = [0; 8];
         BigEndian::write_u64(&mut buf[..8], self.tie_breaker);
         RawAttribute::new(IceControlled::TYPE, &buf).into_owned()
@@ -276,7 +276,7 @@ impl Attribute for IceControlling {
 }
 
 impl AttributeWrite for IceControlling {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         let mut buf = [0; 8];
         BigEndian::write_u64(&mut buf[..8], self.tie_breaker);
         RawAttribute::new(IceControlling::TYPE, &buf).into_owned()

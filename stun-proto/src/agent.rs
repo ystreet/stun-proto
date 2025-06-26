@@ -135,7 +135,7 @@ impl StunAgent {
     /// The returned [`Transmit`] must be sent to the respective peer after this call.
     #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
     pub fn send<'a>(
-        &'a mut self,
+        &mut self,
         msg: MessageBuilder<'a>,
         to: SocketAddr,
         now: Instant,
@@ -267,7 +267,7 @@ impl StunAgent {
     /// either `handle_incoming_data` receives the associated response, or `poll()` returns
     /// [`StunAgentPollRet::TransactionCancelled`] or a [`StunAgentPollRet::TransactionTimedOut`]
     /// for the request.
-    pub fn request_transaction(&self, transaction_id: TransactionId) -> Option<StunRequest> {
+    pub fn request_transaction(&self, transaction_id: TransactionId) -> Option<StunRequest<'_>> {
         if self.outstanding_requests.contains_key(&transaction_id) {
             Some(StunRequest {
                 agent: self,
@@ -285,7 +285,7 @@ impl StunAgent {
     pub fn mut_request_transaction(
         &mut self,
         transaction_id: TransactionId,
-    ) -> Option<StunRequestMut> {
+    ) -> Option<StunRequestMut<'_>> {
         if self.outstanding_requests.contains_key(&transaction_id) {
             Some(StunRequestMut {
                 agent: self,

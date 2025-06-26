@@ -36,7 +36,7 @@ impl Attribute for Username {
 }
 
 impl AttributeWrite for Username {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         RawAttribute::new(Username::TYPE, self.user.as_bytes())
     }
     fn write_into_unchecked(&self, dest: &mut [u8]) {
@@ -142,7 +142,7 @@ impl Attribute for Userhash {
 }
 
 impl AttributeWrite for Userhash {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         RawAttribute::new(Userhash::TYPE, &self.hash)
     }
 
@@ -220,7 +220,7 @@ impl std::fmt::Display for Userhash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: 0x", Self::TYPE)?;
         for val in self.hash.iter() {
-            write!(f, "{:02x}", val)?;
+            write!(f, "{val:02x}")?;
         }
         Ok(())
     }

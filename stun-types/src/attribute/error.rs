@@ -37,7 +37,7 @@ impl Attribute for ErrorCode {
 }
 
 impl AttributeWrite for ErrorCode {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         let mut data = Vec::with_capacity(self.length() as usize);
         data.push(0u8);
         data.push(0u8);
@@ -306,7 +306,7 @@ impl Attribute for UnknownAttributes {
     }
 }
 impl AttributeWrite for UnknownAttributes {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         let mut data = vec![0; self.length() as usize];
         self.write_into_data(&mut data);
         RawAttribute::new_owned(UnknownAttributes::TYPE, data.into_boxed_slice())

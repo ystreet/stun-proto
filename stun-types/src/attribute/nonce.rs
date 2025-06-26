@@ -36,7 +36,7 @@ impl Attribute for Nonce {
 }
 
 impl AttributeWrite for Nonce {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         RawAttribute::new(Nonce::TYPE, self.nonce.as_bytes())
     }
 

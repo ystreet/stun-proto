@@ -36,7 +36,7 @@ impl Attribute for AlternateServer {
 }
 
 impl AttributeWrite for AlternateServer {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         self.addr.to_raw(AlternateServer::TYPE)
     }
     fn write_into_unchecked(&self, dest: &mut [u8]) {
@@ -139,7 +139,7 @@ impl TryFrom<&RawAttribute<'_>> for AlternateDomain {
     }
 }
 impl AttributeWrite for AlternateDomain {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         RawAttribute::new(AlternateDomain::TYPE, self.domain.as_bytes())
     }
     fn write_into_unchecked(&self, dest: &mut [u8]) {

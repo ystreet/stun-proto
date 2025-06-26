@@ -36,7 +36,7 @@ impl Attribute for Software {
 }
 
 impl AttributeWrite for Software {
-    fn to_raw(&self) -> RawAttribute {
+    fn to_raw(&self) -> RawAttribute<'_> {
         RawAttribute::new(Software::TYPE, self.software.as_bytes())
     }
 
