@@ -42,3 +42,6 @@ harness = false
 [[bench]]
 name = "attribute_write"
 harness = false
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)'] }
