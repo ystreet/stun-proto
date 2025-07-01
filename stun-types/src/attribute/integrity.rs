@@ -15,7 +15,7 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-use tracing::error;
+use tracing::{debug, error};
 
 /// The MessageIntegrity [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,7 +148,7 @@ impl MessageIntegrity {
         })?;
         hmac.update(data);
         hmac.verify_slice(expected).map_err(|_| {
-            error!("integrity check failed");
+            debug!("integrity check failed");
             StunParseError::IntegrityCheckFailed
         })
     }
