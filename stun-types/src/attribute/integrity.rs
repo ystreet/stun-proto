@@ -316,7 +316,7 @@ impl MessageIntegritySha256 {
         })?;
         hmac.update(data);
         hmac.verify_truncated_left(expected).map_err(|_| {
-            error!("integrity check failed");
+            debug!("integrity check failed");
             StunParseError::IntegrityCheckFailed
         })
     }
