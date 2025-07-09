@@ -200,8 +200,11 @@ impl StunAgent {
     /// Provide data received on a socket from a peer for handling by the [`StunAgent`].
     /// The returned value indicates what the caller must do with the data.
     ///
-    /// If this function returns [`HandleStunReply::StunResponse`], then this agent needs to be
+    /// If this function returns [`HandleStunReply::ValidatedStunResponse`], then this agent needs to be
     /// `poll()`ed again.
+    ///
+    /// If this function returns [`HandleStunReply::UnvalidatedStunResponse`], and the user handles
+    /// the request in some way, then [`StunAgent::remove_outstanding_request()`] must be called.
     #[tracing::instrument(
         name = "stun_handle_message"
         skip(self, msg, from),
@@ -221,13 +224,13 @@ impl StunAgent {
                     match msg.validate_integrity(remote_creds) {
                         Ok(_) => {
                             self.validated_peer(from);
-                            HandleStunReply::StunResponse(msg)
+                            HandleStunReply::ValidatedStunResponse(msg)
                         }
                         Err(e) => {
                             debug!("message failed integrity check: {:?}", e);
                             self.outstanding_requests
                                 .insert(msg.transaction_id(), request);
-                            HandleStunReply::Drop
+                            HandleStunReply::UnvalidatedStunResponse(msg)
                         }
                     }
                 } else {
@@ -235,12 +238,12 @@ impl StunAgent {
                     debug!("no remote credentials, ignoring");
                     self.outstanding_requests
                         .insert(msg.transaction_id(), request);
-                    HandleStunReply::Drop
+                    HandleStunReply::UnvalidatedStunResponse(msg)
                 }
             } else {
                 // original message didn't have integrity, reply doesn't need to either
                 self.validated_peer(from);
-                HandleStunReply::StunResponse(msg)
+                HandleStunReply::ValidatedStunResponse(msg)
             }
         } else {
             self.validated_peer(from);
@@ -261,6 +264,13 @@ impl StunAgent {
             trace!("no outstanding request");
             None
         }
+    }
+
+    /// Remove an outstanding request from being handled any further.
+    ///
+    /// Particularly useful when handling [`HandleStunReply::UnvalidatedStunResponse`]
+    pub fn remove_outstanding_request(&mut self, transaction_id: TransactionId) -> bool {
+        self.take_outstanding_request(&transaction_id).is_some()
     }
 
     /// Retrieve a reference to an outstanding STUN request. Outstanding requests are kept until
@@ -912,9 +922,14 @@ impl StunRequestMut<'_> {
 /// Return value when handling possible STUN data
 #[derive(Debug)]
 pub enum HandleStunReply<'a> {
-    /// The provided data could be parsed as a response to an outstanding request
-    StunResponse(Message<'a>),
-    /// The provided data could be parsed as a STUN message
+    /// The provided data could be parsed as a response to an outstanding request.
+    ValidatedStunResponse(Message<'a>),
+    /// The provided data could be parsed as an unvalidated response to an outstanding request.
+    ///
+    /// Care must be taken when handling this message as the credentials used do not match the
+    /// agent's remote credentials and could represent an attack.
+    UnvalidatedStunResponse(Message<'a>),
+    /// The provided data could be parsed as a STUN message.
     IncomingStun(Message<'a>),
     /// Drop this message.
     Drop,
@@ -1010,7 +1025,7 @@ pub(crate) mod tests {
         let resp_data = response.build();
         let response = Message::from_bytes(&resp_data).unwrap();
         let ret = agent.handle_stun(response, remote_addr);
-        assert!(matches!(ret, HandleStunReply::StunResponse(_)));
+        assert!(matches!(ret, HandleStunReply::ValidatedStunResponse(_)));
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
 
@@ -1093,7 +1108,7 @@ pub(crate) mod tests {
         let response = Message::from_bytes(&data).unwrap();
         println!("{response}");
         let reply = agent.handle_stun(response, to);
-        let HandleStunReply::StunResponse(response) = reply else {
+        let HandleStunReply::ValidatedStunResponse(response) = reply else {
             unreachable!();
         };
 
@@ -1277,7 +1292,7 @@ pub(crate) mod tests {
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
 
-        assert!(matches!(reply, HandleStunReply::StunResponse(_)));
+        assert!(matches!(reply, HandleStunReply::ValidatedStunResponse(_)));
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
         assert!(agent.is_validated_peer(remote_addr));
@@ -1315,9 +1330,16 @@ pub(crate) mod tests {
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
         // reply is ignored as it does not have credentials
-        assert!(matches!(reply, HandleStunReply::Drop));
+        assert!(matches!(reply, HandleStunReply::UnvalidatedStunResponse(_)));
         assert!(agent.request_transaction(transaction_id).is_some());
         assert!(agent.mut_request_transaction(transaction_id).is_some());
+
+        // removing the request, causes the transaction to be unretrievable
+        assert!(agent.remove_outstanding_request(transaction_id));
+        assert!(!agent.remove_outstanding_request(transaction_id));
+
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
 
         // unvalidated peer data should be dropped
         assert!(!agent.is_validated_peer(remote_addr));
@@ -1353,9 +1375,16 @@ pub(crate) mod tests {
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
         // reply is ignored as it does not have credentials
-        assert!(matches!(reply, HandleStunReply::Drop));
+        assert!(matches!(reply, HandleStunReply::UnvalidatedStunResponse(_)));
         assert!(agent.request_transaction(transaction_id).is_some());
         assert!(agent.mut_request_transaction(transaction_id).is_some());
+
+        // removing the request, causes the transaction to be unretrievable
+        assert!(agent.remove_outstanding_request(transaction_id));
+        assert!(!agent.remove_outstanding_request(transaction_id));
+
+        assert!(agent.request_transaction(transaction_id).is_none());
+        assert!(agent.mut_request_transaction(transaction_id).is_none());
 
         // unvalidated peer data should be dropped
         assert!(!agent.is_validated_peer(remote_addr));
@@ -1374,6 +1403,7 @@ pub(crate) mod tests {
         agent.set_remote_credentials(remote_credentials.into());
 
         let mut msg = Message::builder_request(BINDING);
+        let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent
@@ -1396,7 +1426,9 @@ pub(crate) mod tests {
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
         // reply is ignored as it does not have credentials
-        assert!(matches!(reply, HandleStunReply::Drop));
+        assert!(matches!(reply, HandleStunReply::UnvalidatedStunResponse(_)));
+        assert!(agent.remove_outstanding_request(transaction_id));
+        assert!(!agent.remove_outstanding_request(transaction_id));
 
         // unvalidated peer data should be dropped
         assert!(!agent.is_validated_peer(remote_addr));
@@ -1427,7 +1459,7 @@ pub(crate) mod tests {
         let to = transmit.to;
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
-        assert!(matches!(reply, HandleStunReply::StunResponse(_)));
+        assert!(matches!(reply, HandleStunReply::ValidatedStunResponse(_)));
 
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
@@ -1536,7 +1568,7 @@ pub(crate) mod tests {
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
 
-        let HandleStunReply::StunResponse(response) = reply else {
+        let HandleStunReply::ValidatedStunResponse(response) = reply else {
             unreachable!();
         };
         assert_eq!(response.transaction_id(), transaction_id);

@@ -62,7 +62,7 @@
 //!
 //! // If running over TCP then there may be multiple messages parsed. However UDP will only ever
 //! // have a single message per datagram.
-//! assert!(matches!(reply, HandleStunReply::StunResponse(_)));
+//! assert!(matches!(reply, HandleStunReply::ValidatedStunResponse(_)));
 //!
 //! // Once valid STUN data has been sent and received, then data can be sent and received from the
 //! // peer.
