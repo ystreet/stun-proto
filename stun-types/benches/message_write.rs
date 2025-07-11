@@ -9,25 +9,24 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use stun_types::attribute::*;
 use stun_types::message::{
-    IntegrityAlgorithm, Message, MessageBuilder, MessageIntegrityCredentials, ShortTermCredentials,
-    TransactionId, BINDING,
+    IntegrityAlgorithm, Message, MessageHeader, MessageIntegrityCredentials, MessageWriteMutSlice,
+    MessageWriteVec, ShortTermCredentials, TransactionId, BINDING,
 };
-
-fn builder_with_attribute(attr: &dyn AttributeWrite) -> MessageBuilder {
-    let mut msg = Message::builder_request(BINDING);
-    msg.add_attribute(attr).unwrap();
-    msg
-}
+use stun_types::prelude::*;
 
 fn build_with_attribute(attr: &dyn AttributeWrite) {
-    let mut msg = Message::builder_request(BINDING);
+    let mut msg = Message::builder_request(
+        BINDING,
+        MessageWriteVec::with_capacity(MessageHeader::LENGTH + attr.padded_len()),
+    );
     msg.add_attribute(attr).unwrap();
-    let _data = msg.build();
+    let _data = msg.finish();
 }
 
 fn write_into_with_attribute(attr: &dyn AttributeWrite, dest: &mut [u8]) {
-    let msg = builder_with_attribute(attr);
-    msg.write_into(dest).unwrap();
+    let mut msg = Message::builder_request(BINDING, MessageWriteMutSlice::new(dest));
+    msg.add_attribute(attr).unwrap();
+    msg.finish();
 }
 
 fn bench_message_write(c: &mut Criterion) {
@@ -47,41 +46,46 @@ fn bench_message_write(c: &mut Criterion) {
     let mut group = c.benchmark_group("Message/Build");
 
     group.throughput(criterion::Throughput::Bytes(
-        builder_with_attribute(&software).build().len() as u64,
+        MessageHeader::LENGTH as u64 + software.padded_len() as u64,
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("Software"),
         &software,
         |b, software| b.iter(|| build_with_attribute(software)),
     );
-    group.bench_with_input(
-        BenchmarkId::from_parameter("Attributes/9"),
-        &(
-            &software,
-            &xor_mapped_address,
-            &nonce,
-            &alt_server,
-            &alt_domain,
-            &priority,
-            &controlled,
-            &controlling,
-            &use_candidate,
-        ),
-        |b, attrs| {
-            b.iter(|| {
-                let mut msg = builder_with_attribute(attrs.0);
-                msg.add_attribute(attrs.1).unwrap();
-                msg.add_attribute(attrs.2).unwrap();
-                msg.add_attribute(attrs.3).unwrap();
-                msg.add_attribute(attrs.4).unwrap();
-                msg.add_attribute(attrs.5).unwrap();
-                msg.add_attribute(attrs.6).unwrap();
-                msg.add_attribute(attrs.7).unwrap();
-                msg.add_attribute(attrs.8).unwrap();
-                msg.build();
-            })
-        },
-    );
+    let attrs: [&dyn AttributeWrite; 9] = [
+        &software,
+        &xor_mapped_address,
+        &nonce,
+        &alt_server,
+        &alt_domain,
+        &priority,
+        &controlled,
+        &controlling,
+        &use_candidate,
+    ];
+    for i in 2..=attrs.len() {
+        let len = MessageHeader::LENGTH as u64
+            + attrs.iter().map(|attr| attr.padded_len()).sum::<usize>() as u64;
+        group.throughput(criterion::Throughput::Bytes(len));
+        group.bench_with_input(
+            BenchmarkId::new("Attributes", i),
+            &attrs[..i],
+            |b, attrs| {
+                b.iter(|| {
+                    let mut msg =
+                        Message::builder_request(BINDING, MessageWriteVec::with_capacity(128));
+                    for attr in attrs {
+                        msg.add_attribute(*attr).unwrap();
+                    }
+                    msg.finish()
+                })
+            },
+        );
+    }
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64,
+    ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress"),
         &xor_mapped_address,
@@ -89,40 +93,52 @@ fn bench_message_write(c: &mut Criterion) {
             b.iter(|| build_with_attribute(xor_mapped_address));
         },
     );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 8,
+    ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+Fingerprint"),
         &xor_mapped_address,
         |b, xor_mapped_address| {
             b.iter(|| {
-                let mut msg = builder_with_attribute(xor_mapped_address);
+                let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(32));
+                msg.add_attribute(xor_mapped_address).unwrap();
                 msg.add_fingerprint().unwrap();
-                msg.build();
+                msg.finish();
             })
         },
     );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 32,
+    ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha1+Fingerprint"),
         &(&xor_mapped_address, &short_term_integrity),
         |b, &(xor_mapped_address, short_term_integrity)| {
             b.iter(|| {
-                let mut msg = builder_with_attribute(xor_mapped_address);
+                let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(64));
+                msg.add_attribute(xor_mapped_address).unwrap();
                 msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha1)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
-                msg.build();
+                msg.finish();
             })
         },
     );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 42,
+    ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha256+Fingerprint"),
         &(&xor_mapped_address, &short_term_integrity),
         |b, &(xor_mapped_address, short_term_integrity)| {
             b.iter(|| {
-                let mut msg = builder_with_attribute(xor_mapped_address);
+                let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(64));
+                msg.add_attribute(xor_mapped_address).unwrap();
                 msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha256)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
-                msg.build();
+                msg.finish();
             })
         },
     );
@@ -132,41 +148,43 @@ fn bench_message_write(c: &mut Criterion) {
     let mut scratch = vec![0; 1 << 8];
 
     group.throughput(criterion::Throughput::Bytes(
-        builder_with_attribute(&software).build().len() as u64,
+        MessageHeader::LENGTH as u64 + software.padded_len() as u64,
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("Software"),
         &software,
         |b, software| b.iter(|| write_into_with_attribute(software, &mut scratch)),
     );
-    group.bench_with_input(
-        BenchmarkId::from_parameter("Attributes/9"),
-        &(
-            &software,
-            &xor_mapped_address,
-            &nonce,
-            &alt_server,
-            &alt_domain,
-            &priority,
-            &controlled,
-            &controlling,
-            &use_candidate,
-        ),
-        |b, attrs| {
-            b.iter(|| {
-                let mut msg = builder_with_attribute(attrs.0);
-                msg.add_attribute(attrs.1).unwrap();
-                msg.add_attribute(attrs.2).unwrap();
-                msg.add_attribute(attrs.3).unwrap();
-                msg.add_attribute(attrs.4).unwrap();
-                msg.add_attribute(attrs.5).unwrap();
-                msg.add_attribute(attrs.6).unwrap();
-                msg.add_attribute(attrs.7).unwrap();
-                msg.add_attribute(attrs.8).unwrap();
-                msg.write_into(&mut scratch).unwrap();
-            })
-        },
-    );
+    let attrs: [&dyn AttributeWrite; 9] = [
+        &software,
+        &xor_mapped_address,
+        &nonce,
+        &alt_server,
+        &alt_domain,
+        &priority,
+        &controlled,
+        &controlling,
+        &use_candidate,
+    ];
+    for i in 2..=attrs.len() {
+        group.bench_with_input(
+            BenchmarkId::new("Attributes", i),
+            &attrs[..i],
+            |b, attrs| {
+                b.iter(|| {
+                    let mut msg =
+                        Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
+                    for attr in attrs {
+                        msg.add_attribute(*attr).unwrap();
+                    }
+                    msg.finish();
+                })
+            },
+        );
+    }
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64,
+    ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress"),
         &xor_mapped_address,
@@ -174,40 +192,55 @@ fn bench_message_write(c: &mut Criterion) {
             b.iter(|| write_into_with_attribute(xor_mapped_address, &mut scratch));
         },
     );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 8,
+    ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+Fingerprint"),
         &xor_mapped_address,
         |b, xor_mapped_address| {
             b.iter(|| {
-                let mut msg = builder_with_attribute(xor_mapped_address);
+                let mut msg =
+                    Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
+                msg.add_attribute(xor_mapped_address).unwrap();
                 msg.add_fingerprint().unwrap();
-                msg.write_into(&mut scratch).unwrap();
+                msg.finish();
             })
         },
     );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 32,
+    ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha1+Fingerprint"),
         &(&xor_mapped_address, &short_term_integrity),
         |b, &(xor_mapped_address, short_term_integrity)| {
             b.iter(|| {
-                let mut msg = builder_with_attribute(xor_mapped_address);
+                let mut msg =
+                    Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
+                msg.add_attribute(xor_mapped_address).unwrap();
                 msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha1)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
-                msg.write_into(&mut scratch).unwrap();
+                msg.finish();
             })
         },
     );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 42,
+    ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha256+Fingerprint"),
         &(&xor_mapped_address, &short_term_integrity),
         |b, &(xor_mapped_address, short_term_integrity)| {
             b.iter(|| {
-                let mut msg = builder_with_attribute(xor_mapped_address);
+                let mut msg =
+                    Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
+                msg.add_attribute(xor_mapped_address).unwrap();
                 msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha256)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
-                msg.write_into(&mut scratch).unwrap();
+                msg.finish();
             })
         },
     );

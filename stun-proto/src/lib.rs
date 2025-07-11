@@ -24,9 +24,9 @@
 //! use stun_proto::types::TransportType;
 //! use stun_proto::types::attribute::{MessageIntegrity, XorMappedAddress};
 //! use stun_proto::types::message::{
-//!     BINDING, IntegrityAlgorithm, Message, MessageIntegrityCredentials, ShortTermCredentials
+//!     BINDING, IntegrityAlgorithm, Message, MessageIntegrityCredentials, MessageWriteVec, ShortTermCredentials
 //! };
-//! use stun_proto::prelude::*;
+//! use stun_proto::types::prelude::*;
 //! use stun_proto::agent::{HandleStunReply, StunAgent};
 //!
 //! let local_addr = "10.0.0.1:12345".parse().unwrap();
@@ -41,21 +41,21 @@
 //! agent.set_remote_credentials(remote_credentials.clone().into());
 //!
 //! // and we can send a Message
-//! let mut msg = Message::builder_request(BINDING);
+//! let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
 //! msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
-//! let transmit = agent.send_request(msg, remote_addr, Instant::now()).unwrap();
+//! let transmit = agent.send_request(msg.finish(), remote_addr, Instant::now()).unwrap();
 //!
 //! // The transmit struct indicates what data and where to send it.
 //! let request = Message::from_bytes(&transmit.data).unwrap();
 //!
-//! let mut response = Message::builder_success(&request);
+//! let mut response = Message::builder_success(&request, MessageWriteVec::new());
 //! let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
 //! response.add_attribute(&xor_addr).unwrap();
 //! response.add_message_integrity(&remote_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
 //!
 //! // when receiving data on the associated socket, we should pass it through the Agent so it can
 //! // parse and handle any STUN messages.
-//! let data = response.build();
+//! let data = response.finish();
 //! let to = transmit.to;
 //! let response = Message::from_bytes(&data).unwrap();
 //! let reply = agent.handle_stun(response, to);
@@ -103,9 +103,7 @@ impl<T> DebugWrapper<T> {
 }
 
 /// Public prelude
-pub mod prelude {
-    pub use crate::agent::DelayedTransmitBuild;
-}
+pub mod prelude {}
 
 #[cfg(test)]
 pub(crate) mod tests {

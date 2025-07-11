@@ -10,14 +10,9 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use std::time::Instant;
 use stun_proto::agent::StunAgent;
 use stun_types::attribute::*;
-use stun_types::message::{Message, MessageBuilder, BINDING};
+use stun_types::message::{Message, MessageHeader, MessageWriteVec, BINDING};
+use stun_types::prelude::{MessageWrite, MessageWriteExt};
 use stun_types::TransportType;
-
-fn builder_with_attribute(attr: &dyn AttributeWrite) -> MessageBuilder {
-    let mut msg = Message::builder_request(BINDING);
-    msg.add_attribute(attr).unwrap();
-    msg
-}
 
 fn bench_agent_recv(c: &mut Criterion) {
     let local_addr = "127.0.0.1:1000".parse().unwrap();
@@ -28,15 +23,19 @@ fn bench_agent_recv(c: &mut Criterion) {
     let mut group = c.benchmark_group("Agent/Recv");
 
     group.throughput(criterion::Throughput::Bytes(
-        builder_with_attribute(&software).build().len() as u64,
+        MessageHeader::LENGTH as u64 + software.padded_len() as u64,
     ));
     let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
-    let builder = builder_with_attribute(&software);
+    let builder = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     let _ = agent.send_request(builder, remote_addr, now).unwrap();
 
     group.bench_with_input("Message/Software", &software, move |b, software| {
         b.iter_batched(
-            || builder_with_attribute(software).build(),
+            || {
+                let mut builder = Message::builder_request(BINDING, MessageWriteVec::new());
+                builder.add_attribute(software).unwrap();
+                builder.finish()
+            },
             |data| {
                 let msg = Message::from_bytes(&data).unwrap();
                 let _ = agent.handle_stun(msg, local_addr);
