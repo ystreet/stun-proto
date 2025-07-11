@@ -36,6 +36,7 @@ fn parse_response(response: Message) -> Result<(), std::io::Error> {
             AttributeType::new(1),
         ],
         &[XorMappedAddress::TYPE],
+        MessageWriteVec::new(),
     )
     .is_some()
     {
@@ -65,11 +66,11 @@ fn parse_response(response: Message) -> Result<(), std::io::Error> {
     }
 }
 
-fn tcp_message(out: MessageBuilder<'_>, to: SocketAddr) -> Result<(), std::io::Error> {
+fn tcp_message(out: MessageWriteVec, to: SocketAddr) -> Result<(), std::io::Error> {
     let mut socket = TcpStream::connect(to).unwrap();
 
     info!("generated to {:?}", out);
-    let buf = out.build();
+    let buf = out.finish();
     trace!("generated to {:?}", buf);
     socket.write_all(&buf)?;
     let mut buf = [0; 1500];
@@ -123,11 +124,11 @@ fn tcp_message(out: MessageBuilder<'_>, to: SocketAddr) -> Result<(), std::io::E
     parse_response(msg)
 }
 
-fn udp_message(out: MessageBuilder<'_>, to: SocketAddr) -> Result<(), std::io::Error> {
+fn udp_message(out: MessageWriteVec, to: SocketAddr) -> Result<(), std::io::Error> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
 
     info!("generated to {:?}", out);
-    let buf = out.build();
+    let buf = out.finish();
     trace!("generated to {:?}", buf);
     socket.send_to(&buf, to)?;
     let mut buf = [0; 1500];
@@ -190,7 +191,7 @@ fn main() -> std::io::Result<()> {
     .unwrap();
 
     println!("sending STUN message over {:?} to {}", proto, to);
-    let mut msg = Message::builder_request(BINDING);
+    let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
     msg.add_fingerprint().unwrap();
 
     match proto {

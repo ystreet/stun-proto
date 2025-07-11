@@ -79,6 +79,7 @@ pub mod prelude {
         Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeWrite,
         AttributeWriteExt,
     };
+    pub use crate::message::{MessageWrite, MessageWriteExt};
 }
 
 #[cfg(test)]

@@ -11,15 +11,10 @@ use std::time::Instant;
 use stun_proto::agent::StunAgent;
 use stun_types::attribute::*;
 use stun_types::message::{
-    Message, MessageBuilder, MessageClass, MessageType, TransactionId, BINDING,
+    Message, MessageClass, MessageHeader, MessageType, MessageWriteVec, TransactionId, BINDING,
 };
+use stun_types::prelude::*;
 use stun_types::TransportType;
-
-fn builder_with_attribute(attr: &dyn AttributeWrite) -> MessageBuilder {
-    let mut msg = Message::builder_request(BINDING);
-    msg.add_attribute(attr).unwrap();
-    msg
-}
 
 fn bench_agent_send(c: &mut Criterion) {
     let local_addr = "127.0.0.1:1000".parse().unwrap();
@@ -30,26 +25,33 @@ fn bench_agent_send(c: &mut Criterion) {
     let mut group = c.benchmark_group("Agent/Send");
 
     group.throughput(criterion::Throughput::Bytes(
-        builder_with_attribute(&software).build().len() as u64,
+        MessageHeader::LENGTH as u64 + software.padded_len() as u64 + 8,
     ));
-    let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
-    group.bench_with_input("Message/Request/Software", &software, move |b, software| {
-        b.iter_batched(
-            || {
-                let mut msg = Message::builder_request(BINDING);
-                msg.add_attribute(software).unwrap();
-                msg
-            },
-            |msg| {
-                let _ = agent.send_request(msg, remote_addr, now).unwrap();
-            },
-            BatchSize::SmallInput,
-        )
-    });
-
-    let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
     group.bench_with_input(
-        "Message/Indication/Software",
+        "Message/Request/Software+Fingerprint",
+        &software,
+        move |b, software| {
+            b.iter_batched(
+                || {
+                    let agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+                    let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+                    msg.add_attribute(software).unwrap();
+                    msg.add_fingerprint().unwrap();
+                    (agent, msg.finish())
+                },
+                |(mut agent, msg)| {
+                    let _ = agent.send_request(msg, remote_addr, now).unwrap();
+                },
+                BatchSize::SmallInput,
+            )
+        },
+    );
+
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + software.padded_len() as u64 + 8,
+    ));
+    group.bench_with_input(
+        "Message/Indication/Software+Fingerprint",
         &software,
         move |b, software| {
             b.iter_batched(
@@ -58,11 +60,14 @@ fn bench_agent_send(c: &mut Criterion) {
                     let mut msg = Message::builder(
                         MessageType::from_class_method(MessageClass::Indication, BINDING),
                         transaction_id,
+                        MessageWriteVec::new(),
                     );
                     msg.add_attribute(software).unwrap();
-                    msg
+                    msg.add_fingerprint().unwrap();
+                    let agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+                    (agent, msg.finish())
                 },
-                |msg| {
+                |(mut agent, msg)| {
                     let _ = agent.send(msg, remote_addr, now).unwrap();
                 },
                 BatchSize::SmallInput,

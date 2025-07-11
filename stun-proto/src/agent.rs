@@ -134,32 +134,47 @@ impl StunAgent {
     ///
     /// The returned [`Transmit`] must be sent to the respective peer after this call.
     #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
-    pub fn send<'a>(
+    pub fn send<T: AsRef<[u8]>>(
         &mut self,
-        msg: MessageBuilder<'a>,
+        msg: T,
         to: SocketAddr,
         now: Instant,
-    ) -> Result<TransmitBuild<MessageBuilder<'a>>, StunError> {
-        assert!(!msg.has_class(MessageClass::Request));
-        Ok(TransmitBuild::new(msg, self.transport, self.local_addr, to))
+    ) -> Result<Transmit<T>, StunError> {
+        let data = msg.as_ref();
+        let hdr = MessageHeader::from_bytes(data)?;
+        assert!(!hdr.get_type().has_class(MessageClass::Request));
+        Ok(Transmit::new(msg, self.transport, self.local_addr, to))
     }
 
     /// Perform any operations needed to be able to send a request [`Message`] to a peer.
     ///
     /// The returned [`Transmit`] must be sent to the respective peer after this call.
     #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
-    pub fn send_request<'a>(
+    pub fn send_request<'a, T: AsRef<[u8]>>(
         &'a mut self,
-        msg: MessageBuilder<'_>,
+        msg: T,
         to: SocketAddr,
         now: Instant,
     ) -> Result<Transmit<Data<'a>>, StunError> {
-        assert!(msg.has_class(MessageClass::Request));
-        let transaction_id = msg.transaction_id();
+        let data = msg.as_ref();
+        let hdr = MessageHeader::from_bytes(data)?;
+        assert!(hdr.get_type().has_class(MessageClass::Request));
+        let transaction_id = hdr.transaction_id();
         let state = match self.outstanding_requests.entry(transaction_id) {
-            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(
-                StunRequestState::new(msg, self.transport, self.local_addr, to),
-            ),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let has_credentials = MessageAttributesIter::new(data).any(|attr| {
+                    [MessageIntegrity::TYPE, MessageIntegritySha256::TYPE]
+                        .contains(&attr.get_type())
+                });
+                entry.insert(StunRequestState::new(
+                    msg,
+                    self.transport,
+                    self.local_addr,
+                    to,
+                    transaction_id,
+                    has_credentials,
+                ))
+            }
             std::collections::hash_map::Entry::Occupied(_entry) => {
                 return Err(StunError::AlreadyInProgress);
             }
@@ -234,8 +249,7 @@ impl StunAgent {
                         }
                     }
                 } else {
-                    // XXX: may need to return this as 'Unvalididated'.
-                    debug!("no remote credentials, ignoring");
+                    debug!("no remote credentials");
                     self.outstanding_requests
                         .insert(msg.transaction_id(), request);
                     HandleStunReply::UnvalidatedStunResponse(msg)
@@ -269,6 +283,8 @@ impl StunAgent {
     /// Remove an outstanding request from being handled any further.
     ///
     /// Particularly useful when handling [`HandleStunReply::UnvalidatedStunResponse`]
+    ///
+    /// Returns whether the request was successfully removed.
     pub fn remove_outstanding_request(&mut self, transaction_id: TransactionId) -> bool {
         self.take_outstanding_request(&transaction_id).is_some()
     }
@@ -373,25 +389,6 @@ impl StunAgent {
     }
 }
 
-/// Enum for either a message builder or a blob of data.
-#[derive(Debug)]
-pub enum TransmitMessageOrData<'a> {
-    /// A sequence of bytes.
-    Data(Data<'a>),
-    /// A yet to be constructed message.
-    Message(MessageBuilder<'a>),
-}
-
-impl TransmitMessageOrData<'_> {
-    /// Create an owned copy.
-    pub fn into_owned<'b>(self) -> TransmitMessageOrData<'b> {
-        match self {
-            Self::Data(data) => TransmitMessageOrData::Data(data.into_owned()),
-            Self::Message(msg) => TransmitMessageOrData::Message(msg.into_owned()),
-        }
-    }
-}
-
 /// Return value for [`StunAgent::poll`]
 #[derive(Debug)]
 pub enum StunAgentPollRet {
@@ -486,137 +483,6 @@ impl From<Vec<u8>> for TcpBuffer {
     }
 }
 
-/// A trait for delaying building a byte sequence for transmission
-pub trait DelayedTransmitBuild: std::fmt::Debug {
-    /// Write the packet in to a new Vec.
-    fn build(self) -> Vec<u8>;
-    /// The length of any generated data
-    fn len(&self) -> usize;
-    /// Whether the resulting data would be empty
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-    /// Write the data into a provided output buffer. Returns the number of bytes written.
-    fn write_into(self, data: &mut [u8]) -> usize;
-}
-
-impl DelayedTransmitBuild for Data<'_> {
-    fn build(self) -> Vec<u8> {
-        self.to_vec()
-    }
-
-    fn len(&self) -> usize {
-        (*self).as_ref().len()
-    }
-
-    fn write_into(self, data: &mut [u8]) -> usize {
-        let len = self.len();
-        data[..len].copy_from_slice(&self);
-        len
-    }
-}
-
-impl DelayedTransmitBuild for Box<[u8]> {
-    fn build(self) -> Vec<u8> {
-        self.to_vec()
-    }
-
-    fn len(&self) -> usize {
-        std::ops::Deref::deref(self).len()
-    }
-
-    fn write_into(self, data: &mut [u8]) -> usize {
-        let len = self.len();
-        data[..len].copy_from_slice(&self);
-        len
-    }
-}
-
-impl DelayedTransmitBuild for Vec<u8> {
-    fn build(self) -> Vec<u8> {
-        self
-    }
-
-    fn len(&self) -> usize {
-        (*self).len()
-    }
-
-    fn write_into(self, data: &mut [u8]) -> usize {
-        let len = self.len();
-        data[..len].copy_from_slice(&self);
-        len
-    }
-}
-
-impl DelayedTransmitBuild for &[u8] {
-    fn build(self) -> Vec<u8> {
-        self.to_vec()
-    }
-
-    fn len(&self) -> usize {
-        (*self).len()
-    }
-
-    fn write_into(self, data: &mut [u8]) -> usize {
-        let len = self.len();
-        data[..len].copy_from_slice(self);
-        len
-    }
-}
-
-impl<const N: usize> DelayedTransmitBuild for [u8; N] {
-    fn build(self) -> Vec<u8> {
-        self.to_vec()
-    }
-
-    fn len(&self) -> usize {
-        N
-    }
-
-    fn write_into(self, data: &mut [u8]) -> usize {
-        let len = self.len();
-        data[..len].copy_from_slice(&self);
-        len
-    }
-}
-
-impl DelayedTransmitBuild for MessageBuilder<'_> {
-    fn build(self) -> Vec<u8> {
-        MessageBuilder::build(&self)
-    }
-
-    fn len(&self) -> usize {
-        self.byte_len()
-    }
-
-    fn write_into(self, data: &mut [u8]) -> usize {
-        MessageBuilder::write_into(&self, data).unwrap()
-    }
-}
-
-impl DelayedTransmitBuild for TransmitMessageOrData<'_> {
-    fn build(self) -> Vec<u8> {
-        match self {
-            Self::Data(data) => data.build(),
-            Self::Message(msg) => msg.build(),
-        }
-    }
-
-    fn len(&self) -> usize {
-        match self {
-            Self::Data(data) => data.len(),
-            Self::Message(msg) => msg.len(),
-        }
-    }
-
-    fn write_into(self, dest: &mut [u8]) -> usize {
-        match self {
-            Self::Data(data) => data.write_into(dest),
-            Self::Message(msg) => msg.write_into(dest),
-        }
-    }
-}
-
 /// A piece of data that needs to, or has been transmitted
 #[derive(Debug)]
 pub struct Transmit<T: AsRef<[u8]>> {
@@ -654,43 +520,6 @@ impl Transmit<Data<'_>> {
     }
 }
 
-/// A piece of data that needs to be built before it can be transmitted.
-#[derive(Debug)]
-pub struct TransmitBuild<T: DelayedTransmitBuild> {
-    /// The data blob
-    pub data: T,
-    /// The transport for the transmission
-    pub transport: TransportType,
-    /// The source address of the transmission
-    pub from: SocketAddr,
-    /// The destination address of the transmission
-    pub to: SocketAddr,
-}
-
-impl<T: DelayedTransmitBuild> TransmitBuild<T> {
-    /// Construct a new [`Transmit`] with the specifid data and 5-tuple.
-    pub fn new(data: T, transport: TransportType, from: SocketAddr, to: SocketAddr) -> Self {
-        Self {
-            data,
-            transport,
-            from,
-            to,
-        }
-    }
-}
-
-impl TransmitBuild<TransmitMessageOrData<'_>> {
-    /// Construct a new owned [`Transmit`] from a provided [`Transmit`]
-    pub fn into_owned<'b>(self) -> TransmitBuild<TransmitMessageOrData<'b>> {
-        TransmitBuild {
-            data: self.data.into_owned(),
-            transport: self.transport,
-            from: self.from,
-            to: self.to,
-        }
-    }
-}
-
 /// Return value for [`StunRequest::poll`]
 #[derive(Debug)]
 enum StunRequestPollRet {
@@ -719,26 +548,27 @@ struct StunRequestState {
 }
 
 impl StunRequestState {
-    fn new(
-        request: MessageBuilder<'_>,
+    fn new<T: AsRef<[u8]>>(
+        request: T,
         transport: TransportType,
         from: SocketAddr,
         to: SocketAddr,
+        transaction_id: TransactionId,
+        has_credentials: bool,
     ) -> Self {
-        let data = MessageBuilder::build(&request);
+        let data = request.as_ref();
         let (timeouts_ms, last_retransmit_timeout_ms) = if transport == TransportType::Tcp {
             (vec![], 39500)
         } else {
             (vec![500, 1000, 2000, 4000, 8000, 16000], 8000)
         };
         Self {
-            transaction_id: request.transaction_id(),
-            bytes: data,
+            transaction_id,
+            bytes: data.to_vec(),
             transport,
             from,
             to,
-            request_had_credentials: request.has_attribute(MessageIntegrity::TYPE)
-                || request.has_attribute(MessageIntegritySha256::TYPE),
+            request_had_credentials: has_credentials,
             timeouts_ms,
             timeout_i: 0,
             last_retransmit_timeout_ms,
@@ -1011,18 +841,18 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
         let now = Instant::now();
         assert_eq!(transmit.transport, TransportType::Udp);
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
         let request = Message::from_bytes(&transmit.data).unwrap();
-        let response = Message::builder_error(&request);
-        let resp_data = response.build();
+        let response = Message::builder_error(&request, MessageWriteVec::new());
+        let resp_data = response.finish();
         let response = Message::from_bytes(&resp_data).unwrap();
         let ret = agent.handle_stun(response, remote_addr);
         assert!(matches!(ret, HandleStunReply::ValidatedStunResponse(_)));
@@ -1045,21 +875,24 @@ pub(crate) mod tests {
         let msg = Message::builder(
             MessageType::from_class_method(MessageClass::Indication, BINDING),
             transaction_id,
+            MessageWriteVec::new(),
         );
-        let transmit = agent.send(msg, remote_addr, Instant::now()).unwrap();
+        let transmit = agent
+            .send(msg.finish(), remote_addr, Instant::now())
+            .unwrap();
         assert_eq!(transmit.transport, TransportType::Udp);
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
-        let data = transmit.data.build();
-        let _indication = Message::from_bytes(&data).unwrap();
+        let _indication = Message::from_bytes(&transmit.data).unwrap();
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
         // you should definitely never do this ;). Indications should never get replies.
         let response = Message::builder(
             MessageType::from_class_method(MessageClass::Error, BINDING),
             transaction_id,
+            MessageWriteVec::new(),
         );
-        let resp_data = response.build();
+        let resp_data = response.finish();
         let response = Message::from_bytes(&resp_data).unwrap();
         // response without a request is dropped.
         let ret = agent.handle_stun(response, remote_addr);
@@ -1081,20 +914,20 @@ pub(crate) mod tests {
         // unvalidated peer data should be dropped
         assert!(!agent.is_validated_peer(remote_addr));
 
-        let mut msg = Message::builder_request(BINDING);
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         println!("send");
         let transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
         println!("sent");
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
         println!("generate response");
-        let mut response = Message::builder_success(&request);
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
         response.add_attribute(&xor_addr).unwrap();
         response
@@ -1102,7 +935,7 @@ pub(crate) mod tests {
             .unwrap();
         println!("{response:?}");
 
-        let data = response.build();
+        let data = response.finish();
         println!("{data:?}");
         let to = transmit.to;
         let response = Message::from_bytes(&data).unwrap();
@@ -1126,10 +959,10 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
         let mut now = Instant::now();
         loop {
@@ -1157,10 +990,10 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let mut now = Instant::now();
-        agent.send_request(msg, remote_addr, now).unwrap();
+        agent.send_request(msg.finish(), remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 2, Duration::from_secs(10));
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
@@ -1209,10 +1042,10 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let mut now = Instant::now();
-        agent.send_request(msg, remote_addr, now).unwrap();
+        agent.send_request(msg.finish(), remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 0, Duration::from_secs(10));
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
@@ -1240,10 +1073,10 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
             .remote_addr(remote_addr)
             .build();
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let mut now = Instant::now();
-        agent.send_request(msg, remote_addr, now).unwrap();
+        agent.send_request(msg.finish(), remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 3, Duration::from_secs(3));
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
@@ -1274,19 +1107,19 @@ pub(crate) mod tests {
         // unvalidated peer data should be dropped
         assert!(!agent.is_validated_peer(remote_addr));
 
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::builder_success(&request);
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
         response.add_attribute(&xor_addr).unwrap();
 
-        let data = response.build();
+        let data = response.finish();
         let to = transmit.to;
         trace!("data: {data:?}");
         let response = Message::from_bytes(&data).unwrap();
@@ -1310,22 +1143,21 @@ pub(crate) mod tests {
         agent.set_local_credentials(local_credentials.clone().into());
         agent.set_remote_credentials(remote_credentials.clone().into());
 
-        let mut msg = Message::builder_request(BINDING);
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
-        let data = transmit.data.build();
 
-        let request = Message::from_bytes(&data).unwrap();
+        let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::builder_success(&request);
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
         response.add_attribute(&xor_addr).unwrap();
 
-        let data = response.build();
+        let data = response.finish();
         let to = transmit.to;
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
@@ -1355,22 +1187,21 @@ pub(crate) mod tests {
         let local_credentials = ShortTermCredentials::new(String::from("local_password"));
         agent.set_local_credentials(local_credentials.clone().into());
 
-        let mut msg = Message::builder_request(BINDING);
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
-        let data = transmit.data.build();
 
-        let request = Message::from_bytes(&data).unwrap();
+        let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::builder_success(&request);
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
         response.add_attribute(&xor_addr).unwrap();
 
-        let data = response.build();
+        let data = response.finish();
         let to = transmit.to;
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
@@ -1402,18 +1233,18 @@ pub(crate) mod tests {
         agent.set_local_credentials(local_credentials.clone().into());
         agent.set_remote_credentials(remote_credentials.into());
 
-        let mut msg = Message::builder_request(BINDING);
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
-        let data = transmit.data.build();
+        let data = transmit.data;
 
         let request = Message::from_bytes(&data).unwrap();
 
-        let mut response = Message::builder_success(&request);
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
         response.add_attribute(&xor_addr).unwrap();
         // wrong credentials, should be `remote_credentials`
@@ -1421,7 +1252,7 @@ pub(crate) mod tests {
             .add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
 
-        let data = response.build();
+        let data = response.finish();
         let to = transmit.to;
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
@@ -1443,19 +1274,19 @@ pub(crate) mod tests {
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
         assert!(!agent.is_validated_peer(remote_addr));
 
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
-        let data = transmit.data.build();
+        let data = transmit.data;
 
         let request = Message::from_bytes(&data).unwrap();
 
-        let mut response = Message::builder_success(&request);
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
         response.add_attribute(&xor_addr).unwrap();
 
-        let data = response.build();
+        let data = response.finish();
         let to = transmit.to;
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
@@ -1474,10 +1305,10 @@ pub(crate) mod tests {
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let _transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
@@ -1504,10 +1335,10 @@ pub(crate) mod tests {
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let _transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
@@ -1543,15 +1374,16 @@ pub(crate) mod tests {
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
+        let msg = msg.finish();
         let transmit = agent
             .send_request(msg.clone(), remote_addr, Instant::now())
             .unwrap();
         let to = transmit.to;
         let request = Message::from_bytes(&transmit.data).unwrap();
 
-        let mut response = Message::builder_success(&request);
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
         let xor_addr = XorMappedAddress::new(transmit.from, transaction_id);
         response.add_attribute(&xor_addr).unwrap();
 
@@ -1564,7 +1396,7 @@ pub(crate) mod tests {
         let request = agent.request_transaction(transaction_id).unwrap();
         assert_eq!(request.peer_address(), remote_addr);
 
-        let data = response.build();
+        let data = response.finish();
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
 
@@ -1583,14 +1415,15 @@ pub(crate) mod tests {
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
-        let msg = Message::builder_request(BINDING);
-        let data = MessageBuilder::build(&msg);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let transaction_id = msg.transaction_id();
+        let data = msg.finish();
         let stun = Message::from_bytes(&data).unwrap();
         println!("{stun:?}");
         let HandleStunReply::IncomingStun(request) = agent.handle_stun(stun, remote_addr) else {
             unreachable!()
         };
-        assert_eq!(msg.transaction_id(), request.transaction_id());
+        assert_eq!(transaction_id, request.transaction_id());
         assert!(agent.is_validated_peer(remote_addr));
     }
 
@@ -1603,10 +1436,10 @@ pub(crate) mod tests {
             .remote_addr(remote_addr)
             .build();
 
-        let msg = Message::builder_request(BINDING);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let transmit = agent
-            .send_request(msg, remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::now())
             .unwrap();
         assert_eq!(transmit.transport, TransportType::Tcp);
         assert_eq!(transmit.from, local_addr);
@@ -1632,79 +1465,6 @@ pub(crate) mod tests {
         assert_eq!(tcp_buffer.pull_data().unwrap(), &data);
     }
 
-    fn check_delayed_transmit_build(dtb: impl DelayedTransmitBuild, expected: &[u8]) {
-        assert_eq!(dtb.len(), expected.len());
-        assert_eq!(&dtb.build(), expected);
-    }
-
-    fn check_delayed_transmit_write_into(dtb: impl DelayedTransmitBuild, expected: &[u8]) {
-        assert_eq!(dtb.len(), expected.len());
-        let mut output = vec![0; dtb.len()];
-        dtb.write_into(&mut output);
-        assert_eq!(&output, expected);
-    }
-
-    #[test]
-    fn delayed_transmit_vec() {
-        let data = vec![3; 8];
-        check_delayed_transmit_build(data.clone(), &data);
-        check_delayed_transmit_write_into(data.clone(), &data);
-    }
-
-    #[test]
-    fn delayed_transmit_u8slice() {
-        let data = [0x10, 0x20, 0x30];
-        check_delayed_transmit_build(data.as_slice(), data.as_slice());
-        check_delayed_transmit_write_into(data.as_slice(), data.as_slice());
-    }
-
-    #[test]
-    fn delayed_transmit_const_slice() {
-        let data = [0x10, 0x20, 0x30];
-        check_delayed_transmit_build(data, data.as_slice());
-        check_delayed_transmit_write_into(data, data.as_slice());
-    }
-
-    #[test]
-    fn delayed_transmit_box_slice() {
-        let data: Box<[u8]> = Box::from([0x10, 0x20, 0x30]);
-        check_delayed_transmit_build(data.clone(), data.as_ref());
-        check_delayed_transmit_write_into(data.clone(), data.as_ref());
-    }
-
-    #[test]
-    fn delayed_transmit_message_builder() {
-        let msg = Message::builder(
-            MessageType::from_class_method(MessageClass::Indication, 0x1),
-            TransactionId::generate(),
-        );
-        let data = MessageBuilder::build(&msg);
-        check_delayed_transmit_build(msg.clone(), data.as_ref());
-        check_delayed_transmit_write_into(msg.clone(), data.as_ref());
-    }
-
-    #[test]
-    fn delayed_transmit_message_or_data() {
-        let msg = Message::builder(
-            MessageType::from_class_method(MessageClass::Indication, 0x1),
-            TransactionId::generate(),
-        );
-        let data = MessageBuilder::build(&msg);
-        check_delayed_transmit_build(TransmitMessageOrData::Message(msg.clone()), data.as_ref());
-        check_delayed_transmit_write_into(
-            TransmitMessageOrData::Message(msg.clone()),
-            data.as_ref(),
-        );
-        check_delayed_transmit_build(
-            TransmitMessageOrData::Data(Data::from(data.as_ref())),
-            data.as_ref(),
-        );
-        check_delayed_transmit_write_into(
-            TransmitMessageOrData::Data(Data::from(data.as_ref())),
-            data.as_ref(),
-        );
-    }
-
     #[test]
     fn transmit_into_owned() {
         let data = [0x10, 0x20];
@@ -1714,26 +1474,6 @@ pub(crate) mod tests {
         let transmit = Transmit::new(Data::from(data.as_ref()), TransportType::Udp, from, to);
         let owned = transmit.into_owned();
         assert_eq!(owned.data.as_ref(), data.as_ref());
-        assert_eq!(owned.transport, transport);
-        assert_eq!(owned.from, from);
-        assert_eq!(owned.to, to);
-    }
-
-    #[test]
-    fn transmit_build_into_owned() {
-        let data = [0x10, 0x20];
-        let transport = TransportType::Udp;
-        let from = "127.0.0.1:1000".parse().unwrap();
-        let to = "127.0.0.1:2000".parse().unwrap();
-        let transmit = TransmitBuild::new(
-            TransmitMessageOrData::Data(Data::from(data.as_ref())),
-            TransportType::Udp,
-            from,
-            to,
-        );
-        let owned = transmit.into_owned();
-        let built = owned.data.build();
-        assert_eq!(&built, data.as_ref());
         assert_eq!(owned.transport, transport);
         assert_eq!(owned.from, from);
         assert_eq!(owned.to, to);
