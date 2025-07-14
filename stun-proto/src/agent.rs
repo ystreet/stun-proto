@@ -731,11 +731,6 @@ impl StunRequestMut<'_> {
                         .map(|i| (initial_rto * 2u32.pow(i)).as_millis() as u64)
                         .collect::<Vec<_>>();
                     state.last_retransmit_timeout_ms = last_retransmit_timeout.as_millis() as u64;
-                    tracing::error!(
-                        "new timeouts {:?}, i: {}",
-                        state.timeouts_ms,
-                        state.timeout_i
-                    );
                 }
                 TransportType::Tcp => {
                     state.timeouts_ms = vec![];
