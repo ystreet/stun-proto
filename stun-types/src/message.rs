@@ -624,7 +624,7 @@ impl std::fmt::Display for Message<'_> {
         )?;
         let iter = self.iter_attributes();
         write!(f, "[")?;
-        for (i, a) in iter.enumerate() {
+        for (i, (_offset, a)) in iter.enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
@@ -1148,7 +1148,45 @@ impl<'a> Message<'a> {
         )
     )]
     pub fn raw_attribute(&self, atype: AttributeType) -> Option<RawAttribute<'_>> {
-        self.iter_attributes().find(|attr| attr.get_type() == atype)
+        self.raw_attribute_and_offset(atype)
+            .map(|(_offset, attr)| attr)
+    }
+
+    /// Retrieve a `RawAttribute` from this `Message` with it's byte offset.
+    ///
+    /// The offset is from the start of the 4 byte Attribute header.
+    ///
+    /// # Examples
+    ///
+    /// Retrieve a`RawAttribute`
+    ///
+    /// ```
+    /// # use stun_types::attribute::{RawAttribute, Attribute};
+    /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
+    ///     MessageWrite, MessageWriteExt, BINDING};
+    /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
+    /// let attr = RawAttribute::new(1.into(), &[3]);
+    /// assert!(message.add_attribute(&attr).is_ok());
+    /// let message = message.finish();
+    /// let message = Message::from_bytes(&message).unwrap();
+    /// assert_eq!(message.raw_attribute_and_offset(1.into()).unwrap(), (20, attr));
+    /// ```
+    #[tracing::instrument(
+        name = "message_get_raw_attribute_and_offset",
+        level = "trace",
+        ret,
+        skip(self, atype),
+        fields(
+            msg.transaction = %self.transaction_id(),
+            attribute_type = %atype,
+        )
+    )]
+    pub fn raw_attribute_and_offset(
+        &self,
+        atype: AttributeType,
+    ) -> Option<(usize, RawAttribute<'_>)> {
+        self.iter_attributes()
+            .find(|(_offset, attr)| attr.get_type() == atype)
     }
 
     /// Retrieve a concrete `Attribute` from this `Message`.
@@ -1185,14 +1223,52 @@ impl<'a> Message<'a> {
     pub fn attribute<A: AttributeFromRaw<'a> + AttributeStaticType>(
         &'a self,
     ) -> Result<A, StunParseError> {
-        self.iter_attributes()
-            .find(|attr| attr.get_type() == A::TYPE)
-            .ok_or(StunParseError::MissingAttribute(A::TYPE))
-            .and_then(|raw| A::from_raw(raw))
+        self.attribute_and_offset().map(|(_offset, attr)| attr)
     }
 
-    /// Returns an iterator over the attributes in the [`Message`].
-    pub fn iter_attributes(&self) -> impl Iterator<Item = RawAttribute<'_>> {
+    /// Retrieve a concrete `Attribute` from this `Message` and it's offset in the original data.
+    ///
+    /// This will error with [`StunParseError::MissingAttribute`] if the attribute does not exist.
+    /// Otherwise, other parsing errors of the data may be returned specific to the attribute
+    /// implementation provided.
+    ///
+    /// The offset is from the start of the 4 byte [`Attribute`] header.
+    ///
+    /// # Examples
+    ///
+    /// Retrieve an `Attribute`
+    ///
+    /// ```
+    /// # use stun_types::attribute::{Software, Attribute};
+    /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
+    ///     MessageWrite, MessageWriteExt, BINDING};
+    /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
+    /// let attr = Software::new("stun-types").unwrap();
+    /// assert!(message.add_attribute(&attr).is_ok());
+    /// let message = message.finish();
+    /// let message = Message::from_bytes(&message).unwrap();
+    /// assert_eq!(message.attribute_and_offset::<Software>().unwrap(), (20, attr));
+    /// ```
+    #[tracing::instrument(
+        name = "message_get_attribute_and_offset",
+        level = "trace",
+        ret,
+        skip(self),
+        fields(
+            msg.transaction = %self.transaction_id(),
+            attribute_type = %A::TYPE,
+        )
+    )]
+    pub fn attribute_and_offset<A: AttributeFromRaw<'a> + AttributeStaticType>(
+        &'a self,
+    ) -> Result<(usize, A), StunParseError> {
+        self.raw_attribute_and_offset(A::TYPE)
+            .ok_or(StunParseError::MissingAttribute(A::TYPE))
+            .and_then(|(offset, raw)| A::from_raw(raw).map(|attr| (offset, attr)))
+    }
+
+    /// Returns an iterator over the attributes (with their byte offset) in the [`Message`].
+    pub fn iter_attributes(&self) -> impl Iterator<Item = (usize, RawAttribute<'_>)> {
         MessageAttributesIter::new(self.data)
     }
 
@@ -1259,7 +1335,7 @@ impl<'a> Message<'a> {
         // Attribute -> AttributeType
         let unsupported: Vec<AttributeType> = msg
             .iter_attributes()
-            .map(|a| a.get_type())
+            .map(|(_offset, a)| a.get_type())
             // attribute types that require comprehension but are not supported by the caller
             .filter(|at| at.comprehension_required() && !supported.contains(at))
             .collect();
@@ -1273,7 +1349,11 @@ impl<'a> Message<'a> {
         let has_required_attribute_missing = required_in_msg
             .iter()
             // attribute types we need in the message -> failure -> Bad Request
-            .any(|&at| !msg.iter_attributes().map(|a| a.get_type()).any(|a| a == at));
+            .any(|&at| {
+                !msg.iter_attributes()
+                    .map(|(_offset, a)| a.get_type())
+                    .any(|a| a == at)
+            });
         if has_required_attribute_missing {
             warn!("Message is missing required attributes, returning bad request");
             return Some(Message::bad_request(msg, write));
@@ -1360,7 +1440,8 @@ impl<'a> Message<'a> {
     /// assert!(msg.has_attribute(Software::TYPE));
     /// ```
     pub fn has_attribute(&self, atype: AttributeType) -> bool {
-        self.iter_attributes().any(|attr| attr.get_type() == atype)
+        self.iter_attributes()
+            .any(|(_offset, attr)| attr.get_type() == atype)
     }
 }
 impl<'a> TryFrom<&'a [u8]> for Message<'a> {
@@ -1393,7 +1474,7 @@ impl<'a> MessageAttributesIter<'a> {
 }
 
 impl<'a> Iterator for MessageAttributesIter<'a> {
-    type Item = RawAttribute<'a>;
+    type Item = (usize, RawAttribute<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.data_i >= self.data.len() {
@@ -1410,13 +1491,13 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
         if self.seen_message_integrity {
             if attr_type == Fingerprint::TYPE {
                 self.last_attr_type = attr_type;
-                return Some(attr);
+                return Some((self.data_i - padded_len, attr));
             }
             if self.last_attr_type == MessageIntegrity::TYPE
                 && attr_type == MessageIntegritySha256::TYPE
             {
                 self.last_attr_type = attr_type;
-                return Some(attr);
+                return Some((self.data_i - padded_len, attr));
             }
             return None;
         }
@@ -1427,7 +1508,7 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
         }
         self.last_attr_type = attr.get_type();
 
-        Some(attr)
+        Some((self.data_i - padded_len, attr))
     }
 }
 
@@ -1466,7 +1547,7 @@ pub trait MessageWrite {
         Message::from_bytes(self.data())
             .unwrap()
             .iter_attributes()
-            .find_map(|raw| {
+            .find_map(|(_offset, raw)| {
                 if atypes.contains(&raw.get_type()) {
                     Some(raw.get_type())
                 } else {
@@ -2135,9 +2216,11 @@ mod tests {
         let bytes = msg.finish();
         // validates the fingerprint of the data when available
         let new_msg = Message::from_bytes(&bytes).unwrap();
-        let software = new_msg.attribute::<Software>().unwrap();
+        let (offset, software) = new_msg.attribute_and_offset::<Software>().unwrap();
         assert_eq!(software.software(), "s");
-        let _new_fingerprint = new_msg.attribute::<Fingerprint>().unwrap();
+        assert_eq!(offset, 20);
+        let (offset, _new_fingerprint) = new_msg.attribute_and_offset::<Fingerprint>().unwrap();
+        assert_eq!(offset, 28);
     }
 
     #[test]
@@ -2153,8 +2236,9 @@ mod tests {
             // validates the fingerprint of the data when available
             let new_msg = Message::from_bytes(&bytes).unwrap();
             new_msg.validate_integrity(&credentials).unwrap();
-            let software = new_msg.attribute::<Software>().unwrap();
+            let (offset, software) = new_msg.attribute_and_offset::<Software>().unwrap();
             assert_eq!(software.software(), "s");
+            assert_eq!(offset, 20);
         }
     }
 
