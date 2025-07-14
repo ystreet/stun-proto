@@ -162,7 +162,7 @@ impl StunAgent {
         let transaction_id = hdr.transaction_id();
         let state = match self.outstanding_requests.entry(transaction_id) {
             std::collections::hash_map::Entry::Vacant(entry) => {
-                let has_credentials = MessageAttributesIter::new(data).any(|attr| {
+                let has_credentials = MessageAttributesIter::new(data).any(|(_offset, attr)| {
                     [MessageIntegrity::TYPE, MessageIntegritySha256::TYPE]
                         .contains(&attr.get_type())
                 });
