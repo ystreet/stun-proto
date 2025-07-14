@@ -652,7 +652,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let mtype = MessageType::from_class_method(MessageClass::Indication, BINDING);
     /// let message = Message::builder(mtype, 0.into(), MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
@@ -676,7 +676,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let data = message.finish();
     /// let message = Message::from_bytes(&data).unwrap();
@@ -701,7 +701,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///      MessageWrite, BINDING};
+    /// #      MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let data = message.finish();
     /// let message = Message::from_bytes(&data).unwrap();
@@ -733,7 +733,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let data = message.finish();
     /// let message = Message::from_bytes(&data).unwrap();
@@ -761,7 +761,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let data = message.finish();
     /// let message = Message::from_bytes(&data).unwrap();
@@ -778,7 +778,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.class(), MessageClass::Request);
@@ -793,7 +793,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert!(message.has_class(MessageClass::Request));
@@ -810,7 +810,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.is_response(), false);
@@ -833,7 +833,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.method(), BINDING);
@@ -848,7 +848,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.has_method(BINDING), true);
@@ -864,7 +864,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING, TransactionId};
+    /// #     MessageWrite, BINDING, TransactionId};
     /// let mtype = MessageType::from_class_method(MessageClass::Request, BINDING);
     /// let transaction_id = TransactionId::generate();
     /// let message = Message::builder(mtype, transaction_id, MessageWriteVec::new()).finish();
@@ -1023,8 +1023,8 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, MessageWriteExt, BINDING, MessageIntegrityCredentials,
-    ///     LongTermCredentials, IntegrityAlgorithm};
+    /// #     MessageWrite, MessageWriteExt, BINDING, MessageIntegrityCredentials,
+    /// #     LongTermCredentials, IntegrityAlgorithm};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let credentials = LongTermCredentials::new(
     ///     "user".to_owned(),
@@ -1127,7 +1127,7 @@ impl<'a> Message<'a> {
     /// ```
     /// # use stun_types::attribute::{RawAttribute, Attribute};
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, MessageWriteExt, BINDING};
+    /// #     MessageWrite, MessageWriteExt, BINDING};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// assert!(message.add_attribute(&attr).is_ok());
@@ -1161,7 +1161,7 @@ impl<'a> Message<'a> {
     /// ```
     /// # use stun_types::attribute::{RawAttribute, Attribute};
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, MessageWriteExt, BINDING};
+    /// #     MessageWrite, MessageWriteExt, BINDING};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// assert!(message.add_attribute(&attr).is_ok());
@@ -1200,7 +1200,7 @@ impl<'a> Message<'a> {
     /// ```
     /// # use stun_types::attribute::{Software, Attribute};
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, MessageWriteExt, BINDING};
+    /// #     MessageWrite, MessageWriteExt, BINDING};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = Software::new("stun-types").unwrap();
     /// assert!(message.add_attribute(&attr).is_ok());
@@ -1239,7 +1239,7 @@ impl<'a> Message<'a> {
     /// ```
     /// # use stun_types::attribute::{Software, Attribute};
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, MessageWriteExt, BINDING};
+    /// #     MessageWrite, MessageWriteExt, BINDING};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = Software::new("stun-types").unwrap();
     /// assert!(message.add_attribute(&attr).is_ok());
@@ -1279,7 +1279,7 @@ impl<'a> Message<'a> {
     /// ```
     /// # use stun_types::attribute::*;
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, MessageWriteExt, BINDING};
+    /// #     MessageWrite, MessageWriteExt, BINDING};
     /// # use std::convert::TryInto;
     /// let mut builder = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let message = builder.finish();
@@ -1402,7 +1402,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// # use stun_types::attribute::*;
     /// # use std::convert::TryInto;
     /// let msg = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
@@ -1428,7 +1428,7 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, MessageWriteExt, BINDING};
+    /// #     MessageWrite, MessageWriteExt, BINDING};
     /// # use stun_types::attribute::{Software, Attribute, AttributeStaticType};
     /// let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = Software::new("stun-types").unwrap();
@@ -1566,7 +1566,7 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.class(), MessageClass::Request);
@@ -1581,7 +1581,7 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.class(), MessageClass::Request);
@@ -1596,7 +1596,7 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert!(message.has_class(MessageClass::Request));
@@ -1613,7 +1613,7 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.is_response(), false);
@@ -1636,7 +1636,7 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.method(), BINDING);
@@ -1651,7 +1651,7 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING};
+    /// #     MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.has_method(BINDING), true);
@@ -1667,7 +1667,7 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, BINDING, TransactionId};
+    /// #     MessageWrite, BINDING, TransactionId};
     /// let mtype = MessageType::from_class_method(MessageClass::Request, BINDING);
     /// let transaction_id = TransactionId::generate();
     /// let message = Message::builder(mtype, transaction_id, MessageWriteVec::new()).finish();
@@ -1690,10 +1690,10 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWrite, MessageWriteExt, BINDING, MessageIntegrityCredentials,
-    ///     ShortTermCredentials, IntegrityAlgorithm, StunWriteError};
+    /// #     MessageWrite, MessageWriteExt, BINDING, MessageIntegrityCredentials,
+    /// #     ShortTermCredentials, IntegrityAlgorithm, StunWriteError};
     /// # use stun_types::attribute::{Attribute, AttributeStaticType, MessageIntegrity,
-    ///     MessageIntegritySha256};
+    /// #     MessageIntegritySha256};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let credentials = ShortTermCredentials::new("pass".to_owned()).into();
     /// assert!(message.add_message_integrity(&credentials, IntegrityAlgorithm::Sha1).is_ok());
@@ -1777,7 +1777,7 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWriteExt, BINDING};
+    /// #     MessageWriteExt, BINDING};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// assert!(message.add_fingerprint().is_ok());
     ///
@@ -1826,7 +1826,7 @@ pub trait MessageWriteExt: MessageWrite {
     /// ```
     /// # use stun_types::attribute::RawAttribute;
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    ///     MessageWriteExt, BINDING};
+    /// #     MessageWriteExt, BINDING};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// assert!(message.add_attribute(&attr).is_ok());
