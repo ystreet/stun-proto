@@ -598,7 +598,6 @@ impl MessageHeader {
         let transaction: u128 = self.transaction_id.into();
         let tid = (MAGIC_COOKIE as u128) << 96 | transaction & 0xffff_ffff_ffff_ffff_ffff_ffff;
         BigEndian::write_u128(&mut dest[4..20], tid);
-        tracing::error!("3 writing {} to length header", self.length);
         BigEndian::write_u16(&mut dest[2..4], self.length);
     }
 }
@@ -1000,7 +999,6 @@ impl<'a> Message<'a> {
                     &mut fingerprint_data[2..4],
                     (data_offset + padded_len - MessageHeader::LENGTH) as u16,
                 );
-                tracing::error!("fingerprint data: {fingerprint_data:x?}, offset: {data_offset}, padded_len: {padded_len}");
                 let calculated_fingerprint = Fingerprint::compute(&fingerprint_data);
                 if &calculated_fingerprint != msg_fingerprint {
                     warn!(
