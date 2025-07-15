@@ -762,6 +762,7 @@ pub enum HandleStunReply<'a> {
 
 /// STUN errors
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum StunError {
     /// The operation is already in progress.
     #[error("The operation is already in progress")]
