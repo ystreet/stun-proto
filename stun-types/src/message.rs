@@ -173,6 +173,7 @@ pub const BINDING: Method = Method::new(0x0001);
 
 /// Possible errors when parsing a STUN message.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum StunParseError {
     /// Not a STUN message.
     #[error("The provided data is not a STUN message")]
@@ -221,6 +222,7 @@ pub enum StunParseError {
 
 /// Errors produced when writing a STUN message
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum StunWriteError {
     /// The message already has this attribute
     #[error("The attribute already exists in the message")]
