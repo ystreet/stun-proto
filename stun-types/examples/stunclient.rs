@@ -79,8 +79,9 @@ fn tcp_message(out: MessageWriteVec, to: SocketAddr) -> Result<(), std::io::Erro
     loop {
         let amt = socket.read(&mut buf[offset..])?;
         let data = &buf[..offset + amt];
+        trace!("received {:?}", data);
         if amt == 0 {
-            trace!("got {:?}", data);
+            trace!("socket closed");
             msg = Message::from_bytes(data).map_err(|e| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -102,6 +103,15 @@ fn tcp_message(out: MessageWriteVec, to: SocketAddr) -> Result<(), std::io::Erro
                         std::io::ErrorKind::InvalidData,
                         "Response data is too large for message",
                     ));
+                }
+                if header.data_length() as usize + MessageHeader::LENGTH == offset + amt {
+                    msg = Message::from_bytes(data).map_err(|e| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid message: {e:?}"),
+                        )
+                    })?;
+                    break;
                 }
             }
             Err(StunParseError::NotStun) => {
