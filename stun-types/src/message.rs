@@ -76,7 +76,9 @@
 //! assert_eq!(msg_data[20..], attribute_data);
 //! ```
 
+use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::sync::{Mutex, OnceLock};
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -87,9 +89,87 @@ use tracing::{debug, warn};
 /// The value of the magic cookie (in network byte order) as specified in RFC5389, and RFC8489.
 pub const MAGIC_COOKIE: u32 = 0x2112A442;
 
+/// The method in a STUN [`Message`]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Method(u16);
+
+impl std::fmt::Display for Method {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}({:#x}: {})", self.0, self.0, self.name())
+    }
+}
+
+static METHOD_NAME_MAP: OnceLock<Mutex<HashMap<Method, &'static str>>> = OnceLock::new();
+
+impl Method {
+    /// Add the name for a particular [`Method`] for formatting purposes.
+    pub fn add_name(self, name: &'static str) {
+        let mut mnames = METHOD_NAME_MAP
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap();
+        mnames.insert(self, name);
+    }
+
+    /// Create a new [`Method`] from an existing value
+    ///
+    /// Note: the value passed in is not encoded as in a stun message
+    ///
+    /// Panics if the value is out of range (>= 0xf000)
+    ///
+    /// # Examples
+    /// ```
+    /// # use stun_types::message::Method;
+    /// assert_eq!(Method::new(0x123).value(), 0x123);
+    /// ```
+    pub const fn new(val: u16) -> Self {
+        if val >= 0xf000 {
+            panic!("Method value is out of range!");
+        }
+        Self(val)
+    }
+
+    /// Return the integer value of this [`Method`]
+    ///
+    /// Note: the value returned is not encoded as in a stun message
+    ///
+    /// # Examples
+    /// ```
+    /// # use stun_types::message::Method;
+    /// assert_eq!(Method::new(0x123).value(), 0x123);
+    /// ```
+    pub fn value(&self) -> u16 {
+        self.0
+    }
+
+    /// Returns a human readable name of this `Method` or "unknown"
+    ///
+    /// # Examples
+    /// ```
+    /// # use stun_types::attribute::*;
+    /// assert_eq!(XorMappedAddress::TYPE.name(), "XOR-MAPPED-ADDRESS");
+    /// ```
+    pub fn name(self) -> &'static str {
+        match self {
+            BINDING => "BINDING",
+            _ => {
+                let mnames = METHOD_NAME_MAP
+                    .get_or_init(Default::default)
+                    .lock()
+                    .unwrap();
+                if let Some(name) = mnames.get(&self) {
+                    name
+                } else {
+                    "unknown"
+                }
+            }
+        }
+    }
+}
+
 /// The value of the binding message type.  Can be used in either a request or an indication
 /// message.
-pub const BINDING: u16 = 0x0001;
+pub const BINDING: Method = Method::new(0x0001);
 
 /// Possible errors when parsing a STUN message.
 #[derive(Debug, thiserror::Error)]
@@ -349,10 +429,9 @@ impl std::fmt::Display for MessageType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "MessageType(class: {:?}, method: {} ({:#x}))",
+            "MessageType(class: {:?}, method: {}",
             self.class(),
             self.method(),
-            self.method()
         )
     }
 }
@@ -368,8 +447,9 @@ impl MessageType {
     /// assert_eq!(mtype.has_class(MessageClass::Indication), true);
     /// assert_eq!(mtype.has_method(BINDING), true);
     /// ```
-    pub fn from_class_method(class: MessageClass, method: u16) -> Self {
+    pub fn from_class_method(class: MessageClass, method: Method) -> Self {
         let class_bits = MessageClass::to_bits(class);
+        let method = method.value();
         let method_bits = method & 0xf | (method & 0x70) << 1 | (method & 0xf80) << 2;
         // trace!("MessageType from class {:?} and method {:?} into {:?}", class, method,
         //     class_bits | method_bits);
@@ -437,8 +517,8 @@ impl MessageType {
     /// let mtype = MessageType::from_class_method(MessageClass::Indication, BINDING);
     /// assert_eq!(mtype.method(), BINDING);
     /// ```
-    pub fn method(self) -> u16 {
-        self.0 & 0xf | (self.0 & 0xe0) >> 1 | (self.0 & 0x3e00) >> 2
+    pub fn method(self) -> Method {
+        Method::new(self.0 & 0xf | (self.0 & 0xe0) >> 1 | (self.0 & 0x3e00) >> 2)
     }
 
     /// Returns whether the method of a [`MessageType`] is equal to the provided value
@@ -450,7 +530,7 @@ impl MessageType {
     /// let mtype = MessageType::from_class_method(MessageClass::Indication, BINDING);
     /// assert_eq!(mtype.has_method(BINDING), true);
     /// ```
-    pub fn has_method(self, method: u16) -> bool {
+    pub fn has_method(self, method: Method) -> bool {
         self.method() == method
     }
 
@@ -615,9 +695,8 @@ impl std::fmt::Display for Message<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Message(class: {:?}, method: {} ({:#x}), transaction: {}, attributes: ",
+            "Message(class: {:?}, method: {}, transaction: {}, attributes: ",
             self.get_type().class(),
-            self.get_type().method(),
             self.get_type().method(),
             self.transaction_id()
         )?;
@@ -683,7 +762,7 @@ impl<'a> Message<'a> {
     /// assert!(message.has_class(MessageClass::Request));
     /// assert!(message.has_method(BINDING));
     /// ```
-    pub fn builder_request<B: MessageWrite>(method: u16, write: B) -> B {
+    pub fn builder_request<B: MessageWrite>(method: Method, write: B) -> B {
         Message::builder(
             MessageType::from_class_method(MessageClass::Request, method),
             TransactionId::generate(),
@@ -838,7 +917,7 @@ impl<'a> Message<'a> {
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.method(), BINDING);
     /// ```
-    pub fn method(&self) -> u16 {
+    pub fn method(&self) -> Method {
         self.get_type().method()
     }
 
@@ -848,13 +927,13 @@ impl<'a> Message<'a> {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    /// #     MessageWrite, BINDING};
+    /// #     Method, MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.has_method(BINDING), true);
-    /// assert_eq!(message.has_method(0), false);
+    /// assert_eq!(message.has_method(Method::new(0)), false);
     /// ```
-    pub fn has_method(&self, method: u16) -> bool {
+    pub fn has_method(&self, method: Method) -> bool {
         self.method() == method
     }
 
@@ -1641,7 +1720,7 @@ pub trait MessageWriteExt: MessageWrite {
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.method(), BINDING);
     /// ```
-    fn method(&self) -> u16 {
+    fn method(&self) -> Method {
         self.get_type().method()
     }
 
@@ -1651,13 +1730,13 @@ pub trait MessageWriteExt: MessageWrite {
     ///
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
-    /// #     MessageWrite, BINDING};
+    /// #     Method, MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.has_method(BINDING), true);
-    /// assert_eq!(message.has_method(0), false);
+    /// assert_eq!(message.has_method(Method::new(0)), false);
     /// ```
-    fn has_method(&self, method: u16) -> bool {
+    fn has_method(&self, method: Method) -> bool {
         self.method() == method
     }
 
@@ -2119,6 +2198,7 @@ mod tests {
         let _log = crate::tests::test_init_log();
         /* validate that all methods/classes survive a roundtrip */
         for m in 0..0xfff {
+            let m = Method::new(m);
             let classes = vec![
                 MessageClass::Request,
                 MessageClass::Indication,
@@ -2149,6 +2229,7 @@ mod tests {
         let _log = crate::tests::test_init_log();
         /* validate that all methods/classes survive a roundtrip */
         for m in (0x009..0x4ff).step_by(0x123) {
+            let m = Method::new(m);
             let classes = vec![
                 MessageClass::Request,
                 MessageClass::Indication,
