@@ -11,6 +11,18 @@
 //! Provides implementations for generating, parsing and manipulating STUN attributes as specified
 //! in one of [RFC8489], [RFC5389], or [RFC3489].
 //!
+//! There are two levels of attribute implementations:
+//! 1. A generic [`RawAttribute`] which contains the [`AttributeHeader`] (type and length) and the
+//!    byte sequence of data (either borrowed or owned). Parsing a
+//!    [`Message`](crate::message::Message) will only perform zerocopy parsing to this level. Any
+//!    attribute-specific restrictions on the actual contents of the data should be performed by
+//!    concrete attribute implementations.
+//! 2. Concrete implementations based on implementing [`Attribute`], and [`AttributeStaticType`].
+//!    These concrete attribute implementations have much more ergonomic API specific to their
+//!    particular needs. A concrete attribute implementation may have restrictions on what data is
+//!    allowed to be parsed from a [`RawAttribute`] that should return errors when calling
+//!    [`AttributeFromRaw::from_raw_ref`].
+//!
 //! [RFC8489]: https://tools.ietf.org/html/rfc8489
 //! [RFC5389]: https://tools.ietf.org/html/rfc5389
 //! [RFC3489]: https://tools.ietf.org/html/rfc3489
@@ -215,7 +227,7 @@ pub fn add_display_impl(atype: AttributeType, imp: AttributeDisplay) {
 /// }
 /// stun_types::attribute_display!(MyAttribute);
 /// let attr = RawAttribute::new(MyAttribute::TYPE, &[]);
-/// let display_str = format!("{}", attr);
+/// let display_str = format!("{attr}");
 /// assert_eq!(display_str, "MyAttribute");
 /// ```
 #[macro_export]
@@ -333,7 +345,7 @@ impl AttributeType {
         }
     }
 
-    /// Check if comprehension is required for an `AttributeType`.  All integer attribute
+    /// Check if comprehension is required for an `AttributeType`.  All attribute
     /// values < 0x8000 require comprehension.
     ///
     /// # Examples
@@ -380,8 +392,8 @@ impl AttributeHeader {
         Ok(ret)
     }
 
-    fn to_bytes(self) -> Vec<u8> {
-        let mut ret = vec![0; 4];
+    fn to_bytes(self) -> [u8; 4] {
+        let mut ret = [0; 4];
         self.write_into(&mut ret);
         ret
     }
@@ -401,7 +413,7 @@ impl AttributeHeader {
         self.length
     }
 }
-impl From<AttributeHeader> for Vec<u8> {
+impl From<AttributeHeader> for [u8; 4] {
     fn from(f: AttributeHeader) -> Self {
         f.to_bytes()
     }
@@ -421,7 +433,7 @@ pub trait AttributeStaticType {
 }
 
 /// A STUN attribute for use in [`Message`](crate::message::Message)s
-pub trait Attribute: std::fmt::Debug + std::marker::Sync {
+pub trait Attribute: std::fmt::Debug + std::marker::Sync + std::marker::Send {
     /// Retrieve the type of an `Attribute`.
     fn get_type(&self) -> AttributeType;
 
@@ -430,14 +442,14 @@ pub trait Attribute: std::fmt::Debug + std::marker::Sync {
     fn length(&self) -> u16;
 }
 
-/// A trait for converting to a concrete [`Attribute`] from a [`RawAttribute`]
+/// A trait for converting from a [`RawAttribute`] to a concrete [`Attribute`].
 pub trait AttributeFromRaw<'a>: Attribute {
-    /// Convert an `Attribute` from a `RawAttribute`
+    /// Produce an `Attribute` from a `RawAttribute`
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized;
 
-    /// Convert an `Attribute` from a `RawAttribute`
+    /// Produce an `Attribute` from a `RawAttribute`
     fn from_raw(raw: RawAttribute<'a>) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -454,9 +466,9 @@ fn padded_attr_len(len: usize) -> usize {
     }
 }
 
-/// Automatically implemented trait providing some helper functions.
+/// Automatically implemented trait providing some helper functions for [`Attribute`]s.
 pub trait AttributeExt {
-    /// The length in bytes of an attribute as stored in a [`Message`](crate::message::Message)
+    /// The length in bytes of an [`Attribute`] as stored in a [`Message`](crate::message::Message)
     /// including any padding and the attribute header.
     fn padded_len(&self) -> usize;
 }
@@ -669,7 +681,8 @@ impl<'a> RawAttribute<'a> {
         vec
     }
 
-    /// Helper for checking that a raw attribute is of a particular type and within a certain range
+    /// Helper for checking that a raw attribute is of a particular type and has a data length
+    /// within a certain range.
     pub fn check_type_and_len(
         &self,
         atype: AttributeType,

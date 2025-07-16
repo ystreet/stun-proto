@@ -11,6 +11,14 @@
 //! Provides types for generating, parsing, and manipulating STUN messages as specified in one of
 //! [RFC8489], [RFC5389], or [RFC3489].
 //!
+//! Message parsing is zerocopy by default through the [`RawAttribute`] struct. Converting to a
+//! concrete attribute implementation (e.g. [`Software`]) may incur a
+//! copy depending on the attribute implementation.
+//!
+//! The destination for a written Message is completely customizable through the [`MessageWrite`]
+//! trait. It is therefore possible to write directly into network provided buffers for increased
+//! performance and throughput.
+//!
 //! [RFC8489]: https://tools.ietf.org/html/rfc8489
 //! [RFC5389]: https://tools.ietf.org/html/rfc5389
 //! [RFC3489]: https://tools.ietf.org/html/rfc3489
