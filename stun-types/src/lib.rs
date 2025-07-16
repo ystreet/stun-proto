@@ -11,22 +11,51 @@
 
 //! # stun-types
 //!
-//! An implementation of parsing and writing STUN messages and attributes. This implementation is
-//! trait based and supports definitions of [`Attribute`](attribute::Attribute)s that are external
-//! to this crate.
+//! An implementation of parsing and writing STUN messages and attributes based on trait
+//! implementations.
 //!
 //! This is based on the following standards:
-//! - [RFC8489]
-//! - [RFC5389]
-//! - [RFC3489]
+//! - [RFC8489] - 'Session Traversal Utilities for NAT (STUN)'
+//! - [RFC5389] - 'Session Traversal Utilities for NAT (STUN)'
+//! - [RFC3489] - 'STUN - Simple Traversal of User Datagram Protocol (UDP)
+//!   Through Network Address Translators (NATs)'
+//!
+//! ## [Message](crate::message::Message)
+//!
+//! ### Message Parsing
+//!
+//! Message parsing is zerocopy by default through the [`RawAttribute`](crate::attribute::RawAttribute)
+//! struct. Converting to a concrete attribute implementation (such as
+//! [`Software`](crate::attribute::Software)) may incur a copy depending on the attribute
+//! implementation.
+//!
+//! ### Message writing
+//!
+//! The destination for a written Message is completely customizable through the
+//! [`MessageWrite`](crate::message::MessageWrite) trait. It is therefore possible to write directly
+//! into network provided buffers for increased performance and throughput.
+//!
+//! [`MessageWriteVec`](crate::message::MessageWriteVec) provides a simple implementation of
+//! message writing that will write into a newly allocated `Vec<u8>`.
+//!
+//! ## [Attribute](crate::attribute::Attribute)
+//!
+//! An [`Attribute`](crate::attribute::Attribute) implementation can be implemented entirely
+//! outside of this crate and used exactly the same as an Attribute implemented within this crate.
+//! Look at [`attribute`] module level documentation for an example of defining your own
+//! [`Attribute`](crate::attribute::Attribute).
+//!
+//! For TURN-related attributes, have a look at the [turn-types] crate which uses this crate to
+//! implement STUN attributes for TURN.
 //!
 //! [RFC8489]: https://tools.ietf.org/html/rfc8489
 //! [RFC5389]: https://tools.ietf.org/html/rfc5389
 //! [RFC3489]: https://tools.ietf.org/html/rfc3489
+//! [turn-types]: https://docs.rs/turn-types/latest/turn_types/
 //!
 //! ## Examples
 //!
-//! See the [`message`] and [`attribute`] module documentation for examples on use.
+//! See the [`message`] and [`attribute`] module documentation for examples of use.
 
 use std::str::FromStr;
 
