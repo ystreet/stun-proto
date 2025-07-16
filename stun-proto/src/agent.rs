@@ -506,17 +506,40 @@ impl<T: AsRef<[u8]>> Transmit<T> {
             to,
         }
     }
+
+    /// Reinterpret the data of a [`Transmit`] into a different type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_proto::agent::Transmit;
+    /// # use stun_proto::types::TransportType;
+    /// # use std::net::SocketAddr;
+    /// let local_addr = "10.0.0.1:1000".parse().unwrap();
+    /// let remote_addr = "10.0.0.2:2000".parse().unwrap();
+    /// let slice = [42; 8];
+    /// let transmit = Transmit::new(slice.clone(), TransportType::Udp, local_addr, remote_addr);
+    /// // change the data type of the `Transmit` into a `Vec<u8>`.
+    /// let transmit = transmit.reinterpret_data(|data| data.to_vec());
+    /// # assert_eq!(transmit.transport, TransportType::Udp);
+    /// # assert_eq!(transmit.from, local_addr);
+    /// # assert_eq!(transmit.to, remote_addr);
+    /// assert_eq!(transmit.data, slice.as_slice());
+    /// ```
+    pub fn reinterpret_data<O: AsRef<[u8]>, F: FnOnce(T) -> O>(self, f: F) -> Transmit<O> {
+        Transmit {
+            data: f(self.data),
+            transport: self.transport,
+            from: self.from,
+            to: self.to,
+        }
+    }
 }
 
 impl Transmit<Data<'_>> {
     /// Construct a new owned [`Transmit`] from a provided [`Transmit`]
     pub fn into_owned<'b>(self) -> Transmit<Data<'b>> {
-        Transmit {
-            data: self.data.into_owned(),
-            transport: self.transport,
-            from: self.from,
-            to: self.to,
-        }
+        self.reinterpret_data(|data| data.into_owned())
     }
 }
 
