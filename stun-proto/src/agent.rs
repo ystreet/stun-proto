@@ -190,7 +190,7 @@ impl StunAgent {
         ))
     }
 
-    /// Returns whether this agent has received or send a STUN message to this peer. Failure may
+    /// Returns whether this agent has received or sent a STUN message with this peer. Failure may
     /// be the result of an attacker and the caller must drop any non-STUN data received before this
     /// functions returns `true`.
     ///
@@ -216,10 +216,11 @@ impl StunAgent {
     /// The returned value indicates what the caller must do with the data.
     ///
     /// If this function returns [`HandleStunReply::ValidatedStunResponse`], then this agent needs to be
-    /// `poll()`ed again.
+    /// [`poll()`](StunAgent::poll)ed again.
     ///
     /// If this function returns [`HandleStunReply::UnvalidatedStunResponse`], and the user handles
-    /// the request in some way, then [`StunAgent::remove_outstanding_request()`] must be called.
+    /// the request in some way, then [`StunAgent::remove_outstanding_request()`] must be called
+    /// and this agent needs to be [`poll()`](StunAgent::poll)ed again.
     #[tracing::instrument(
         name = "stun_handle_message"
         skip(self, msg, from),
@@ -290,9 +291,12 @@ impl StunAgent {
     }
 
     /// Retrieve a reference to an outstanding STUN request. Outstanding requests are kept until
-    /// either `handle_incoming_data` receives the associated response, or `poll()` returns
-    /// [`StunAgentPollRet::TransactionCancelled`] or a [`StunAgentPollRet::TransactionTimedOut`]
-    /// for the request.
+    /// either:
+    /// - [`handle_stun()`](StunAgent::handle_stun) receives (and validates) the associated
+    ///   response,
+    /// - [`remove_outstanding_request()`](StunAgent::remove_outstanding_request) is called, or
+    /// - [`poll()`](StunAgent::poll) returns [`StunAgentPollRet::TransactionCancelled`] or
+    ///   [`StunAgentPollRet::TransactionTimedOut`] for the request.
     pub fn request_transaction(&self, transaction_id: TransactionId) -> Option<StunRequest<'_>> {
         if self.outstanding_requests.contains_key(&transaction_id) {
             Some(StunRequest {
@@ -305,9 +309,12 @@ impl StunAgent {
     }
 
     /// Retrieve a mutable reference to an outstanding STUN request. Outstanding requests are kept
-    /// until either `handle_incoming_data` receives the associated response, or `poll()` returns
-    /// [`StunAgentPollRet::TransactionCancelled`] or a [`StunAgentPollRet::TransactionTimedOut`]
-    /// for the request.
+    /// until either:
+    /// - [`handle_stun()`](StunAgent::handle_stun) receives (and validates) the associated
+    ///   response,
+    /// - [`remove_outstanding_request()`](StunAgent::remove_outstanding_request) is called, or
+    /// - [`poll()`](StunAgent::poll) returns [`StunAgentPollRet::TransactionCancelled`] or
+    ///   [`StunAgentPollRet::TransactionTimedOut`] for the request.
     pub fn mut_request_transaction(
         &mut self,
         transaction_id: TransactionId,
@@ -335,6 +342,9 @@ impl StunAgent {
 
     /// Poll the agent for making further progress on any outstanding requests. The returned value
     /// indicates the current state and anything the caller needs to perform.
+    ///
+    /// Upon expiry of the timer from [`StunAgentPollRet::WaitUntil`],
+    /// [`poll_transmit()`](StunAgent::poll_transmit) must be called.
     #[tracing::instrument(
         name = "stun_agent_poll"
         level = "info",
@@ -396,7 +406,7 @@ pub enum StunAgentPollRet {
     TransactionTimedOut(TransactionId),
     /// An oustanding transaction was cancelled and has been removed from the agent.
     TransactionCancelled(TransactionId),
-    /// Wait until the specified time has passed
+    /// Wait until the specified time has passed.
     WaitUntil(Instant),
 }
 
@@ -710,14 +720,17 @@ impl StunRequestMut<'_> {
         state.to
     }
 
-    /// Do not retransmit further
+    /// Do not retransmit further. This will still allow for a reply to occur within the configured
+    /// timeouts, but will never send a retransmission. If no response is received, this will cause
+    /// [`StunAgent::poll()`] to return [`StunAgentPollRet::TransactionCancelled`] for this request.
     pub fn cancel_retransmissions(&mut self) {
         if let Some(state) = self.agent.mut_request_state(self.transaction_id) {
             state.send_cancelled = true;
         }
     }
 
-    /// Do not wait for any kind of response
+    /// Do not wait for any kind of response. This will cause [`StunAgent::poll()`] to return
+    /// [`StunAgentPollRet::TransactionCancelled`] for this request.
     pub fn cancel(&mut self) {
         if let Some(state) = self.agent.mut_request_state(self.transaction_id) {
             state.send_cancelled = true;

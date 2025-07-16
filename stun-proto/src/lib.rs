@@ -24,7 +24,8 @@
 //! use stun_proto::types::TransportType;
 //! use stun_proto::types::attribute::{MessageIntegrity, XorMappedAddress};
 //! use stun_proto::types::message::{
-//!     BINDING, IntegrityAlgorithm, Message, MessageIntegrityCredentials, MessageWriteVec, ShortTermCredentials
+//!     BINDING, IntegrityAlgorithm, Message, MessageIntegrityCredentials,
+//!     MessageWriteVec, ShortTermCredentials
 //! };
 //! use stun_proto::types::prelude::*;
 //! use stun_proto::agent::{HandleStunReply, StunAgent};
@@ -34,7 +35,7 @@
 //!
 //! let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 //!
-//! // short term or short term credentials may optionally be configured on the agent.
+//! // short term or long term credentials may optionally be configured on the agent.
 //! let local_credentials = ShortTermCredentials::new(String::from("local_password"));
 //! let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
 //! agent.set_local_credentials(local_credentials.clone().into());
