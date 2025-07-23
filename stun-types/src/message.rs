@@ -1224,16 +1224,6 @@ impl<'a> Message<'a> {
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.raw_attribute(1.into()).unwrap(), attr);
     /// ```
-    #[tracing::instrument(
-        name = "message_get_raw_attribute",
-        level = "trace",
-        ret,
-        skip(self, atype),
-        fields(
-            msg.transaction = %self.transaction_id(),
-            attribute_type = %atype,
-        )
-    )]
     pub fn raw_attribute(&self, atype: AttributeType) -> Option<RawAttribute<'_>> {
         self.raw_attribute_and_offset(atype)
             .map(|(_offset, attr)| attr)
@@ -1297,16 +1287,6 @@ impl<'a> Message<'a> {
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.attribute::<Software>().unwrap(), attr);
     /// ```
-    #[tracing::instrument(
-        name = "message_get_attribute",
-        level = "trace",
-        ret,
-        skip(self),
-        fields(
-            msg.transaction = %self.transaction_id(),
-            attribute_type = %A::TYPE,
-        )
-    )]
     pub fn attribute<A: AttributeFromRaw<'a> + AttributeStaticType>(
         &'a self,
     ) -> Result<A, StunParseError> {
