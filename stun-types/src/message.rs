@@ -2186,6 +2186,23 @@ mod tests {
     use super::*;
 
     #[test]
+    #[should_panic(expected = "Method value is out of range")]
+    fn method_value_out_of_range() {
+        let _log = crate::tests::test_init_log();
+        Method::new(0xf000);
+    }
+
+    #[test]
+    fn method_name() {
+        let _log = crate::tests::test_init_log();
+        assert_eq!(BINDING.name(), "BINDING");
+        let method = Method::new(0x111);
+        method.add_name("SOME-NAME");
+        assert_eq!(method.name(), "SOME-NAME");
+        assert_eq!(Method::new(0x112).name(), "unknown");
+    }
+
+    #[test]
     fn msg_type_roundtrip() {
         let _log = crate::tests::test_init_log();
         /* validate that all methods/classes survive a roundtrip */
@@ -2199,6 +2216,7 @@ mod tests {
             ];
             for c in classes {
                 let mtype = MessageType::from_class_method(c, m);
+                trace!("{mtype}");
                 assert_eq!(mtype.class(), c);
                 assert_eq!(mtype.method(), m);
                 let bytes = mtype.to_bytes();
@@ -2670,6 +2688,48 @@ mod tests {
         assert_eq!(err.code(), 420);
         let unknown = res.attribute::<UnknownAttributes>().unwrap();
         assert!(unknown.has_attribute(Priority::TYPE));
+    }
+
+    #[test]
+    fn write_vec_state() {
+        let _log = crate::tests::test_init_log();
+        let mut src = Message::builder_request(BINDING, MessageWriteVec::new());
+        let username = Username::new("123").unwrap();
+        src.add_attribute(&username).unwrap();
+        let priority = Priority::new(123);
+        src.add_attribute(&priority).unwrap();
+
+        assert!(src.has_attribute(Username::TYPE));
+        assert!(src.has_attribute(Priority::TYPE));
+        assert_eq!(
+            src.has_any_attribute(&[Username::TYPE, Priority::TYPE]),
+            Some(Username::TYPE)
+        );
+        assert_eq!(
+            src.has_any_attribute(&[Priority::TYPE, Username::TYPE]),
+            Some(Username::TYPE)
+        );
+        assert!(src.has_class(MessageClass::Request));
+        assert!(!src.is_response());
+        assert!(src.has_method(BINDING));
+        assert!(!src.has_method(Method::new(0x111)));
+    }
+
+    #[test]
+    fn write_mut_slice_success() {
+        let _log = crate::tests::test_init_log();
+        let mut data = [0; 64];
+        let mut src = Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut data));
+        let username = Username::new("123").unwrap();
+        src.add_attribute(&username).unwrap();
+        let priority = Priority::new(123);
+        src.add_attribute(&priority).unwrap();
+        assert_eq!(src.finish(), 36);
+        let msg = Message::from_bytes(&data[..36]).unwrap();
+        let u2 = msg.attribute::<Username>().unwrap();
+        assert_eq!(u2.username(), "123");
+        let p2 = msg.attribute::<Priority>().unwrap();
+        assert_eq!(p2.priority(), 123);
     }
 
     #[test]
