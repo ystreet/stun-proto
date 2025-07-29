@@ -206,13 +206,13 @@ pub enum StunParseError {
     #[error("Integrity value does not match")]
     IntegrityCheckFailed,
     /// An attribute was not found in the message
-    #[error("Missing attribute {:?}", .0)]
+    #[error("Missing attribute {}", .0)]
     MissingAttribute(AttributeType),
     /// An attribute was found after the message integrity attribute
-    #[error("An attribute {:?} was encountered after a message integrity attribute", .0)]
+    #[error("An attribute {} was encountered after a message integrity attribute", .0)]
     AttributeAfterIntegrity(AttributeType),
     /// An attribute was found after the message integrity attribute
-    #[error("An attribute {:?} was encountered after a fingerprint attribute", .0)]
+    #[error("An attribute {} was encountered after a fingerprint attribute", .0)]
     AttributeAfterFingerprint(AttributeType),
     /// Fingerprint does not match the data.
     #[error("Fingerprint does not match")]
@@ -995,7 +995,7 @@ impl<'a> Message<'a> {
         if mlength + MessageHeader::LENGTH > data.len() {
             // mlength + header
             warn!(
-                "malformed advertised size {:?} and data size {:?} don't match",
+                "malformed advertised size {} and data size {} don't match",
                 mlength + 20,
                 data.len()
             );
@@ -1017,10 +1017,7 @@ impl<'a> Message<'a> {
         let mut seen_ending_len = 0;
         while !data.is_empty() {
             let attr = RawAttribute::from_bytes(data).map_err(|e| {
-                warn!(
-                    "failed to parse message attribute at offset {data_offset}: {:?}",
-                    e
-                );
+                warn!("failed to parse message attribute at offset {data_offset}: {e}",);
                 match e {
                     StunParseError::Truncated { expected, actual } => StunParseError::Truncated {
                         expected: expected + 4 + data_offset,
@@ -1072,7 +1069,7 @@ impl<'a> Message<'a> {
             let padded_len = attr.padded_len();
             if padded_len > data.len() {
                 warn!(
-                    "attribute {:?} extends past the end of the data",
+                    "attribute {} extends past the end of the data",
                     attr.get_type()
                 );
                 return Err(StunParseError::Truncated {
@@ -1919,7 +1916,6 @@ pub trait MessageWriteExt: MessageWrite {
     )]
     fn add_attribute(&mut self, attr: &dyn AttributeWrite) -> Result<(), StunWriteError> {
         let ty = attr.get_type();
-        //trace!("adding attribute {:?}", attr);
         match ty {
             MessageIntegrity::TYPE => {
                 panic!("Cannot write MessageIntegrity with `add_attribute`.  Use add_message_integrity() instead");
