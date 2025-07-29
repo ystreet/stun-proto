@@ -114,7 +114,6 @@ impl MessageIntegrity {
         name = "MessageIntegrity::compute",
         level = "trace",
         err,
-        ret,
         skip(data, key)
     )]
     pub fn compute(data: &[u8], key: &[u8]) -> Result<[u8; 20], StunWriteError> {
@@ -281,7 +280,6 @@ impl MessageIntegritySha256 {
         name = "MessageIntegritySha256::compute",
         level = "trace",
         err,
-        ret,
         skip(data, key)
     )]
     pub fn compute(data: &[u8], key: &[u8]) -> Result<[u8; 32], StunWriteError> {

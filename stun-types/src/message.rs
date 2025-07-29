@@ -92,7 +92,7 @@ use byteorder::{BigEndian, ByteOrder};
 
 use crate::attribute::*;
 
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 /// The value of the magic cookie (in network byte order) as specified in RFC5389, and RFC8489.
 pub const MAGIC_COOKIE: u32 = 0x2112A442;
@@ -1251,7 +1251,6 @@ impl<'a> Message<'a> {
     #[tracing::instrument(
         name = "message_get_raw_attribute_and_offset",
         level = "trace",
-        ret,
         skip(self, atype),
         fields(
             msg.transaction = %self.transaction_id(),
@@ -1262,8 +1261,16 @@ impl<'a> Message<'a> {
         &self,
         atype: AttributeType,
     ) -> Option<(usize, RawAttribute<'_>)> {
-        self.iter_attributes()
+        if let Some((offset, attr)) = self
+            .iter_attributes()
             .find(|(_offset, attr)| attr.get_type() == atype)
+        {
+            trace!("found attribute at offset: {offset}");
+            Some((offset, attr))
+        } else {
+            trace!("could not find attribute");
+            None
+        }
     }
 
     /// Retrieve a concrete `Attribute` from this `Message`.
@@ -1319,7 +1326,7 @@ impl<'a> Message<'a> {
     #[tracing::instrument(
         name = "message_get_attribute_and_offset",
         level = "trace",
-        ret,
+        err,
         skip(self),
         fields(
             msg.transaction = %self.transaction_id(),

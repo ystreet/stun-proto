@@ -266,8 +266,10 @@ impl StunAgent {
         }
     }
 
-    #[tracing::instrument(skip(self, transaction_id),
-        fields(transaction_id = %transaction_id))]
+    #[tracing::instrument(
+        skip(self, transaction_id),
+        fields(transaction_id = %transaction_id)
+    )]
     fn take_outstanding_request(
         &mut self,
         transaction_id: &TransactionId,
@@ -347,7 +349,7 @@ impl StunAgent {
     /// [`poll_transmit()`](StunAgent::poll_transmit) must be called.
     #[tracing::instrument(
         name = "stun_agent_poll"
-        level = "info",
+        level = "debug",
         skip(self),
     )]
     pub fn poll(&mut self, now: Instant) -> StunAgentPollRet {
@@ -388,7 +390,7 @@ impl StunAgent {
     /// Poll for any transmissions that may need to be performed.
     #[tracing::instrument(
         name = "stun_agent_poll_transmit"
-        level = "info",
+        level = "debug",
         skip(self),
     )]
     pub fn poll_transmit(&mut self, now: Instant) -> Option<Transmit<&[u8]>> {
@@ -631,7 +633,7 @@ impl StunRequestState {
 
     #[tracing::instrument(
         name = "stun_request_poll"
-        level = "info",
+        level = "debug",
         ret,
         skip(self, now),
         fields(transaction_id = %self.transaction_id),
