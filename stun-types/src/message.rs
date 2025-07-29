@@ -1323,7 +1323,7 @@ impl<'a> Message<'a> {
     #[tracing::instrument(
         name = "message_get_attribute_and_offset",
         level = "trace",
-        err,
+        err(level = tracing::Level::DEBUG),
         skip(self),
         fields(
             msg.transaction = %self.transaction_id(),
