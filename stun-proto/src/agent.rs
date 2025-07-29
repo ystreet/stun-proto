@@ -508,6 +508,19 @@ pub struct Transmit<T: AsRef<[u8]>> {
     pub to: SocketAddr,
 }
 
+impl<T: AsRef<[u8]>> std::fmt::Display for Transmit<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Transmit({}: {} -> {}) of {} bytes",
+            self.transport,
+            self.from,
+            self.to,
+            self.data.as_ref().len()
+        )
+    }
+}
+
 impl<T: AsRef<[u8]>> Transmit<T> {
     /// Construct a new [`Transmit`] with the specifid data and 5-tuple.
     pub fn new(data: T, transport: TransportType, from: SocketAddr, to: SocketAddr) -> Self {
@@ -1511,5 +1524,6 @@ pub(crate) mod tests {
         assert_eq!(owned.transport, transport);
         assert_eq!(owned.from, from);
         assert_eq!(owned.to, to);
+        println!("{owned}");
     }
 }
