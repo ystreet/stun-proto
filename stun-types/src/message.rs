@@ -92,7 +92,7 @@ use byteorder::{BigEndian, ByteOrder};
 
 use crate::attribute::*;
 
-use tracing::{debug, trace, warn};
+use tracing::{trace, warn};
 
 /// The value of the magic cookie (in network byte order) as specified in RFC5389, and RFC8489.
 pub const MAGIC_COOKIE: u32 = 0x2112A442;
@@ -1134,7 +1134,6 @@ impl<'a> Message<'a> {
         &self,
         credentials: &MessageIntegrityCredentials,
     ) -> Result<IntegrityAlgorithm, StunParseError> {
-        debug!("using credentials {credentials:?}");
         let raw_sha1 = self.raw_attribute(MessageIntegrity::TYPE);
         let raw_sha256 = self.raw_attribute(MessageIntegritySha256::TYPE);
         let (algo, msg_hmac) = match (raw_sha1, raw_sha256) {
@@ -2928,7 +2927,7 @@ mod tests {
             password: "VOkJxbRl1RmTxUk/WvJxBt".to_owned(),
         });
         let ret = msg.validate_integrity(&credentials);
-        debug!("{:?}", ret);
+        warn!("{:?}", ret);
         assert!(matches!(ret, Ok(IntegrityAlgorithm::Sha1)));
         builder
             .add_message_integrity(&credentials, IntegrityAlgorithm::Sha1)
