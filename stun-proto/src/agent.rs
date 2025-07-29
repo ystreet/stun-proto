@@ -626,7 +626,7 @@ impl StunRequestState {
         }
     }
 
-    #[tracing::instrument(skip(self), level = "trace", ret)]
+    #[tracing::instrument(skip(self, now), level = "trace", ret)]
     fn next_send_time(&self, now: Instant) -> Option<Instant> {
         let Some(last_send) = self.last_send_time else {
             trace!("not sent yet -> send immediately");
