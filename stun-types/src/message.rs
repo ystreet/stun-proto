@@ -1319,16 +1319,6 @@ impl<'a> Message<'a> {
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.attribute_and_offset::<Software>().unwrap(), (20, attr));
     /// ```
-    #[tracing::instrument(
-        name = "message_get_attribute_and_offset",
-        level = "trace",
-        err(level = tracing::Level::DEBUG),
-        skip(self),
-        fields(
-            msg.transaction = %self.transaction_id(),
-            attribute_type = %A::TYPE,
-        )
-    )]
     pub fn attribute_and_offset<A: AttributeFromRaw<'a> + AttributeStaticType>(
         &'a self,
     ) -> Result<(usize, A), StunParseError> {
