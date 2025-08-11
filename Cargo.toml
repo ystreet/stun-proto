@@ -16,7 +16,7 @@ rand = "0.9"
 tracing = "0.1"
 thiserror = "2"
 tracing-subscriber = "0.3"
-criterion = "0.6"
+criterion = "0.7"
 
 [profile.bench]
 codegen-units = 16
