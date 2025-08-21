@@ -1561,7 +1561,7 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
         let padded_len = attr.padded_len();
         self.data_i += padded_len;
         if self.seen_message_integrity {
-            if attr_type == Fingerprint::TYPE {
+            if self.last_attr_type != Fingerprint::TYPE && attr_type == Fingerprint::TYPE {
                 self.last_attr_type = attr_type;
                 return Some((self.data_i - padded_len, attr));
             }
@@ -1575,6 +1575,7 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
         }
         if attr.get_type() == MessageIntegrity::TYPE
             || attr.get_type() == MessageIntegritySha256::TYPE
+            || attr.get_type() == Fingerprint::TYPE
         {
             self.seen_message_integrity = true;
         }
@@ -2726,6 +2727,40 @@ mod tests {
             .next(),
             None
         );
+    }
+
+    #[test]
+    fn attributes_iter_software_after_fingerprint_ignored() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        msg.add_fingerprint().unwrap();
+        let mut bytes = msg.finish();
+        let software = Software::new("s").unwrap();
+        let software_bytes = RawAttribute::from(&software).to_bytes();
+        let software_len = software_bytes.len();
+        bytes.extend(software_bytes);
+        bytes[3] += software_len as u8;
+        let mut it = MessageAttributesIter::new(&bytes);
+        let (_offset, fingerprint) = it.next().unwrap();
+        assert_eq!(fingerprint.get_type(), Fingerprint::TYPE);
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn attributes_iter_fingerprint_after_fingerprint_ignored() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        msg.add_fingerprint().unwrap();
+        let mut bytes = msg.finish();
+        let fingerprint = Fingerprint::new([bytes[bytes.len() - 1].wrapping_sub(1); 4]);
+        let fingerprint_bytes = RawAttribute::from(&fingerprint).to_bytes();
+        let fingerprint_len = fingerprint_bytes.len();
+        bytes.extend(fingerprint_bytes);
+        bytes[3] += fingerprint_len as u8;
+        let mut it = MessageAttributesIter::new(&bytes);
+        let (_offset, fingerprint) = it.next().unwrap();
+        assert_eq!(fingerprint.get_type(), Fingerprint::TYPE);
+        assert_eq!(it.next(), None);
     }
 
     #[test]
