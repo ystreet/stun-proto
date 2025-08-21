@@ -155,6 +155,10 @@ impl ErrorCode {
     pub const UNSUPPORTED_TRANSPORT_PROTOCOL: u16 = 442;
     /// The peer address family does not match the TURN allocation.
     pub const PEER_ADDRESS_FAMILY_MISMATCH: u16 = 443;
+    /// The connection already exists.
+    pub const CONNECTION_ALREADY_EXISTS: u16 = 446;
+    /// The connection could not be established due to timeout or another failure.
+    pub const CONNECTION_TIMEOUT_OR_FAILURE: u16 = 447;
     /// This username has reached its limit of allocations currently allowed.
     pub const ALLOCATION_QUOTA_REACHED: u16 = 486;
     /// Requestor must switch ICE roles.
@@ -264,6 +268,8 @@ impl ErrorCode {
             Self::WRONG_CREDENTIALS => "Wrong Credentials",
             Self::UNSUPPORTED_TRANSPORT_PROTOCOL => "Unsupported Transport Protocol",
             Self::PEER_ADDRESS_FAMILY_MISMATCH => "Peer Address Family Mismatch",
+            Self::CONNECTION_ALREADY_EXISTS => "Connection Already Exists",
+            Self::CONNECTION_TIMEOUT_OR_FAILURE => "Connection Timeout or Failure",
             Self::ALLOCATION_QUOTA_REACHED => "Allocation Quota Reached",
             Self::ROLE_CONFLICT => "Role Conflict",
             Self::SERVER_ERROR => "Server Error",
