@@ -388,7 +388,10 @@ mod tests {
         let raw = RawAttribute::from(&use_candidate);
         trace!("{raw}");
         assert_eq!(raw.get_type(), UseCandidate::TYPE);
-        let _mapped2 = UseCandidate::try_from(&raw).unwrap();
+        let mapped2 = UseCandidate::try_from(&raw).unwrap();
+        let mut data = [0; 4];
+        mapped2.write_into(&mut data).unwrap();
+        assert_eq!(data.as_ref(), &raw.to_bytes());
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -404,6 +407,7 @@ mod tests {
         let tb = 100;
         let attr = IceControlling::new(tb);
         trace!("{attr}");
+        assert_eq!(attr.get_type(), IceControlling::TYPE);
         assert_eq!(attr.tie_breaker(), tb);
         assert_eq!(attr.length(), 8);
         let raw = RawAttribute::from(&attr);
@@ -411,6 +415,9 @@ mod tests {
         assert_eq!(raw.get_type(), IceControlling::TYPE);
         let mapped2 = IceControlling::try_from(&raw).unwrap();
         assert_eq!(mapped2.tie_breaker(), tb);
+        let mut data = [0; 12];
+        mapped2.write_into(&mut data).unwrap();
+        assert_eq!(data.as_ref(), &raw.to_bytes());
         // truncate by one byte
         let mut data: Vec<_> = raw.clone().into();
         let len = data.len();
