@@ -2630,6 +2630,25 @@ mod tests {
     }
 
     #[test]
+    fn parse_attribute_extends_past_message_end() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        msg.add_attribute(&Software::new("a").unwrap()).unwrap();
+        msg[23] += 1;
+        let mut bytes = msg.finish();
+        bytes[3] -= 1;
+        println!("{bytes:x?}");
+        println!("{:?}", Message::from_bytes(&bytes[..27]));
+        assert!(matches!(
+            Message::from_bytes(&bytes[..27]),
+            Err(StunParseError::Truncated {
+                expected: 28,
+                actual: 27
+            })
+        ));
+    }
+
+    #[test]
     fn valid_attributes() {
         let _log = crate::tests::test_init_log();
         let mut src = Message::builder_request(BINDING, MessageWriteVec::new());
