@@ -232,6 +232,20 @@ pub(crate) mod tests {
     use tracing::trace;
 
     #[test]
+    fn address_family() {
+        assert_eq!(AddressFamily::IPV4.to_byte(), 1);
+        assert_eq!(AddressFamily::from_byte(1).unwrap(), AddressFamily::IPV4);
+        assert_eq!(format!("{}", AddressFamily::IPV4), "IPV4".to_owned());
+        assert_eq!(AddressFamily::IPV6.to_byte(), 2);
+        assert_eq!(AddressFamily::from_byte(2).unwrap(), AddressFamily::IPV6);
+        assert_eq!(format!("{}", AddressFamily::IPV6), "IPV6".to_owned());
+        assert!(matches!(
+            AddressFamily::from_byte(3),
+            Err(StunParseError::InvalidAttributeData)
+        ));
+    }
+
+    #[test]
     fn mapped_address_ipv4() {
         let addr = "192.168.0.1:3178".parse().unwrap();
         let _log = crate::tests::test_init_log();
