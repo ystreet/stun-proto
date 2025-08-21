@@ -1515,6 +1515,7 @@ impl<'a> TryFrom<&'a [u8]> for Message<'a> {
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct MessageAttributesIter<'a> {
+    header_parsed: bool,
     data: &'a [u8],
     data_i: usize,
     last_attr_type: AttributeType,
@@ -1522,9 +1523,12 @@ pub struct MessageAttributesIter<'a> {
 }
 
 impl<'a> MessageAttributesIter<'a> {
-    /// Construct an Iterator over the attributes of a [`Message`]
+    /// Construct an Iterator over the attributes of a [`Message`].
+    ///
+    /// The provided data is the entirety of the message data.
     pub fn new(data: &'a [u8]) -> Self {
         Self {
+            header_parsed: false,
             data,
             data_i: MessageHeader::LENGTH,
             seen_message_integrity: false,
@@ -1539,6 +1543,14 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.data_i >= self.data.len() {
             return None;
+        }
+
+        if !self.header_parsed {
+            if let Err(_e) = MessageHeader::from_bytes(self.data) {
+                self.data_i = self.data.len();
+                return None;
+            }
+            self.header_parsed = true;
         }
 
         let Ok(attr) = RawAttribute::from_bytes(&self.data[self.data_i..]) else {
@@ -2697,6 +2709,23 @@ mod tests {
         assert_eq!(err.code(), 420);
         let unknown = res.attribute::<UnknownAttributes>().unwrap();
         assert!(unknown.has_attribute(Priority::TYPE));
+    }
+
+    #[test]
+    fn attributes_iter_with_short_data() {
+        let _log = crate::tests::test_init_log();
+        assert_eq!(
+            MessageAttributesIter::new(&[0x0, 0x1, 0x2, 0x3, 0x4]).next(),
+            None
+        );
+        assert_eq!(
+            MessageAttributesIter::new(&[
+                0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf,
+                0x10, 0x11, 0x12, 0x13
+            ])
+            .next(),
+            None
+        );
     }
 
     #[test]
