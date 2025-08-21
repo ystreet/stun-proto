@@ -2138,6 +2138,7 @@ impl<'a> MessageWrite for MessageWriteMutSlice<'a> {
             &mut self.output[2..4],
             (expected - MessageHeader::LENGTH) as u16,
         );
+        self.attributes.push(attr.get_type());
         attr.write_into(&mut self.output[self.offset..self.offset + padded_len])
             .unwrap();
         self.offset += padded_len;
@@ -2828,7 +2829,9 @@ mod tests {
     #[test]
     fn write_vec_state() {
         let _log = crate::tests::test_init_log();
-        let mut src = Message::builder_request(BINDING, MessageWriteVec::new());
+        let mut src = Message::builder_request(BINDING, MessageWriteVec::with_capacity(0x10));
+        assert_eq!(src.len(), 20);
+        assert_eq!(src[4], 0x21);
         let username = Username::new("123").unwrap();
         src.add_attribute(&username).unwrap();
         let priority = Priority::new(123);
@@ -2855,16 +2858,34 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let mut data = [0; 64];
         let mut src = Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut data));
+        assert_eq!(src.len(), 20);
+        assert_eq!(src[4], 0x21);
         let username = Username::new("123").unwrap();
         src.add_attribute(&username).unwrap();
         let priority = Priority::new(123);
         src.add_attribute(&priority).unwrap();
+        assert!(src.has_attribute(Username::TYPE));
+        assert!(!src.has_attribute(Software::TYPE));
         assert_eq!(src.finish(), 36);
         let msg = Message::from_bytes(&data[..36]).unwrap();
         let u2 = msg.attribute::<Username>().unwrap();
         assert_eq!(u2.username(), "123");
         let p2 = msg.attribute::<Priority>().unwrap();
         assert_eq!(p2.priority(), 123);
+    }
+
+    #[test]
+    fn write_mut_slice_too_short() {
+        let _log = crate::tests::test_init_log();
+        let mut data = [0; 20];
+        let mut src = Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut data));
+        assert!(matches!(
+            src.add_attribute(&Username::new("123").unwrap()),
+            Err(StunWriteError::TooSmall {
+                expected: 28,
+                actual: 20
+            })
+        ));
     }
 
     #[test]
