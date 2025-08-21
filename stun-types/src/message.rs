@@ -1005,8 +1005,6 @@ impl<'a> Message<'a> {
             });
         }
 
-        let mut data_offset = MessageHeader::LENGTH;
-        let mut data = &data[MessageHeader::LENGTH..];
         let ending_attributes = [
             MessageIntegrity::TYPE,
             MessageIntegritySha256::TYPE,
@@ -1015,20 +1013,11 @@ impl<'a> Message<'a> {
         // XXX: maybe use small/tinyvec?
         let mut seen_ending_attributes = [AttributeType::new(0); 3];
         let mut seen_ending_len = 0;
-        while !data.is_empty() {
-            let attr = RawAttribute::from_bytes(data).map_err(|e| {
+        let mut data_offset = MessageHeader::LENGTH;
+        for attr in MessageRawAttributesIter::new(data) {
+            let (_offset, attr) = attr.map_err(|e| {
                 warn!("failed to parse message attribute at offset {data_offset}: {e}",);
-                match e {
-                    StunParseError::Truncated { expected, actual } => StunParseError::Truncated {
-                        expected: expected + 4 + data_offset,
-                        actual: actual + 4 + data_offset,
-                    },
-                    StunParseError::TooLarge { expected, actual } => StunParseError::TooLarge {
-                        expected: expected + 4 + data_offset,
-                        actual: actual + 4 + data_offset,
-                    },
-                    e => e,
-                }
+                e
             })?;
 
             // if we have seen any ending attributes, then there is only a fixed set of attributes
@@ -1067,16 +1056,6 @@ impl<'a> Message<'a> {
                 }
             }
             let padded_len = attr.padded_len();
-            if padded_len > data.len() {
-                warn!(
-                    "attribute {} extends past the end of the data",
-                    attr.get_type()
-                );
-                return Err(StunParseError::Truncated {
-                    expected: data_offset + padded_len,
-                    actual: data_offset + data.len(),
-                });
-            }
             if attr.get_type() == Fingerprint::TYPE {
                 let f = Fingerprint::from_raw_ref(&attr)?;
                 let msg_fingerprint = f.fingerprint();
@@ -1094,7 +1073,6 @@ impl<'a> Message<'a> {
                     return Err(StunParseError::FingerprintMismatch);
                 }
             }
-            data = &data[padded_len..];
             data_offset += padded_len;
         }
         Ok(Message { data: orig_data })
@@ -1512,12 +1490,70 @@ impl<'a> TryFrom<&'a [u8]> for Message<'a> {
     }
 }
 
+#[derive(Debug)]
+struct MessageRawAttributesIter<'a> {
+    data: &'a [u8],
+    data_i: usize,
+}
+
+impl<'a> MessageRawAttributesIter<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self {
+            data,
+            data_i: MessageHeader::LENGTH,
+        }
+    }
+}
+
+impl<'a> Iterator for MessageRawAttributesIter<'a> {
+    type Item = Result<(usize, RawAttribute<'a>), StunParseError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.data_i >= self.data.len() {
+            return None;
+        }
+
+        match RawAttribute::from_bytes(&self.data[self.data_i..]) {
+            Ok(attr) => {
+                let padded_len = attr.padded_len();
+                self.data_i += padded_len;
+                if self.data_i > self.data.len() {
+                    warn!(
+                        "attribute {} extends past the end of the data",
+                        attr.get_type()
+                    );
+                    return Some(Err(StunParseError::Truncated {
+                        expected: self.data_i,
+                        actual: self.data.len(),
+                    }));
+                }
+                Some(Ok((self.data_i - padded_len, attr)))
+            }
+            Err(e) => {
+                let offset = self.data_i;
+                self.data_i = self.data.len();
+                let e = match e {
+                    StunParseError::Truncated { expected, actual } => StunParseError::Truncated {
+                        expected: expected + 4 + offset,
+                        actual: actual + 4 + offset,
+                    },
+                    StunParseError::TooLarge { expected, actual } => StunParseError::TooLarge {
+                        expected: expected + 4 + offset,
+                        actual: actual + 4 + offset,
+                    },
+                    e => e,
+                };
+                Some(Err(e))
+            }
+        }
+    }
+}
+
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct MessageAttributesIter<'a> {
     header_parsed: bool,
-    data: &'a [u8],
-    data_i: usize,
+    inner: MessageRawAttributesIter<'a>,
     last_attr_type: AttributeType,
     seen_message_integrity: bool,
 }
@@ -1529,8 +1565,7 @@ impl<'a> MessageAttributesIter<'a> {
     pub fn new(data: &'a [u8]) -> Self {
         Self {
             header_parsed: false,
-            data,
-            data_i: MessageHeader::LENGTH,
+            inner: MessageRawAttributesIter::new(data),
             seen_message_integrity: false,
             last_attr_type: AttributeType::new(0),
         }
@@ -1541,36 +1576,37 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
     type Item = (usize, RawAttribute<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.data_i >= self.data.len() {
+        // nothing further to parse after Fingerprint
+        if self.last_attr_type == Fingerprint::TYPE {
             return None;
         }
 
         if !self.header_parsed {
-            if let Err(_e) = MessageHeader::from_bytes(self.data) {
-                self.data_i = self.data.len();
+            let Ok(hdr) = MessageHeader::from_bytes(self.inner.data) else {
+                self.last_attr_type = Fingerprint::TYPE;
+                return None;
+            };
+            if hdr.data_length() as usize + MessageHeader::LENGTH > self.inner.data.len() {
+                self.last_attr_type = Fingerprint::TYPE;
                 return None;
             }
             self.header_parsed = true;
         }
 
-        let Ok(attr) = RawAttribute::from_bytes(&self.data[self.data_i..]) else {
-            self.data_i = self.data.len();
-            return None;
-        };
+        let (offset, attr) = self.inner.next()?.ok()?;
         let attr_type = attr.get_type();
-        let padded_len = attr.padded_len();
-        self.data_i += padded_len;
         if self.seen_message_integrity {
             if self.last_attr_type != Fingerprint::TYPE && attr_type == Fingerprint::TYPE {
                 self.last_attr_type = attr_type;
-                return Some((self.data_i - padded_len, attr));
+                return Some((offset, attr));
             }
             if self.last_attr_type == MessageIntegrity::TYPE
                 && attr_type == MessageIntegritySha256::TYPE
             {
                 self.last_attr_type = attr_type;
-                return Some((self.data_i - padded_len, attr));
+                return Some((offset, attr));
             }
+            self.last_attr_type = Fingerprint::TYPE;
             return None;
         }
         if attr.get_type() == MessageIntegrity::TYPE
@@ -1581,7 +1617,7 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
         }
         self.last_attr_type = attr.get_type();
 
-        Some((self.data_i - padded_len, attr))
+        Some((offset, attr))
     }
 }
 
@@ -2721,8 +2757,8 @@ mod tests {
         );
         assert_eq!(
             MessageAttributesIter::new(&[
-                0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf,
-                0x10, 0x11, 0x12, 0x13
+                0x0, 0x1, 0x2, 0x3, 0x21, 0x12, 0xa4, 0x42, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf,
+                0x10, 0x11, 0x12, 0x13, 0x14,
             ])
             .next(),
             None
@@ -2743,6 +2779,32 @@ mod tests {
         let mut it = MessageAttributesIter::new(&bytes);
         let (_offset, fingerprint) = it.next().unwrap();
         assert_eq!(fingerprint.get_type(), Fingerprint::TYPE);
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn attributes_iter_message_integrities_fingerprint() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let credentials = ShortTermCredentials::new("pass".to_owned());
+        msg.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha1)
+            .unwrap();
+        msg.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha256)
+            .unwrap();
+        msg.add_fingerprint().unwrap();
+        let mut bytes = msg.finish();
+        let software = Software::new("s").unwrap();
+        let software_bytes = RawAttribute::from(&software).to_bytes();
+        let software_len = software_bytes.len();
+        bytes.extend(software_bytes);
+        bytes[3] += software_len as u8;
+        let mut it = MessageAttributesIter::new(&bytes);
+        assert_eq!(it.next().unwrap().1.get_type(), MessageIntegrity::TYPE);
+        assert_eq!(
+            it.next().unwrap().1.get_type(),
+            MessageIntegritySha256::TYPE
+        );
+        assert_eq!(it.next().unwrap().1.get_type(), Fingerprint::TYPE);
         assert_eq!(it.next(), None);
     }
 
