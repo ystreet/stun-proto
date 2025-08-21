@@ -312,7 +312,7 @@ mod tests {
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
         assert!(matches!(
-            Userhash::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
+            Userhash::from_raw_ref(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
     }
