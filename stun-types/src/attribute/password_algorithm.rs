@@ -45,7 +45,7 @@ impl PasswordAlgorithmValue {
         // checked externally that we have at least 4 bytes
         let ty = BigEndian::read_u16(&data[..2]);
         let len = BigEndian::read_u16(&data[2..4]);
-        // all currently know algorithms don't ahve any extra data
+        // all currently know algorithms don't have any extra data
         if len != 0 {
             return Err(StunParseError::TooLarge {
                 expected: 4,
@@ -296,18 +296,29 @@ mod tests {
         let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
         let attr = PasswordAlgorithms::new(&vals);
         trace!("{attr}");
+        assert_eq!(attr.get_type(), PasswordAlgorithms::TYPE);
         assert_eq!(attr.algorithms(), &vals);
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), PasswordAlgorithms::TYPE);
         let mapped2 = PasswordAlgorithms::try_from(&raw).unwrap();
         assert_eq!(mapped2.algorithms(), &vals);
+        let mut data = [0; 12];
+        mapped2.write_into(&mut data).unwrap();
+        assert_eq!(data.as_ref(), &raw.to_bytes());
         // provide incorrectly typed data
-        let mut data: Vec<_> = raw.into();
+        let mut data = raw.to_bytes();
         BigEndian::write_u16(&mut data[0..2], 0);
         assert!(matches!(
             PasswordAlgorithms::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
+        ));
+        // Attribute data not aligned to 4 bytes will error
+        let mut data = raw.to_bytes();
+        data[4] = 7;
+        assert!(matches!(
+            PasswordAlgorithms::try_from(&RawAttribute::from_bytes(&data[..12]).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
         ));
     }
 
@@ -317,12 +328,16 @@ mod tests {
         let val = PasswordAlgorithmValue::SHA256;
         let attr = PasswordAlgorithm::new(val);
         trace!("{attr}");
+        assert_eq!(attr.get_type(), PasswordAlgorithm::TYPE);
         assert_eq!(attr.algorithm(), val);
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), PasswordAlgorithm::TYPE);
         let mapped2 = PasswordAlgorithm::try_from(&raw).unwrap();
         assert_eq!(mapped2.algorithm(), val);
+        let mut data = [0; 8];
+        mapped2.write_into(&mut data).unwrap();
+        assert_eq!(data.as_ref(), &raw.to_bytes());
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -346,6 +361,13 @@ mod tests {
                 expected: 4,
                 actual: 104
             })
+        ));
+        // Attribute data not aligned to 4 bytes will error
+        let mut data = raw.to_bytes();
+        data[4] = 3;
+        assert!(matches!(
+            PasswordAlgorithm::try_from(&RawAttribute::from_bytes(&data[..8]).unwrap()),
+            Err(StunParseError::InvalidAttributeData)
         ));
     }
 
