@@ -1702,26 +1702,11 @@ pub trait MessageWrite {
     fn push_attribute_unchecked(&mut self, attr: &dyn AttributeWrite);
 
     /// Return whether this [`MessageWrite`] contains a particular attribute.
-    fn has_attribute(&self, atype: AttributeType) -> bool {
-        Message::from_bytes(self.data())
-            .unwrap()
-            .has_attribute(atype)
-    }
+    fn has_attribute(&self, atype: AttributeType) -> bool;
 
     /// Return whether this [`MessageWrite`] contains any of the provided attributes and
     /// returns the attribute found.
-    fn has_any_attribute(&self, atypes: &[AttributeType]) -> Option<AttributeType> {
-        Message::from_bytes(self.data())
-            .unwrap()
-            .iter_attributes()
-            .find_map(|(_offset, raw)| {
-                if atypes.contains(&raw.get_type()) {
-                    Some(raw.get_type())
-                } else {
-                    None
-                }
-            })
-    }
+    fn has_any_attribute(&self, atypes: &[AttributeType]) -> Option<AttributeType>;
 
     /// Finishes and returns the built Message.
     fn finish(self) -> Self::Output;
