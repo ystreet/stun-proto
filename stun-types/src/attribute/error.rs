@@ -240,21 +240,26 @@ impl ErrorCode {
     ///
     /// Currently the following are supported.
     ///
-    ///  - 301 -> Try Alternate
-    ///  - 400 -> Bad Request
-    ///  - 401 -> Unauthorized
-    ///  - 403 -> Forbidden
-    ///  - 420 -> Unknown Attribute
-    ///  - 437 -> Allocation Mismatch
-    ///  - 438 -> Stale Nonce
-    ///  - 440 -> Address Family Not Supported
-    ///  - 441 -> Wrong Credentials
-    ///  - 442 -> Supported Transport Protocol
-    ///  - 443 -> Peer Address Family Mismatch
-    ///  - 486 -> Allocation Quota Reached
-    ///  - 487 -> Role Conflict
-    ///  - 500 -> Server Error
-    ///  - 508 -> Insufficient Capacity
+    /// ```
+    /// # use stun_types::attribute::*;
+    /// assert_eq!(ErrorCode::default_reason_for_code(301), "Try Alternate");
+    /// assert_eq!(ErrorCode::default_reason_for_code(400), "Bad Request");
+    /// assert_eq!(ErrorCode::default_reason_for_code(401), "Unauthorized");
+    /// assert_eq!(ErrorCode::default_reason_for_code(403), "Forbidden");
+    /// assert_eq!(ErrorCode::default_reason_for_code(420), "Unknown Attribute");
+    /// assert_eq!(ErrorCode::default_reason_for_code(437), "Allocation Mismatch");
+    /// assert_eq!(ErrorCode::default_reason_for_code(438), "Stale Nonce");
+    /// assert_eq!(ErrorCode::default_reason_for_code(440), "Address Family Not Supported");
+    /// assert_eq!(ErrorCode::default_reason_for_code(441), "Wrong Credentials");
+    /// assert_eq!(ErrorCode::default_reason_for_code(442), "Unsupported Transport Protocol");
+    /// assert_eq!(ErrorCode::default_reason_for_code(443), "Peer Address Family Mismatch");
+    /// assert_eq!(ErrorCode::default_reason_for_code(446), "Connection Already Exists");
+    /// assert_eq!(ErrorCode::default_reason_for_code(447), "Connection Timeout or Failure");
+    /// assert_eq!(ErrorCode::default_reason_for_code(486), "Allocation Quota Reached");
+    /// assert_eq!(ErrorCode::default_reason_for_code(487), "Role Conflict");
+    /// assert_eq!(ErrorCode::default_reason_for_code(500), "Server Error");
+    /// assert_eq!(ErrorCode::default_reason_for_code(508), "Insufficient Capacity");
+    /// ```
     pub fn default_reason_for_code(code: u16) -> &'static str {
         match code {
             Self::TRY_ALTERNATE => "Try Alternate",
