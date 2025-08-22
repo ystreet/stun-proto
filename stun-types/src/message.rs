@@ -1181,7 +1181,7 @@ impl<'a> Message<'a> {
         unreachable!();
     }
 
-    /// Retrieve a `RawAttribute` from this `Message`.
+    /// Retrieve the nth `RawAttribute` with a particular [`AttributeType`] from this `Message`.
     ///
     /// # Examples
     ///
@@ -1194,16 +1194,25 @@ impl<'a> Message<'a> {
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// assert!(message.add_attribute(&attr).is_ok());
+    /// assert!(message.add_attribute(&attr).is_ok());
     /// let message = message.finish();
     /// let message = Message::from_bytes(&message).unwrap();
-    /// assert_eq!(message.raw_attribute(1.into()).unwrap(), attr);
+    /// assert_eq!(message.nth_raw_attribute(1.into(), 1).unwrap(), attr);
     /// ```
-    pub fn raw_attribute(&self, atype: AttributeType) -> Option<RawAttribute<'_>> {
-        self.raw_attribute_and_offset(atype)
+    pub fn nth_raw_attribute(&self, atype: AttributeType, n: usize) -> Option<RawAttribute<'_>> {
+        self.nth_raw_attribute_and_offset(atype, n)
             .map(|(_offset, attr)| attr)
     }
 
-    /// Retrieve a `RawAttribute` from this `Message` with it's byte offset.
+    /// Retrieve the first `RawAttribute` of a particular `AttributeTye` from this `Message`.
+    ///
+    /// The is equivalent to `Message::nth_raw_attribute(0)`.
+    pub fn raw_attribute(&self, atype: AttributeType) -> Option<RawAttribute<'_>> {
+        self.nth_raw_attribute(atype, 0)
+    }
+
+    /// Retrieve the nth `RawAttribute` of a particular `AttributeType` from this `Message` with
+    /// it's byte offset.
     ///
     /// The offset is from the start of the 4 byte Attribute header.
     ///
@@ -1218,12 +1227,13 @@ impl<'a> Message<'a> {
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// assert!(message.add_attribute(&attr).is_ok());
+    /// assert!(message.add_attribute(&attr).is_ok());
     /// let message = message.finish();
     /// let message = Message::from_bytes(&message).unwrap();
-    /// assert_eq!(message.raw_attribute_and_offset(1.into()).unwrap(), (20, attr));
+    /// assert_eq!(message.nth_raw_attribute_and_offset(1.into(), 1).unwrap(), (28, attr));
     /// ```
     #[tracing::instrument(
-        name = "message_get_raw_attribute_and_offset",
+        name = "message_nth_raw_attribute_and_offset",
         level = "trace",
         skip(self, atype),
         fields(
@@ -1231,13 +1241,15 @@ impl<'a> Message<'a> {
             attribute_type = %atype,
         )
     )]
-    pub fn raw_attribute_and_offset(
+    pub fn nth_raw_attribute_and_offset(
         &self,
         atype: AttributeType,
+        n: usize,
     ) -> Option<(usize, RawAttribute<'_>)> {
         if let Some((offset, attr)) = self
             .iter_attributes()
-            .find(|(_offset, attr)| attr.get_type() == atype)
+            .filter(|(_offset, attr)| attr.get_type() == atype)
+            .nth(n)
         {
             trace!("found attribute at offset: {offset}");
             Some((offset, attr))
@@ -1247,7 +1259,18 @@ impl<'a> Message<'a> {
         }
     }
 
-    /// Retrieve a concrete `Attribute` from this `Message`.
+    /// Retrieve the first `RawAttribute` of a particular `AttributeType` from this `Message` with
+    /// it's byte offset.
+    ///
+    /// This equivalent to calling `Message::nth_raw_attribute_and_offset(0)`.
+    pub fn raw_attribute_and_offset(
+        &self,
+        atype: AttributeType,
+    ) -> Option<(usize, RawAttribute<'_>)> {
+        self.nth_raw_attribute_and_offset(atype, 0)
+    }
+
+    /// Retrieve the nth `Attribute` of a particular `AttributeType` from this `Message`.
     ///
     /// This will error with [`StunParseError::MissingAttribute`] if the attribute does not exist.
     /// Otherwise, other parsing errors of the data may be returned specific to the attribute
@@ -1268,13 +1291,24 @@ impl<'a> Message<'a> {
     /// let message = Message::from_bytes(&message).unwrap();
     /// assert_eq!(message.attribute::<Software>().unwrap(), attr);
     /// ```
+    pub fn nth_attribute<A: AttributeFromRaw<'a> + AttributeStaticType>(
+        &'a self,
+        n: usize,
+    ) -> Result<A, StunParseError> {
+        self.nth_attribute_and_offset(n).map(|(_offset, attr)| attr)
+    }
+
+    /// Retrieve the first `Attribute` of a particular `AttributeType` from this `Message`.
+    ///
+    /// This equivalent to calling `Message::nth_attribute(0)`.
     pub fn attribute<A: AttributeFromRaw<'a> + AttributeStaticType>(
         &'a self,
     ) -> Result<A, StunParseError> {
-        self.attribute_and_offset().map(|(_offset, attr)| attr)
+        self.nth_attribute(0)
     }
 
-    /// Retrieve a concrete `Attribute` from this `Message` and it's offset in the original data.
+    /// Retrieve the nth `Attribute` of a particular `AttributeType` from this `Message` and it's
+    /// offset in the original data.
     ///
     /// This will error with [`StunParseError::MissingAttribute`] if the attribute does not exist.
     /// Otherwise, other parsing errors of the data may be returned specific to the attribute
@@ -1293,16 +1327,28 @@ impl<'a> Message<'a> {
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = Software::new("stun-types").unwrap();
     /// assert!(message.add_attribute(&attr).is_ok());
+    /// assert!(message.add_attribute(&attr).is_ok());
     /// let message = message.finish();
     /// let message = Message::from_bytes(&message).unwrap();
-    /// assert_eq!(message.attribute_and_offset::<Software>().unwrap(), (20, attr));
+    /// assert_eq!(message.nth_attribute_and_offset::<Software>(1).unwrap(), (36, attr));
     /// ```
+    pub fn nth_attribute_and_offset<A: AttributeFromRaw<'a> + AttributeStaticType>(
+        &'a self,
+        n: usize,
+    ) -> Result<(usize, A), StunParseError> {
+        self.nth_raw_attribute_and_offset(A::TYPE, n)
+            .ok_or(StunParseError::MissingAttribute(A::TYPE))
+            .and_then(|(offset, raw)| A::from_raw(raw).map(|attr| (offset, attr)))
+    }
+
+    /// Retrieve the first `Attribute` of a particular `AttributeType` from this `Message` and it's
+    /// offset in the original data.
+    ///
+    /// This equivalent to calling `Message::nth_attribute_and_offset(0)`.
     pub fn attribute_and_offset<A: AttributeFromRaw<'a> + AttributeStaticType>(
         &'a self,
     ) -> Result<(usize, A), StunParseError> {
-        self.raw_attribute_and_offset(A::TYPE)
-            .ok_or(StunParseError::MissingAttribute(A::TYPE))
-            .and_then(|(offset, raw)| A::from_raw(raw).map(|attr| (offset, attr)))
+        self.nth_attribute_and_offset(0)
     }
 
     /// Returns an iterator over the attributes (with their byte offset) in the [`Message`].
@@ -1941,7 +1987,8 @@ pub trait MessageWriteExt: MessageWrite {
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// assert!(message.add_attribute(&attr).is_ok());
-    /// assert!(message.add_attribute(&attr).is_err());
+    /// // Duplicate attributes are allowed, however semantically, the protocol may not allow them.
+    /// assert!(message.add_attribute(&attr).is_ok());
     /// ```
     #[tracing::instrument(
         name = "message_add_attribute",
@@ -1969,7 +2016,6 @@ pub trait MessageWriteExt: MessageWrite {
             _ => (),
         }
         match self.has_any_attribute(&[
-            ty,
             MessageIntegrity::TYPE,
             MessageIntegritySha256::TYPE,
             Fingerprint::TYPE,
@@ -1980,7 +2026,6 @@ pub trait MessageWriteExt: MessageWrite {
                 return Err(StunWriteError::MessageIntegrityExists)
             }
             Some(Fingerprint::TYPE) => return Err(StunWriteError::FingerprintExists),
-            Some(typ) if typ == ty => return Err(StunWriteError::AttributeExists(ty)),
             _ => (),
         }
         check_attribute_can_fit(self, attr)?;
@@ -2467,31 +2512,6 @@ mod tests {
                 Err(StunWriteError::FingerprintExists)
             ));
         }
-    }
-
-    #[test]
-    fn duplicate_add_attribute() {
-        let _log = crate::tests::test_init_log();
-        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let software = Software::new("s").unwrap();
-        msg.add_attribute(&software).unwrap();
-        assert!(matches!(
-            msg.add_attribute(&software),
-            Err(StunWriteError::AttributeExists(ty)) if ty == Software::TYPE
-        ));
-    }
-
-    #[test]
-    fn duplicate_add_raw_attribute() {
-        let _log = crate::tests::test_init_log();
-        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let software = Software::new("s").unwrap();
-        let raw = software.to_raw();
-        msg.add_attribute(&raw).unwrap();
-        assert!(matches!(
-            msg.add_attribute(&raw),
-            Err(StunWriteError::AttributeExists(ty)) if ty == Software::TYPE
-        ));
     }
 
     #[test]
