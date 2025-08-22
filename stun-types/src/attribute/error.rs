@@ -133,7 +133,7 @@ impl ErrorCode {
     /// [`AlternateServer`](crate::attribute::alternate::AlternateServer) or
     /// [`AlternateDomain`](crate::attribute::alternate::AlternateDomain) contains the location of
     /// where to forward this request.
-    pub const TRY_ALTERNATE: u16 = 301;
+    pub const TRY_ALTERNATE: u16 = 300;
     /// The request was malformed and could not be processed.
     pub const BAD_REQUEST: u16 = 400;
     /// The required credentials were not found or did not match.
@@ -242,7 +242,7 @@ impl ErrorCode {
     ///
     /// ```
     /// # use stun_types::attribute::*;
-    /// assert_eq!(ErrorCode::default_reason_for_code(301), "Try Alternate");
+    /// assert_eq!(ErrorCode::default_reason_for_code(300), "Try Alternate");
     /// assert_eq!(ErrorCode::default_reason_for_code(400), "Bad Request");
     /// assert_eq!(ErrorCode::default_reason_for_code(401), "Unauthorized");
     /// assert_eq!(ErrorCode::default_reason_for_code(403), "Forbidden");
