@@ -103,12 +103,14 @@
 //! // Optional: if you want this attribute to be displayed nicely when the corresponding
 //! // `RawAttribute` (based on `AttributeType`) is formatted using `RawAttribute`'s `Display`
 //! // implementation.
-//! impl std::fmt::Display for MyAttribute {
-//!     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//! impl core::fmt::Display for MyAttribute {
+//!     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
 //!         write!(f, "MyAttribute: {}", self.value)
 //!     }
 //! }
+//! # #[cfg(feature = "std")]
 //! stun_types::attribute_display!(MyAttribute);
+//! # #[cfg(feature = "std")]
 //! MyAttribute::TYPE.add_name("MY-ATTRIBUTE");
 //!
 //! let my_attr = MyAttribute { value: 0x4729 };
@@ -161,10 +163,14 @@ pub use xor_addr::XorMappedAddress;
 
 use crate::data::Data;
 use crate::message::{StunParseError, StunWriteError};
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 use byteorder::{BigEndian, ByteOrder};
 
-use std::collections::HashMap;
+#[cfg(feature = "std")]
+use alloc::collections::BTreeMap;
+#[cfg(feature = "std")]
 use std::sync::{Mutex, OnceLock};
 
 /// A closure definition for an externally provided `Display` implementation for a [`RawAttribute`].
@@ -175,12 +181,14 @@ use std::sync::{Mutex, OnceLock};
 ///
 /// See the module level documentation for an example.
 pub type AttributeDisplay =
-    fn(&RawAttribute<'_>, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
-static ATTRIBUTE_EXTERNAL_DISPLAY_IMPL: OnceLock<Mutex<HashMap<AttributeType, AttributeDisplay>>> =
+    fn(&RawAttribute<'_>, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result;
+#[cfg(feature = "std")]
+static ATTRIBUTE_EXTERNAL_DISPLAY_IMPL: OnceLock<Mutex<BTreeMap<AttributeType, AttributeDisplay>>> =
     OnceLock::new();
 
 /// Adds an externally provided Display implementation for a particular [`AttributeType`].  Any
 /// previous implementation is overidden.
+#[cfg(feature = "std")]
 pub fn add_display_impl(atype: AttributeType, imp: AttributeDisplay) {
     let mut display_impls = ATTRIBUTE_EXTERNAL_DISPLAY_IMPL
         .get_or_init(Default::default)
@@ -220,22 +228,25 @@ pub fn add_display_impl(atype: AttributeType, imp: AttributeDisplay) {
 ///    }
 /// }
 /// // An Attribute would also implement AttributeWrite but that has been omitted for brevity.
-/// impl std::fmt::Display for MyAttribute {
-///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+/// impl core::fmt::Display for MyAttribute {
+///     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
 ///         write!(f, "MyAttribute")
 ///     }
 /// }
+/// # #[cfg(feature = "std")]
+/// # {
 /// stun_types::attribute_display!(MyAttribute);
 /// let attr = RawAttribute::new(MyAttribute::TYPE, &[]);
 /// let display_str = format!("{attr}");
 /// assert_eq!(display_str, "MyAttribute");
+/// # }
 /// ```
 #[macro_export]
 macro_rules! attribute_display {
     ($typ:ty) => {{
         let imp = |attr: &$crate::attribute::RawAttribute<'_>,
-                   f: &mut std::fmt::Formatter<'_>|
-         -> std::fmt::Result {
+                   f: &mut core::fmt::Formatter<'_>|
+         -> core::fmt::Result {
             if let Ok(attr) = <$typ>::from_raw_ref(attr) {
                 write!(f, "{}", attr)
             } else {
@@ -253,21 +264,23 @@ macro_rules! attribute_display {
     }};
 }
 
-static ATTRIBUTE_TYPE_NAME_MAP: OnceLock<Mutex<HashMap<AttributeType, &'static str>>> =
+#[cfg(feature = "std")]
+static ATTRIBUTE_TYPE_NAME_MAP: OnceLock<Mutex<BTreeMap<AttributeType, &'static str>>> =
     OnceLock::new();
 
 /// The type of an [`Attribute`] in a STUN [`Message`](crate::message::Message)
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AttributeType(u16);
 
-impl std::fmt::Display for AttributeType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for AttributeType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}({:#x}: {})", self.0, self.0, self.name())
     }
 }
 
 impl AttributeType {
     /// Add the name for a particular [`AttributeType`] for formatting purposes.
+    #[cfg(feature = "std")]
     pub fn add_name(self, name: &'static str) {
         let mut anames = ATTRIBUTE_TYPE_NAME_MAP
             .get_or_init(Default::default)
@@ -332,15 +345,17 @@ impl AttributeType {
             IceControlled::TYPE => "ICE-CONTROLLED",
             IceControlling::TYPE => "ICE-CONTROLLING",
             _ => {
-                let anames = ATTRIBUTE_TYPE_NAME_MAP
-                    .get_or_init(Default::default)
-                    .lock()
-                    .unwrap();
-                if let Some(name) = anames.get(&self) {
-                    name
-                } else {
-                    "unknown"
+                #[cfg(feature = "std")]
+                {
+                    let anames = ATTRIBUTE_TYPE_NAME_MAP
+                        .get_or_init(Default::default)
+                        .lock()
+                        .unwrap();
+                    if let Some(name) = anames.get(&self) {
+                        return name;
+                    }
                 }
+                "unknown"
             }
         }
     }
@@ -433,7 +448,7 @@ pub trait AttributeStaticType {
 }
 
 /// A STUN attribute for use in [`Message`](crate::message::Message)s
-pub trait Attribute: std::fmt::Debug + std::marker::Sync + std::marker::Send {
+pub trait Attribute: core::fmt::Debug + core::marker::Sync + core::marker::Send {
     /// Retrieve the type of an `Attribute`.
     fn get_type(&self) -> AttributeType;
 
@@ -563,8 +578,8 @@ macro_rules! display_attr {
     }};
 }
 
-impl std::fmt::Display for RawAttribute<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for RawAttribute<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // try to get a more specialised display
         match self.get_type() {
             Username::TYPE => display_attr!(self, f, Username),
@@ -589,21 +604,23 @@ impl std::fmt::Display for RawAttribute<'_> {
             IceControlled::TYPE => display_attr!(self, f, IceControlled),
             IceControlling::TYPE => display_attr!(self, f, IceControlling),
             _ => {
-                let mut display_impls = ATTRIBUTE_EXTERNAL_DISPLAY_IMPL
-                    .get_or_init(|| Default::default())
-                    .lock()
-                    .unwrap();
-                if let Some(imp) = display_impls.get_mut(&self.get_type()) {
-                    imp(self, f)
-                } else {
-                    write!(
-                        f,
-                        "RawAttribute (type: {:?}, len: {}, data: {:?})",
-                        self.header.get_type(),
-                        self.header.length(),
-                        &self.value
-                    )
+                #[cfg(feature = "std")]
+                {
+                    let mut display_impls = ATTRIBUTE_EXTERNAL_DISPLAY_IMPL
+                        .get_or_init(|| Default::default())
+                        .lock()
+                        .unwrap();
+                    if let Some(imp) = display_impls.get_mut(&self.get_type()) {
+                        return imp(self, f);
+                    }
                 }
+                write!(
+                    f,
+                    "RawAttribute (type: {:?}, len: {}, data: {:?})",
+                    self.header.get_type(),
+                    self.header.length(),
+                    &self.value
+                )
             }
         }
     }
@@ -686,7 +703,7 @@ impl<'a> RawAttribute<'a> {
     pub fn check_type_and_len(
         &self,
         atype: AttributeType,
-        allowed_range: impl std::ops::RangeBounds<usize>,
+        allowed_range: impl core::ops::RangeBounds<usize>,
     ) -> Result<(), StunParseError> {
         if self.header.get_type() != atype {
             return Err(StunParseError::WrongAttributeImplementation);
@@ -741,11 +758,11 @@ impl<'a, A: AttributeWrite> From<&'a A> for RawAttribute<'a> {
 
 fn check_len(
     len: usize,
-    allowed_range: impl std::ops::RangeBounds<usize>,
+    allowed_range: impl core::ops::RangeBounds<usize>,
 ) -> Result<(), StunParseError> {
     match allowed_range.start_bound() {
-        std::ops::Bound::Unbounded => (),
-        std::ops::Bound::Included(start) => {
+        core::ops::Bound::Unbounded => (),
+        core::ops::Bound::Included(start) => {
             if len < *start {
                 return Err(StunParseError::Truncated {
                     expected: *start,
@@ -753,7 +770,7 @@ fn check_len(
                 });
             }
         }
-        std::ops::Bound::Excluded(start) => {
+        core::ops::Bound::Excluded(start) => {
             if len <= *start {
                 return Err(StunParseError::Truncated {
                     expected: start + 1,
@@ -763,8 +780,8 @@ fn check_len(
         }
     }
     match allowed_range.end_bound() {
-        std::ops::Bound::Unbounded => (),
-        std::ops::Bound::Included(end) => {
+        core::ops::Bound::Unbounded => (),
+        core::ops::Bound::Included(end) => {
             if len > *end {
                 return Err(StunParseError::TooLarge {
                     expected: *end,
@@ -772,7 +789,7 @@ fn check_len(
                 });
             }
         }
-        std::ops::Bound::Excluded(end) => {
+        core::ops::Bound::Excluded(end) => {
             if len >= *end {
                 return Err(StunParseError::TooLarge {
                     expected: *end - 1,
@@ -872,7 +889,7 @@ mod tests {
         assert!(matches!(
             check_len(
                 4,
-                (std::ops::Bound::Excluded(4), std::ops::Bound::Unbounded)
+                (core::ops::Bound::Excluded(4), core::ops::Bound::Unbounded)
             ),
             Err(StunParseError::Truncated {
                 expected: 5,
@@ -882,16 +899,17 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_external_display_impl() {
         let _log = crate::tests::test_init_log();
         let atype = AttributeType::new(0xFFFF);
-        let imp = |attr: &RawAttribute<'_>, f: &mut std::fmt::Formatter<'_>| -> std::fmt::Result {
-            write!(f, "Custom {}", attr.value[0])
-        };
+        let imp = |attr: &RawAttribute<'_>,
+                   f: &mut core::fmt::Formatter<'_>|
+         -> core::fmt::Result { write!(f, "Custom {}", attr.value[0]) };
         add_display_impl(atype, imp);
         let data = [4, 0];
         let attr = RawAttribute::new(atype, &data);
-        let display_str = format!("{}", attr);
+        let display_str = alloc::format!("{}", attr);
         assert_eq!(display_str, "Custom 4");
 
         atype.add_name("SOME-NAME");

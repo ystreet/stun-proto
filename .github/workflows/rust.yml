@@ -31,12 +31,16 @@ jobs:
       if: matrix.toolchain == '1.70'
     - name: Build
       run: cargo build --verbose
+    - name: Build (without default features)
+      run: cargo build --verbose --no-default-features
   test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - name: Run tests
       run: cargo test --verbose
+    - name: Run tests (without default features)
+      run: cargo test --verbose --no-default-features
   clippy:
     runs-on: ubuntu-latest
     steps:

@@ -6,8 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
-use std::net::SocketAddr;
+use core::convert::TryFrom;
+use core::net::SocketAddr;
 
 use crate::message::{StunParseError, TransactionId};
 
@@ -75,7 +75,7 @@ impl XorMappedAddress {
     ///
     /// ```
     /// # use stun_types::attribute::*;
-    /// # use std::net::SocketAddr;
+    /// # use core::net::SocketAddr;
     /// let addr = "127.0.0.1:1234".parse().unwrap();
     /// let mapped_addr = XorMappedAddress::new(addr, 0x5678.into());
     /// assert_eq!(mapped_addr.addr(0x5678.into()), addr);
@@ -92,7 +92,7 @@ impl XorMappedAddress {
     ///
     /// ```
     /// # use stun_types::attribute::*;
-    /// # use std::net::SocketAddr;
+    /// # use core::net::SocketAddr;
     /// let addr = "[::1]:1234".parse().unwrap();
     /// let mapped_addr = XorMappedAddress::new(addr, 0x5678.into());
     /// assert_eq!(mapped_addr.addr(0x5678.into()), addr);
@@ -102,15 +102,16 @@ impl XorMappedAddress {
     }
 }
 
-impl std::fmt::Display for XorMappedAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for XorMappedAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", Self::TYPE, self.addr)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::net::IpAddr;
+    use alloc::vec::Vec;
+    use core::net::IpAddr;
 
     use super::*;
     use byteorder::{BigEndian, ByteOrder};

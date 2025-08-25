@@ -6,7 +6,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::convert::TryFrom;
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -79,7 +83,7 @@ impl TryFrom<&RawAttribute<'_>> for ErrorCode {
         let code = code_h * 100 + code_tens;
         Ok(Self {
             code,
-            reason: std::str::from_utf8(&raw.value[4..])
+            reason: core::str::from_utf8(&raw.value[4..])
                 .map_err(|_| StunParseError::InvalidAttributeData)?
                 .to_owned(),
         })
@@ -294,8 +298,8 @@ impl ErrorCode {
     }
 }
 
-impl std::fmt::Display for ErrorCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {} '{}'", Self::TYPE, self.code, self.reason)
     }
 }
@@ -419,8 +423,8 @@ impl UnknownAttributes {
     }
 }
 
-impl std::fmt::Display for UnknownAttributes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for UnknownAttributes {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {:?}", Self::TYPE, self.attributes)
     }
 }

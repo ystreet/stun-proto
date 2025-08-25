@@ -84,8 +84,13 @@
 //! assert_eq!(msg_data[20..], attribute_data);
 //! ```
 
-use std::collections::HashMap;
-use std::convert::TryFrom;
+#[cfg(feature = "std")]
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::convert::TryFrom;
+#[cfg(feature = "std")]
 use std::sync::{Mutex, OnceLock};
 
 use byteorder::{BigEndian, ByteOrder};
@@ -101,16 +106,18 @@ pub const MAGIC_COOKIE: u32 = 0x2112A442;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Method(u16);
 
-impl std::fmt::Display for Method {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Method {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}({:#x}: {})", self.0, self.0, self.name())
     }
 }
 
-static METHOD_NAME_MAP: OnceLock<Mutex<HashMap<Method, &'static str>>> = OnceLock::new();
+#[cfg(feature = "std")]
+static METHOD_NAME_MAP: OnceLock<Mutex<BTreeMap<Method, &'static str>>> = OnceLock::new();
 
 impl Method {
     /// Add the name for a particular [`Method`] for formatting purposes.
+    #[cfg(feature = "std")]
     pub fn add_name(self, name: &'static str) {
         let mut mnames = METHOD_NAME_MAP
             .get_or_init(Default::default)
@@ -161,15 +168,17 @@ impl Method {
         match self {
             BINDING => "BINDING",
             _ => {
-                let mnames = METHOD_NAME_MAP
-                    .get_or_init(Default::default)
-                    .lock()
-                    .unwrap();
-                if let Some(name) = mnames.get(&self) {
-                    name
-                } else {
-                    "unknown"
+                #[cfg(feature = "std")]
+                {
+                    let mnames = METHOD_NAME_MAP
+                        .get_or_init(Default::default)
+                        .lock()
+                        .unwrap();
+                    if let Some(name) = mnames.get(&self) {
+                        return name;
+                    }
                 }
+                "unknown"
             }
         }
     }
@@ -435,8 +444,8 @@ impl MessageClass {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct MessageType(u16);
 
-impl std::fmt::Display for MessageType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for MessageType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "MessageType(class: {:?}, method: {}",
@@ -601,8 +610,8 @@ impl From<TransactionId> for u128 {
         id.id
     }
 }
-impl std::fmt::Display for TransactionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for TransactionId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:#x}", self.id)
     }
 }
@@ -701,8 +710,8 @@ pub struct Message<'a> {
     data: &'a [u8],
 }
 
-impl std::fmt::Display for Message<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Message<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "Message(class: {:?}, method: {}, transaction: {}, attributes: ",
@@ -1366,7 +1375,7 @@ impl<'a> Message<'a> {
     /// # use stun_types::attribute::*;
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
     /// #     MessageWrite, MessageWriteExt, BINDING};
-    /// # use std::convert::TryInto;
+    /// # use core::convert::TryInto;
     /// let mut builder = Message::builder_request(BINDING, MessageWriteVec::new());
     /// let message = builder.finish();
     /// let message = Message::from_bytes(&message).unwrap();
@@ -1453,7 +1462,7 @@ impl<'a> Message<'a> {
     /// ```
     /// # use stun_types::message::{Message, MessageWriteVec, MessageWrite, BINDING};
     /// # use stun_types::attribute::*;
-    /// # use std::convert::TryInto;
+    /// # use core::convert::TryInto;
     /// let msg = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let msg = Message::from_bytes(&msg).unwrap();
     /// let error_msg = Message::unknown_attributes(&msg, &[Username::TYPE], MessageWriteVec::new()).finish();
@@ -1490,7 +1499,7 @@ impl<'a> Message<'a> {
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
     /// #     MessageWrite, BINDING};
     /// # use stun_types::attribute::*;
-    /// # use std::convert::TryInto;
+    /// # use core::convert::TryInto;
     /// let msg = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let msg = Message::from_bytes(&msg).unwrap();
     /// let error_msg = Message::bad_request(&msg, MessageWriteVec::new()).finish();
@@ -2058,14 +2067,14 @@ impl MessageWriteVec {
     }
 }
 
-impl std::ops::Deref for MessageWriteVec {
+impl core::ops::Deref for MessageWriteVec {
     type Target = Vec<u8>;
     fn deref(&self) -> &Self::Target {
         &self.output
     }
 }
 
-impl std::ops::DerefMut for MessageWriteVec {
+impl core::ops::DerefMut for MessageWriteVec {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.output
     }
@@ -2138,14 +2147,14 @@ impl<'a> MessageWriteMutSlice<'a> {
     }
 }
 
-impl std::ops::Deref for MessageWriteMutSlice<'_> {
+impl core::ops::Deref for MessageWriteMutSlice<'_> {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         self.output
     }
 }
 
-impl std::ops::DerefMut for MessageWriteMutSlice<'_> {
+impl core::ops::DerefMut for MessageWriteMutSlice<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.output
     }
@@ -2268,6 +2277,9 @@ fn add_fingerprint_unchecked<O, T: MessageWrite<Output = O> + ?Sized>(this: &mut
 
 #[cfg(test)]
 mod tests {
+    use alloc::borrow::ToOwned;
+    use tracing::error;
+
     use super::*;
 
     #[test]
@@ -2278,6 +2290,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn method_name() {
         let _log = crate::tests::test_init_log();
         assert_eq!(BINDING.name(), "BINDING");
@@ -2707,8 +2720,8 @@ mod tests {
         msg[23] += 1;
         let mut bytes = msg.finish();
         bytes[3] -= 1;
-        println!("{bytes:x?}");
-        println!("{:?}", Message::from_bytes(&bytes[..27]));
+        error!("{bytes:x?}");
+        error!("{:?}", Message::from_bytes(&bytes[..27]));
         assert!(matches!(
             Message::from_bytes(&bytes[..27]),
             Err(StunParseError::Truncated {

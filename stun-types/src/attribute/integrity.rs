@@ -6,7 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
+use alloc::vec::Vec;
+use core::convert::TryFrom;
 
 use crate::message::{StunParseError, StunWriteError};
 
@@ -153,8 +154,8 @@ impl MessageIntegrity {
     }
 }
 
-impl std::fmt::Display for MessageIntegrity {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for MessageIntegrity {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: 0x", Self::TYPE)?;
         for val in self.hmac.iter() {
             write!(f, "{val:02x}")?;
@@ -320,8 +321,8 @@ impl MessageIntegritySha256 {
     }
 }
 
-impl std::fmt::Display for MessageIntegritySha256 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for MessageIntegritySha256 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: 0x", Self::TYPE)?;
         for val in self.hmac.iter() {
             write!(f, "{val:02x}")?;

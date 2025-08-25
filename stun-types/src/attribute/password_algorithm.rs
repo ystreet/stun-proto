@@ -6,7 +6,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::convert::TryFrom;
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -60,8 +62,8 @@ impl PasswordAlgorithmValue {
     }
 }
 
-impl std::fmt::Display for PasswordAlgorithmValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for PasswordAlgorithmValue {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::MD5 => write!(f, "MD5"),
             Self::SHA256 => write!(f, "SHA256"),
@@ -177,8 +179,8 @@ impl PasswordAlgorithms {
     }
 }
 
-impl std::fmt::Display for PasswordAlgorithms {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for PasswordAlgorithms {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: [", Self::TYPE)?;
         for (i, algo) in self.algorithms.iter().enumerate() {
             if i > 0 {
@@ -279,8 +281,8 @@ impl PasswordAlgorithm {
     }
 }
 
-impl std::fmt::Display for PasswordAlgorithm {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for PasswordAlgorithm {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", Self::TYPE, self.algorithm)
     }
 }

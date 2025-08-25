@@ -6,7 +6,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use core::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -40,8 +40,8 @@ impl AddressFamily {
     }
 }
 
-impl std::fmt::Display for AddressFamily {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for AddressFamily {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             AddressFamily::IPV4 => write!(f, "IPV4"),
             AddressFamily::IPV6 => write!(f, "IPV6"),
@@ -140,8 +140,8 @@ impl MappedSocketAddr {
     }
 }
 
-impl std::fmt::Display for MappedSocketAddr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for MappedSocketAddr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.addr {
             SocketAddr::V4(addr) => write!(f, "{addr:?}"),
             SocketAddr::V6(addr) => write!(f, "{addr:?}"),
@@ -217,8 +217,8 @@ impl XorSocketAddr {
     }
 }
 
-impl std::fmt::Display for XorSocketAddr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for XorSocketAddr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.addr.addr() {
             SocketAddr::V4(_) => write!(f, "{:?}", self.addr(0x0.into())),
             SocketAddr::V6(addr) => write!(f, "XOR({addr:?})"),
@@ -229,6 +229,8 @@ impl std::fmt::Display for XorSocketAddr {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use alloc::borrow::ToOwned;
+    use alloc::format;
     use tracing::trace;
 
     #[test]

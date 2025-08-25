@@ -6,7 +6,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
+use core::convert::TryFrom;
 
 use crate::message::StunParseError;
 
@@ -115,8 +115,8 @@ impl Fingerprint {
     }
 }
 
-impl std::fmt::Display for Fingerprint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Fingerprint {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: 0x", Self::TYPE)?;
         for val in self.fingerprint.iter() {
             write!(f, "{val:02x}")?;
@@ -127,9 +127,11 @@ impl std::fmt::Display for Fingerprint {
 
 #[cfg(test)]
 mod tests {
-    use crate::prelude::AttributeExt;
+    use crate::attribute::AttributeExt;
 
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
 

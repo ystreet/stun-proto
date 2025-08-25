@@ -6,7 +6,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use core::convert::TryFrom;
 
 use crate::message::{StunParseError, StunWriteError};
 
@@ -66,7 +68,7 @@ impl TryFrom<&RawAttribute<'_>> for Software {
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
         raw.check_type_and_len(Self::TYPE, ..=763)?;
         Ok(Self {
-            software: std::str::from_utf8(&raw.value)
+            software: core::str::from_utf8(&raw.value)
                 .map_err(|_| StunParseError::InvalidAttributeData)?
                 .to_owned(),
         })
@@ -114,8 +116,8 @@ impl Software {
     }
 }
 
-impl std::fmt::Display for Software {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Software {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: '{}'", Software::TYPE, self.software)
     }
 }
@@ -123,6 +125,7 @@ impl std::fmt::Display for Software {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
 
