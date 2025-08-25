@@ -6,7 +6,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
+use alloc::borrow::ToOwned;
+use alloc::string::{String, ToString};
+use core::convert::TryFrom;
 
 use crate::message::{StunParseError, StunWriteError};
 
@@ -65,7 +67,7 @@ impl TryFrom<&RawAttribute<'_>> for Realm {
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
         raw.check_type_and_len(Self::TYPE, ..=763)?;
         Ok(Self {
-            realm: std::str::from_utf8(&raw.value)
+            realm: core::str::from_utf8(&raw.value)
                 .map_err(|_| StunParseError::InvalidAttributeData)?
                 .to_owned(),
         })
@@ -108,8 +110,8 @@ impl Realm {
     }
 }
 
-impl std::fmt::Display for Realm {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Realm {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", Self::TYPE, self.realm)
     }
 }
@@ -117,6 +119,7 @@ impl std::fmt::Display for Realm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
 

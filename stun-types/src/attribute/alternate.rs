@@ -6,8 +6,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
-use std::net::SocketAddr;
+use alloc::borrow::ToOwned;
+use alloc::string::{String, ToString};
+use core::convert::TryFrom;
+use core::net::SocketAddr;
 
 use crate::message::StunParseError;
 
@@ -93,8 +95,8 @@ impl AlternateServer {
     }
 }
 
-impl std::fmt::Display for AlternateServer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for AlternateServer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", AlternateServer::TYPE, self.addr)
     }
 }
@@ -132,7 +134,7 @@ impl TryFrom<&RawAttribute<'_>> for AlternateDomain {
         raw.check_type_and_len(Self::TYPE, ..)?;
         // FIXME: should be ascii-only
         Ok(Self {
-            domain: std::str::from_utf8(&raw.value)
+            domain: core::str::from_utf8(&raw.value)
                 .map_err(|_| StunParseError::InvalidAttributeData)?
                 .to_owned(),
         })
@@ -185,8 +187,8 @@ impl AlternateDomain {
     }
 }
 
-impl std::fmt::Display for AlternateDomain {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for AlternateDomain {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", AlternateDomain::TYPE, self.domain)
     }
 }
@@ -194,6 +196,8 @@ impl std::fmt::Display for AlternateDomain {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
 

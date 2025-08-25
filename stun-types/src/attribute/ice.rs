@@ -6,7 +6,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::convert::TryFrom;
+use core::convert::TryFrom;
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -95,8 +95,8 @@ impl Priority {
     }
 }
 
-impl std::fmt::Display for Priority {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Priority {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}: {}", Self::TYPE, self.priority)
     }
 }
@@ -165,8 +165,8 @@ impl UseCandidate {
     }
 }
 
-impl std::fmt::Display for UseCandidate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for UseCandidate {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", Self::TYPE)
     }
 }
@@ -249,8 +249,8 @@ impl IceControlled {
     }
 }
 
-impl std::fmt::Display for IceControlled {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for IceControlled {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", Self::TYPE)
     }
 }
@@ -335,8 +335,8 @@ impl IceControlling {
     }
 }
 
-impl std::fmt::Display for IceControlling {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for IceControlling {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", Self::TYPE)
     }
 }
@@ -344,6 +344,7 @@ impl std::fmt::Display for IceControlling {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
     use tracing::trace;
 
     #[test]

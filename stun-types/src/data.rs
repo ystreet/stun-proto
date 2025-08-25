@@ -10,6 +10,8 @@
 //!
 //! Provides a CoW interface for slices of `[u8]` and `Box<[u8]>`
 
+use alloc::boxed::Box;
+
 /// A slice of data
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
@@ -27,7 +29,7 @@ impl<'a> DataSlice<'a> {
     }
 }
 
-impl std::ops::Deref for DataSlice<'_> {
+impl core::ops::Deref for DataSlice<'_> {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         self.0
@@ -58,7 +60,7 @@ impl DataOwned {
     }
 }
 
-impl std::ops::Deref for DataOwned {
+impl core::ops::Deref for DataOwned {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -86,7 +88,7 @@ pub enum Data<'a> {
     Owned(DataOwned),
 }
 
-impl std::ops::Deref for Data<'_> {
+impl core::ops::Deref for Data<'_> {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         match self {

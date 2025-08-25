@@ -57,11 +57,18 @@
 //!
 //! See the [`message`] and [`attribute`] module documentation for examples of use.
 
-use std::str::FromStr;
+#![no_std]
+
+use core::str::FromStr;
 
 pub mod attribute;
 pub mod data;
 pub mod message;
+
+extern crate alloc;
+
+#[cfg(any(feature = "std", test))]
+extern crate std;
 
 /// The transport family
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,8 +100,8 @@ impl FromStr for TransportType {
     }
 }
 
-impl std::fmt::Display for TransportType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for TransportType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match &self {
             TransportType::Udp => f.pad("UDP"),
             TransportType::Tcp => f.pad("TCP"),
@@ -113,6 +120,7 @@ pub mod prelude {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use alloc::string::{String, ToString};
     use tracing::subscriber::DefaultGuard;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::Layer;
