@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        toolchain: ['1.70', stable]
+        toolchain: ['1.77', stable]
 
     steps:
     - uses: actions/checkout@v2
@@ -28,7 +28,7 @@ jobs:
         override: true
     - name: Use MSRV Cargo.lock
       run: cp Cargo.lock.msrv Cargo.lock
-      if: matrix.toolchain == '1.70'
+      if: matrix.toolchain == '1.77'
     - name: Build
       run: cargo build --verbose
     - name: Build (without default features)
