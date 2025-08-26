@@ -592,12 +592,21 @@ pub struct TransactionId {
 impl TransactionId {
     /// Generate a new STUN transaction identifier.
     pub fn generate() -> TransactionId {
-        use rand_core::TryRngCore;
-        let mut dest = [0; 16];
-        rand_core::OsRng
-            .try_fill_bytes(&mut dest)
-            .expect("Cannot generate random data");
-        u128::from_be_bytes(dest).into()
+        #[cfg(not(feature = "std"))]
+        {
+            use rand_core::TryRngCore;
+            let mut dest = [0; 16];
+            rand_core::OsRng
+                .try_fill_bytes(&mut dest)
+                .expect("Cannot generate random data");
+            u128::from_be_bytes(dest).into()
+        }
+        #[cfg(feature = "std")]
+        {
+            use rand::Rng;
+            let mut rng = rand::rng();
+            rng.random::<u128>().into()
+        }
     }
 }
 
