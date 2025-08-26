@@ -19,7 +19,7 @@
 //! ## Example
 //!
 //! ```
-//! # use std::net::SocketAddr;
+//! # use core::net::SocketAddr;
 //! use sans_io_time::Instant;
 //! use stun_proto::types::TransportType;
 //! use stun_proto::types::attribute::{MessageIntegrity, XorMappedAddress};
@@ -74,6 +74,13 @@
 //! assert_eq!(transmit.to, remote_addr);
 //! ```
 
+#![no_std]
+
+extern crate alloc;
+
+#[cfg(test)]
+extern crate std;
+
 pub mod agent;
 
 pub use stun_types as types;
@@ -81,18 +88,18 @@ pub use stun_types as types;
 #[derive(Clone)]
 pub(crate) struct DebugWrapper<T>(&'static str, T);
 
-impl<T> std::fmt::Debug for DebugWrapper<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<T> core::fmt::Debug for DebugWrapper<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
-impl<T> std::ops::Deref for DebugWrapper<T> {
+impl<T> core::ops::Deref for DebugWrapper<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.1
     }
 }
-impl<T> std::ops::DerefMut for DebugWrapper<T> {
+impl<T> core::ops::DerefMut for DebugWrapper<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.1
     }

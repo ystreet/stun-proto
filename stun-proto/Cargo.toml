@@ -12,15 +12,21 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-stun-types = { path = "../stun-types", version = "0.5.1" }
+stun-types = { path = "../stun-types", version = "0.5.1", default-features = false }
 byteorder.workspace = true
+sans-io-time.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
-sans-io-time = "0.1"
 
 [dev-dependencies]
 tracing-subscriber.workspace = true
+tracing = { workspace = true, features = ["std"] }
+sans-io-time = { workspace = true, features = ["std"] }
 criterion.workspace = true
+
+[features]
+default = ["std"]
+std = ["stun-types/std", "thiserror/std"]
 
 [[bench]]
 name = "agent_send"

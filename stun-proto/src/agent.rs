@@ -15,12 +15,14 @@
 //! [RFC8489]: https://tools.ietf.org/html/rfc8489
 //! [RFC5389]: https://tools.ietf.org/html/rfc5389
 
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use core::net::SocketAddr;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-use std::time::Duration;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::time::Duration;
 
-use std::collections::{HashMap, HashSet};
 use sans_io_time::Instant;
 
 use byteorder::{BigEndian, ByteOrder};
@@ -44,8 +46,8 @@ pub struct StunAgent {
     transport: TransportType,
     local_addr: SocketAddr,
     remote_addr: Option<SocketAddr>,
-    validated_peers: HashSet<SocketAddr>,
-    outstanding_requests: HashMap<TransactionId, StunRequestState>,
+    validated_peers: BTreeSet<SocketAddr>,
+    outstanding_requests: BTreeMap<TransactionId, StunRequestState>,
     local_credentials: Option<MessageIntegrityCredentials>,
     remote_credentials: Option<MessageIntegrityCredentials>,
 }
@@ -162,7 +164,7 @@ impl StunAgent {
         assert!(hdr.get_type().has_class(MessageClass::Request));
         let transaction_id = hdr.transaction_id();
         let state = match self.outstanding_requests.entry(transaction_id) {
-            std::collections::hash_map::Entry::Vacant(entry) => {
+            alloc::collections::btree_map::Entry::Vacant(entry) => {
                 let has_credentials = MessageAttributesIter::new(data).any(|(_offset, attr)| {
                     [MessageIntegrity::TYPE, MessageIntegritySha256::TYPE]
                         .contains(&attr.get_type())
@@ -176,7 +178,7 @@ impl StunAgent {
                     has_credentials,
                 ))
             }
-            std::collections::hash_map::Entry::Occupied(_entry) => {
+            alloc::collections::btree_map::Entry::Occupied(_entry) => {
                 return Err(StunError::AlreadyInProgress);
             }
         };
@@ -472,7 +474,7 @@ impl TcpBuffer {
             return vec![];
         }
         let mut data = self.buf.split_off(offset);
-        std::mem::swap(&mut data, &mut self.buf.1);
+        core::mem::swap(&mut data, &mut self.buf.1);
         data[2..].to_vec()
     }
 
@@ -509,8 +511,8 @@ pub struct Transmit<T: AsRef<[u8]>> {
     pub to: SocketAddr,
 }
 
-impl<T: AsRef<[u8]>> std::fmt::Display for Transmit<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: AsRef<[u8]>> core::fmt::Display for Transmit<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "Transmit({}: {} -> {}) of {} bytes",
@@ -540,7 +542,7 @@ impl<T: AsRef<[u8]>> Transmit<T> {
     /// ```
     /// # use stun_proto::agent::Transmit;
     /// # use stun_proto::types::TransportType;
-    /// # use std::net::SocketAddr;
+    /// # use core::net::SocketAddr;
     /// let local_addr = "10.0.0.1:1000".parse().unwrap();
     /// let remote_addr = "10.0.0.2:2000".parse().unwrap();
     /// let slice = [42; 8];
@@ -853,6 +855,9 @@ impl From<StunWriteError> for StunError {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use alloc::string::String;
+    use tracing::error;
+
     use super::*;
 
     #[test]
@@ -966,28 +971,28 @@ pub(crate) mod tests {
         let transaction_id = msg.transaction_id();
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
-        println!("send");
+        error!("send");
         let transmit = agent
             .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
-        println!("sent");
+        error!("sent");
 
         let request = Message::from_bytes(&transmit.data).unwrap();
 
-        println!("generate response");
+        error!("generate response");
         let mut response = Message::builder_success(&request, MessageWriteVec::new());
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
         response.add_attribute(&xor_addr).unwrap();
         response
             .add_message_integrity(&remote_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
-        println!("{response:?}");
+        error!("{response:?}");
 
         let data = response.finish();
-        println!("{data:?}");
+        error!("{data:?}");
         let to = transmit.to;
         let response = Message::from_bytes(&data).unwrap();
-        println!("{response}");
+        error!("{response}");
         let reply = agent.handle_stun(response, to);
         let HandleStunReply::ValidatedStunResponse(response) = reply else {
             unreachable!();
@@ -1467,7 +1472,7 @@ pub(crate) mod tests {
         let transaction_id = msg.transaction_id();
         let data = msg.finish();
         let stun = Message::from_bytes(&data).unwrap();
-        println!("{stun:?}");
+        error!("{stun:?}");
         let HandleStunReply::IncomingStun(request) = agent.handle_stun(stun, remote_addr) else {
             unreachable!()
         };
@@ -1525,6 +1530,6 @@ pub(crate) mod tests {
         assert_eq!(owned.transport, transport);
         assert_eq!(owned.from, from);
         assert_eq!(owned.to, to);
-        println!("{owned}");
+        error!("{owned}");
     }
 }

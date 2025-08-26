@@ -15,10 +15,10 @@ rust-version.workspace = true
 byteorder.workspace = true
 crc = "3"
 hmac = "0.12"
-md-5 = "0.10"
-rand.workspace = true
-sha1 = "0.10"
-sha2 = "0.10"
+md-5 = { version = "0.10", default-features = false }
+rand_core.workspace = true
+sha1 = { version = "0.10", default-features = false }
+sha2 = { version = "0.10", default-features = false }
 tracing.workspace = true
 arbitrary ={ workspace = true, optional = true }
 thiserror.workspace = true
@@ -26,11 +26,12 @@ smallvec = "1.6.1"
 
 [dev-dependencies]
 tracing-subscriber.workspace = true
+tracing = { workspace = true, features = ["std"] }
 criterion.workspace = true
 
 [features]
 default = ["std"]
-std = []
+std = ["thiserror/std"]
 arbitrary = ["dep:arbitrary"]
 
 [[bench]]
