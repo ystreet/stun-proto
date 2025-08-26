@@ -16,7 +16,8 @@ byteorder.workspace = true
 crc = "3"
 hmac = "0.12"
 md-5 = { version = "0.10", default-features = false }
-rand_core.workspace = true
+rand = { version = "0.9", optional = true }
+rand_core = { version = "0.9", default-features = false, features = ["os_rng"] }
 sha1 = { version = "0.10", default-features = false }
 sha2 = { version = "0.10", default-features = false }
 tracing.workspace = true
@@ -31,7 +32,7 @@ criterion.workspace = true
 
 [features]
 default = ["std"]
-std = ["thiserror/std"]
+std = ["thiserror/std", "dep:rand"]
 arbitrary = ["dep:arbitrary"]
 
 [[bench]]

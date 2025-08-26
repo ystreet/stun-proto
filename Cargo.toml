@@ -12,7 +12,6 @@ rust-version = "1.77.0"
 [workspace.dependencies]
 arbitrary = { version = "1", features = ["derive"] }
 byteorder = { version = "1", default-features = false }
-rand_core = { version = "0.9", default-features = false, features = ["os_rng"] }
 sans-io-time = { version = "0.1", default-features = false }
 tracing = { version = "0.1", default-features = false, features = ["attributes"] }
 thiserror = { version = "2", default-features = false }
