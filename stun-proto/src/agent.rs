@@ -18,9 +18,10 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use std::collections::{HashMap, HashSet};
+use sans_io_time::Instant;
 
 use byteorder::{BigEndian, ByteOrder};
 
@@ -891,9 +892,9 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
-        let now = Instant::now();
+        let now = Instant::ZERO;
         assert_eq!(transmit.transport, TransportType::Udp);
         assert_eq!(transmit.from, local_addr);
         assert_eq!(transmit.to, remote_addr);
@@ -925,7 +926,7 @@ pub(crate) mod tests {
             MessageWriteVec::new(),
         );
         let transmit = agent
-            .send(msg.finish(), remote_addr, Instant::now())
+            .send(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
         assert_eq!(transmit.transport, TransportType::Udp);
         assert_eq!(transmit.from, local_addr);
@@ -967,7 +968,7 @@ pub(crate) mod tests {
             .unwrap();
         println!("send");
         let transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
         println!("sent");
 
@@ -1009,9 +1010,9 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
-        let mut now = Instant::now();
+        let mut now = Instant::ZERO;
         loop {
             let _ = agent.poll_transmit(now);
             match agent.poll(now) {
@@ -1039,7 +1040,7 @@ pub(crate) mod tests {
             .build();
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
-        let mut now = Instant::now();
+        let mut now = Instant::ZERO;
         agent.send_request(msg.finish(), remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 2, Duration::from_secs(10));
@@ -1091,7 +1092,7 @@ pub(crate) mod tests {
             .build();
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
-        let mut now = Instant::now();
+        let mut now = Instant::ZERO;
         agent.send_request(msg.finish(), remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 0, Duration::from_secs(10));
@@ -1122,7 +1123,7 @@ pub(crate) mod tests {
             .build();
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
-        let mut now = Instant::now();
+        let mut now = Instant::ZERO;
         agent.send_request(msg.finish(), remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout(Duration::from_secs(1), 3, Duration::from_secs(3));
@@ -1157,7 +1158,7 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
@@ -1195,7 +1196,7 @@ pub(crate) mod tests {
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
@@ -1239,7 +1240,7 @@ pub(crate) mod tests {
         msg.add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
 
         let request = Message::from_bytes(&transmit.data).unwrap();
@@ -1285,7 +1286,7 @@ pub(crate) mod tests {
         msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
         let data = transmit.data;
 
@@ -1323,7 +1324,7 @@ pub(crate) mod tests {
 
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
         let data = transmit.data;
 
@@ -1355,7 +1356,7 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let _transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
@@ -1364,7 +1365,7 @@ pub(crate) mod tests {
         assert_eq!(request.peer_address(), remote_addr);
         request.cancel();
 
-        let ret = agent.poll(Instant::now());
+        let ret = agent.poll(Instant::ZERO);
         let StunAgentPollRet::TransactionCancelled(_request) = ret else {
             unreachable!();
         };
@@ -1385,7 +1386,7 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let _transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
 
         let mut request = agent.mut_request_transaction(transaction_id).unwrap();
@@ -1394,7 +1395,7 @@ pub(crate) mod tests {
         assert_eq!(request.peer_address(), remote_addr);
         request.cancel_retransmissions();
 
-        let mut now = Instant::now();
+        let mut now = Instant::ZERO;
         let start = now;
         loop {
             match agent.poll(now) {
@@ -1425,7 +1426,7 @@ pub(crate) mod tests {
         let transaction_id = msg.transaction_id();
         let msg = msg.finish();
         let transmit = agent
-            .send_request(msg.clone(), remote_addr, Instant::now())
+            .send_request(msg.clone(), remote_addr, Instant::ZERO)
             .unwrap();
         let to = transmit.to;
         let request = Message::from_bytes(&transmit.data).unwrap();
@@ -1435,7 +1436,7 @@ pub(crate) mod tests {
         response.add_attribute(&xor_addr).unwrap();
 
         assert!(matches!(
-            agent.send_request(msg, remote_addr, Instant::now()),
+            agent.send_request(msg, remote_addr, Instant::ZERO),
             Err(StunError::AlreadyInProgress)
         ));
 
@@ -1486,7 +1487,7 @@ pub(crate) mod tests {
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let transmit = agent
-            .send_request(msg.finish(), remote_addr, Instant::now())
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
             .unwrap();
         assert_eq!(transmit.transport, TransportType::Tcp);
         assert_eq!(transmit.from, local_addr);

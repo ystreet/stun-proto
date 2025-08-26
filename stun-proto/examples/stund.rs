@@ -11,10 +11,10 @@
 use std::fmt::Display;
 use std::net::SocketAddr;
 
+use sans_io_time::Instant;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, UdpSocket};
 use std::str::FromStr;
-use std::time::Instant;
 
 use tracing::{debug, error, info, warn};
 
@@ -106,6 +106,7 @@ fn init_logs() {
 
 fn main() -> io::Result<()> {
     init_logs();
+    let base_instant = std::time::Instant::now();
 
     let args: Vec<String> = std::env::args().collect();
     let local_addr: SocketAddr = SocketAddr::from_str(if args.len() > 1 {
@@ -151,7 +152,9 @@ fn main() -> io::Result<()> {
             if let Some((response, to)) =
                 handle_incoming_data(&data[..size], remote_addr, &mut tcp_stun_agent)
             {
-                if let Ok(transmit) = tcp_stun_agent.send(response, to, Instant::now()) {
+                if let Ok(transmit) =
+                    tcp_stun_agent.send(response, to, Instant::from_std(base_instant))
+                {
                     warn_on_err(stream.write_all(&transmit.data), ());
                 }
             }

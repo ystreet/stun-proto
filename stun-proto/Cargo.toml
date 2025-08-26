@@ -16,6 +16,7 @@ stun-types = { path = "../stun-types", version = "0.5.1" }
 byteorder.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
+sans-io-time = "0.1"
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

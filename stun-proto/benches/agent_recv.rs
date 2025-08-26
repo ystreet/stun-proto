@@ -7,7 +7,7 @@
 // except according to those terms.
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use std::time::Instant;
+use sans_io_time::Instant;
 use stun_proto::agent::StunAgent;
 use stun_types::attribute::*;
 use stun_types::message::{Message, MessageHeader, MessageWriteVec, BINDING};
@@ -17,7 +17,6 @@ use stun_types::TransportType;
 fn bench_agent_recv(c: &mut Criterion) {
     let local_addr = "127.0.0.1:1000".parse().unwrap();
     let remote_addr = "127.0.0.1:2000".parse().unwrap();
-    let now = Instant::now();
     let software = Software::new("stun-proto").unwrap();
 
     let mut group = c.benchmark_group("Agent/Recv");
@@ -27,7 +26,9 @@ fn bench_agent_recv(c: &mut Criterion) {
     ));
     let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
     let builder = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
-    let _ = agent.send_request(builder, remote_addr, now).unwrap();
+    let _ = agent
+        .send_request(builder, remote_addr, Instant::ZERO)
+        .unwrap();
 
     group.bench_with_input("Message/Software", &software, move |b, software| {
         b.iter_batched(
