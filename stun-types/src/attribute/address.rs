@@ -11,43 +11,9 @@ use core::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use byteorder::{BigEndian, ByteOrder};
 
 use crate::message::{StunParseError, TransactionId, MAGIC_COOKIE};
+use crate::AddressFamily;
 
 use super::{check_len, AttributeType, RawAttribute};
-
-/// The address family of the socket
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AddressFamily {
-    /// IP version 4 address.
-    IPV4,
-    /// IP version 6 address.
-    IPV6,
-}
-
-impl AddressFamily {
-    pub(crate) fn to_byte(self) -> u8 {
-        match self {
-            AddressFamily::IPV4 => 0x1,
-            AddressFamily::IPV6 => 0x2,
-        }
-    }
-
-    pub(crate) fn from_byte(byte: u8) -> Result<AddressFamily, StunParseError> {
-        match byte {
-            0x1 => Ok(AddressFamily::IPV4),
-            0x2 => Ok(AddressFamily::IPV6),
-            _ => Err(StunParseError::InvalidAttributeData),
-        }
-    }
-}
-
-impl core::fmt::Display for AddressFamily {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            AddressFamily::IPV4 => write!(f, "IPV4"),
-            AddressFamily::IPV6 => write!(f, "IPV6"),
-        }
-    }
-}
 
 /// Helper struct for `SocketAddr`s that are stored as an attribute.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,23 +195,7 @@ impl core::fmt::Display for XorSocketAddr {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use alloc::borrow::ToOwned;
-    use alloc::format;
     use tracing::trace;
-
-    #[test]
-    fn address_family() {
-        assert_eq!(AddressFamily::IPV4.to_byte(), 1);
-        assert_eq!(AddressFamily::from_byte(1).unwrap(), AddressFamily::IPV4);
-        assert_eq!(format!("{}", AddressFamily::IPV4), "IPV4".to_owned());
-        assert_eq!(AddressFamily::IPV6.to_byte(), 2);
-        assert_eq!(AddressFamily::from_byte(2).unwrap(), AddressFamily::IPV6);
-        assert_eq!(format!("{}", AddressFamily::IPV6), "IPV6".to_owned());
-        assert!(matches!(
-            AddressFamily::from_byte(3),
-            Err(StunParseError::InvalidAttributeData)
-        ));
-    }
 
     #[test]
     fn mapped_address_ipv4() {
