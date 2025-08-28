@@ -59,7 +59,12 @@
 
 #![no_std]
 
-use core::str::FromStr;
+use core::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    str::FromStr,
+};
+
+use crate::message::StunParseError;
 
 pub mod attribute;
 pub mod data;
@@ -109,6 +114,83 @@ impl core::fmt::Display for TransportType {
     }
 }
 
+/// The address family of a socket
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressFamily {
+    /// IP version 4 address.
+    IPV4,
+    /// IP version 6 address.
+    IPV6,
+}
+
+impl AddressFamily {
+    pub(crate) fn to_byte(self) -> u8 {
+        match self {
+            AddressFamily::IPV4 => 0x1,
+            AddressFamily::IPV6 => 0x2,
+        }
+    }
+
+    pub(crate) fn from_byte(byte: u8) -> Result<AddressFamily, StunParseError> {
+        match byte {
+            0x1 => Ok(AddressFamily::IPV4),
+            0x2 => Ok(AddressFamily::IPV6),
+            _ => Err(StunParseError::InvalidAttributeData),
+        }
+    }
+}
+
+impl From<&SocketAddr> for AddressFamily {
+    fn from(value: &SocketAddr) -> Self {
+        match value {
+            SocketAddr::V4(_) => Self::IPV4,
+            SocketAddr::V6(_) => Self::IPV6,
+        }
+    }
+}
+
+impl From<&SocketAddrV4> for AddressFamily {
+    fn from(_value: &SocketAddrV4) -> Self {
+        Self::IPV4
+    }
+}
+
+impl From<&SocketAddrV6> for AddressFamily {
+    fn from(_value: &SocketAddrV6) -> Self {
+        Self::IPV6
+    }
+}
+
+impl From<&IpAddr> for AddressFamily {
+    fn from(value: &IpAddr) -> Self {
+        match value {
+            IpAddr::V4(_) => Self::IPV4,
+            IpAddr::V6(_) => Self::IPV6,
+        }
+    }
+}
+
+impl From<&Ipv4Addr> for AddressFamily {
+    fn from(_value: &Ipv4Addr) -> Self {
+        Self::IPV4
+    }
+}
+
+impl From<&Ipv6Addr> for AddressFamily {
+    fn from(_value: &Ipv6Addr) -> Self {
+        Self::IPV6
+    }
+}
+
+impl core::fmt::Display for AddressFamily {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            AddressFamily::IPV4 => write!(f, "IPV4"),
+            AddressFamily::IPV6 => write!(f, "IPV6"),
+        }
+    }
+}
+
 /// Prelude module for traits
 pub mod prelude {
     pub use crate::attribute::{
@@ -120,6 +202,8 @@ pub mod prelude {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use alloc::borrow::ToOwned;
+    use alloc::format;
     use alloc::string::{String, ToString};
     use tracing::subscriber::DefaultGuard;
     use tracing_subscriber::layer::SubscriberExt;
@@ -161,5 +245,35 @@ pub(crate) mod tests {
     fn transport_type_str() {
         assert_eq!(TransportType::Udp.to_string(), String::from("UDP"));
         assert_eq!(TransportType::Tcp.to_string(), String::from("TCP"));
+    }
+
+    #[test]
+    fn address_family() {
+        assert_eq!(AddressFamily::IPV4.to_byte(), 1);
+        assert_eq!(AddressFamily::from_byte(1).unwrap(), AddressFamily::IPV4);
+        assert_eq!(format!("{}", AddressFamily::IPV4), "IPV4".to_owned());
+        assert_eq!(AddressFamily::IPV6.to_byte(), 2);
+        assert_eq!(AddressFamily::from_byte(2).unwrap(), AddressFamily::IPV6);
+        assert_eq!(format!("{}", AddressFamily::IPV6), "IPV6".to_owned());
+        assert!(matches!(
+            AddressFamily::from_byte(3),
+            Err(StunParseError::InvalidAttributeData)
+        ));
+        let ipv4_addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
+        assert_eq!(AddressFamily::from(&ipv4_addr), AddressFamily::IPV4);
+        assert_eq!(AddressFamily::from(&ipv4_addr.ip()), AddressFamily::IPV4);
+        let SocketAddr::V4(ipv4_addr) = ipv4_addr else {
+            unreachable!();
+        };
+        assert_eq!(AddressFamily::from(&ipv4_addr), AddressFamily::IPV4);
+        assert_eq!(AddressFamily::from(ipv4_addr.ip()), AddressFamily::IPV4);
+        let ipv6_addr: SocketAddr = "[::1]:1".parse().unwrap();
+        assert_eq!(AddressFamily::from(&ipv6_addr), AddressFamily::IPV6);
+        assert_eq!(AddressFamily::from(&ipv6_addr.ip()), AddressFamily::IPV6);
+        let SocketAddr::V6(ipv6_addr) = ipv6_addr else {
+            unreachable!();
+        };
+        assert_eq!(AddressFamily::from(&ipv6_addr), AddressFamily::IPV6);
+        assert_eq!(AddressFamily::from(ipv6_addr.ip()), AddressFamily::IPV6);
     }
 }
