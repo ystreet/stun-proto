@@ -1046,14 +1046,14 @@ impl<'a> Message<'a> {
             if seen_ending_len > 0 && !ending_attributes.contains(&attr.get_type()) {
                 if seen_ending_attributes.contains(&Fingerprint::TYPE) {
                     warn!("unexpected attribute {} after FINGERPRINT", attr.get_type());
-                    return Err(StunParseError::AttributeAfterFingerprint(attr.get_type()));
+                    return Ok(Message { data: orig_data });
                 } else {
                     // only attribute valid after MESSAGE_INTEGRITY is FINGERPRINT
                     warn!(
                         "unexpected attribute {} after MESSAGE_INTEGRITY",
                         attr.get_type()
                     );
-                    return Err(StunParseError::AttributeAfterIntegrity(attr.get_type()));
+                    return Ok(Message { data: orig_data });
                 }
             }
 
@@ -1061,14 +1061,14 @@ impl<'a> Message<'a> {
                 if seen_ending_attributes.contains(&attr.get_type()) {
                     if seen_ending_attributes.contains(&Fingerprint::TYPE) {
                         warn!("unexpected attribute {} after FINGERPRINT", attr.get_type());
-                        return Err(StunParseError::AttributeAfterFingerprint(attr.get_type()));
+                        return Ok(Message { data: orig_data });
                     } else {
                         // only attribute valid after MESSAGE_INTEGRITY is FINGERPRINT
                         warn!(
                             "unexpected attribute {} after MESSAGE_INTEGRITY",
                             attr.get_type()
                         );
-                        return Err(StunParseError::AttributeAfterIntegrity(attr.get_type()));
+                        return Ok(Message { data: orig_data });
                     }
                 } else {
                     seen_ending_attributes[seen_ending_len] = attr.get_type();
@@ -2577,10 +2577,8 @@ mod tests {
             let software_len = software_bytes.len();
             bytes.extend(software_bytes);
             bytes[3] += software_len as u8;
-            assert!(matches!(
-                Message::from_bytes(&bytes),
-                Err(StunParseError::AttributeAfterIntegrity(Software::TYPE))
-            ));
+            let msg = Message::from_bytes(&bytes).unwrap();
+            assert!(msg.raw_attribute(Software::TYPE).is_none());
         }
     }
 
@@ -2598,12 +2596,9 @@ mod tests {
                 IntegrityAlgorithm::Sha1 => MessageIntegrity::TYPE,
                 IntegrityAlgorithm::Sha256 => MessageIntegritySha256::TYPE,
             };
-            let Err(StunParseError::AttributeAfterIntegrity(err_integrity_type)) =
-                Message::from_bytes(&bytes)
-            else {
-                unreachable!();
-            };
-            assert_eq!(integrity_type, err_integrity_type);
+            let msg = Message::from_bytes(&bytes).unwrap();
+            msg.nth_raw_attribute(integrity_type, 0).unwrap();
+            assert!(msg.nth_raw_attribute(integrity_type, 1).is_none());
         }
     }
 
@@ -2618,10 +2613,9 @@ mod tests {
         let software_len = software_bytes.len();
         bytes.extend(software_bytes);
         bytes[3] += software_len as u8;
-        assert!(matches!(
-            Message::from_bytes(&bytes),
-            Err(StunParseError::AttributeAfterFingerprint(Software::TYPE))
-        ));
+        let msg = Message::from_bytes(&bytes).unwrap();
+        assert!(msg.raw_attribute(Fingerprint::TYPE).is_some());
+        assert!(msg.raw_attribute(Software::TYPE).is_none());
     }
 
     #[test]
@@ -2631,10 +2625,9 @@ mod tests {
         msg.add_fingerprint().unwrap();
         add_fingerprint_unchecked(&mut msg);
         let bytes = msg.finish();
-        assert!(matches!(
-            Message::from_bytes(&bytes),
-            Err(StunParseError::AttributeAfterFingerprint(Fingerprint::TYPE))
-        ));
+        let msg = Message::from_bytes(&bytes).unwrap();
+        assert!(msg.nth_raw_attribute(Fingerprint::TYPE, 0).is_some());
+        assert!(msg.nth_raw_attribute(Fingerprint::TYPE, 1).is_none());
     }
 
     #[test]
