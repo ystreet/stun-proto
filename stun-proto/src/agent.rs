@@ -23,7 +23,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use sans_io_time::Instant;
+use crate::Instant;
 
 use byteorder::{BigEndian, ByteOrder};
 

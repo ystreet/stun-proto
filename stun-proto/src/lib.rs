@@ -83,6 +83,7 @@ extern crate std;
 
 pub mod agent;
 
+pub use sans_io_time::Instant;
 pub use stun_types as types;
 
 #[derive(Clone)]
