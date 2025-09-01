@@ -2748,15 +2748,15 @@ mod tests {
         let mut src = Message::builder_request(BINDING, MessageWriteVec::new());
         let username = Username::new("123").unwrap();
         src.add_attribute(&username).unwrap();
-        let priority = Priority::new(123);
-        src.add_attribute(&priority).unwrap();
+        let nonce = Nonce::new("nonce").unwrap();
+        src.add_attribute(&nonce).unwrap();
         let src = src.finish();
         let src = Message::from_bytes(&src).unwrap();
 
         // success case
         let res = Message::check_attribute_types(
             &src,
-            &[Username::TYPE, Priority::TYPE],
+            &[Username::TYPE, Nonce::TYPE],
             &[Username::TYPE],
             MessageWriteVec::new(),
         );
@@ -2765,7 +2765,7 @@ mod tests {
         // fingerprint required but not present
         let res = Message::check_attribute_types(
             &src,
-            &[Username::TYPE, Priority::TYPE],
+            &[Username::TYPE, Nonce::TYPE],
             &[Fingerprint::TYPE],
             MessageWriteVec::new(),
         );
@@ -2778,7 +2778,7 @@ mod tests {
         let err = res.attribute::<ErrorCode>().unwrap();
         assert_eq!(err.code(), 400);
 
-        // priority unsupported
+        // nonce unsupported
         let res =
             Message::check_attribute_types(&src, &[Username::TYPE], &[], MessageWriteVec::new());
         assert!(res.is_some());
@@ -2790,7 +2790,7 @@ mod tests {
         let err = res.attribute::<ErrorCode>().unwrap();
         assert_eq!(err.code(), 420);
         let unknown = res.attribute::<UnknownAttributes>().unwrap();
-        assert!(unknown.has_attribute(Priority::TYPE));
+        assert!(unknown.has_attribute(Nonce::TYPE));
     }
 
     #[test]
@@ -2878,17 +2878,17 @@ mod tests {
         assert_eq!(src[4], 0x21);
         let username = Username::new("123").unwrap();
         src.add_attribute(&username).unwrap();
-        let priority = Priority::new(123);
-        src.add_attribute(&priority).unwrap();
+        let nonce = Nonce::new("nonce").unwrap();
+        src.add_attribute(&nonce).unwrap();
 
         assert!(src.has_attribute(Username::TYPE));
-        assert!(src.has_attribute(Priority::TYPE));
+        assert!(src.has_attribute(Nonce::TYPE));
         assert_eq!(
-            src.has_any_attribute(&[Username::TYPE, Priority::TYPE]),
+            src.has_any_attribute(&[Username::TYPE, Nonce::TYPE]),
             Some(Username::TYPE)
         );
         assert_eq!(
-            src.has_any_attribute(&[Priority::TYPE, Username::TYPE]),
+            src.has_any_attribute(&[Nonce::TYPE, Username::TYPE]),
             Some(Username::TYPE)
         );
         assert!(src.has_class(MessageClass::Request));
@@ -2906,16 +2906,16 @@ mod tests {
         assert_eq!(src[4], 0x21);
         let username = Username::new("123").unwrap();
         src.add_attribute(&username).unwrap();
-        let priority = Priority::new(123);
-        src.add_attribute(&priority).unwrap();
+        let nonce = Nonce::new("nonce").unwrap();
+        src.add_attribute(&nonce).unwrap();
         assert!(src.has_attribute(Username::TYPE));
         assert!(!src.has_attribute(Software::TYPE));
-        assert_eq!(src.finish(), 36);
-        let msg = Message::from_bytes(&data[..36]).unwrap();
+        assert_eq!(src.finish(), 40);
+        let msg = Message::from_bytes(&data[..40]).unwrap();
         let u2 = msg.attribute::<Username>().unwrap();
         assert_eq!(u2.username(), "123");
-        let p2 = msg.attribute::<Priority>().unwrap();
-        assert_eq!(p2.priority(), 123);
+        let n2 = msg.attribute::<Nonce>().unwrap();
+        assert_eq!(n2.nonce(), "nonce");
     }
 
     #[test]
@@ -3075,21 +3075,18 @@ mod tests {
         assert_eq!(software.software(), "STUN test client");
         builder.add_attribute(&software).unwrap();
 
-        // PRIORITY
-        assert!(msg.has_attribute(Priority::TYPE));
-        let raw = msg.raw_attribute(Priority::TYPE).unwrap();
-        assert!(Priority::try_from(&raw).is_ok());
-        let priority = Priority::try_from(&raw).unwrap();
-        assert_eq!(priority.priority(), 0x6e0001ff);
-        builder.add_attribute(&priority).unwrap();
+        // PRIORITY handled elswhere
+        builder
+            .add_attribute(&RawAttribute::new(0x24.into(), &[0x6e, 0x00, 0x01, 0xff]))
+            .unwrap();
 
-        // ICE-CONTROLLED
-        assert!(msg.has_attribute(IceControlled::TYPE));
-        let raw = msg.raw_attribute(IceControlled::TYPE).unwrap();
-        assert!(IceControlled::try_from(&raw).is_ok());
-        let ice = IceControlled::try_from(&raw).unwrap();
-        assert_eq!(ice.tie_breaker(), 0x932f_f9b1_5126_3b36);
-        builder.add_attribute(&ice).unwrap();
+        // ICE-CONTROLLED handled elswhere
+        builder
+            .add_attribute(&RawAttribute::new(
+                0x8029.into(),
+                &[0x93, 0x2f, 0xf9, 0xb1, 0x51, 0x26, 0x3b, 0x36],
+            ))
+            .unwrap();
 
         // USERNAME
         assert!(msg.has_attribute(Username::TYPE));
