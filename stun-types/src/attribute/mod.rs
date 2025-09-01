@@ -142,8 +142,6 @@ mod alternate;
 pub use alternate::{AlternateDomain, AlternateServer};
 mod error;
 pub use error::{ErrorCode, UnknownAttributes};
-mod ice;
-pub use ice::{IceControlled, IceControlling, Priority, UseCandidate};
 mod integrity;
 pub use integrity::{MessageIntegrity, MessageIntegritySha256};
 mod fingerprint;
@@ -340,10 +338,6 @@ impl AttributeType {
             Software::TYPE => "SOFTWARE",
             AlternateServer::TYPE => "ALTERNATE-SERVER",
             Fingerprint::TYPE => "FINGERPRINT",
-            Priority::TYPE => "PRIORITY",
-            UseCandidate::TYPE => "USE-CANDIDATE",
-            IceControlled::TYPE => "ICE-CONTROLLED",
-            IceControlling::TYPE => "ICE-CONTROLLING",
             _ => {
                 #[cfg(feature = "std")]
                 {
@@ -599,10 +593,6 @@ impl core::fmt::Display for RawAttribute<'_> {
             Software::TYPE => display_attr!(self, f, Software),
             AlternateServer::TYPE => display_attr!(self, f, AlternateServer),
             Fingerprint::TYPE => display_attr!(self, f, Fingerprint),
-            Priority::TYPE => display_attr!(self, f, Priority),
-            UseCandidate::TYPE => display_attr!(self, f, UseCandidate),
-            IceControlled::TYPE => display_attr!(self, f, IceControlled),
-            IceControlling::TYPE => display_attr!(self, f, IceControlling),
             _ => {
                 #[cfg(feature = "std")]
                 {
