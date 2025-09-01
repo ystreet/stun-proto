@@ -25,13 +25,9 @@ use core::time::Duration;
 
 use crate::Instant;
 
-use byteorder::{BigEndian, ByteOrder};
-
 use stun_types::attribute::*;
 use stun_types::data::Data;
 use stun_types::message::*;
-
-use crate::DebugWrapper;
 
 use stun_types::TransportType;
 
@@ -422,80 +418,6 @@ fn send_data<T: AsRef<[u8]>>(
     to: SocketAddr,
 ) -> Transmit<T> {
     Transmit::new(bytes, transport, from, to)
-}
-
-/// A buffer object for handling STUN data received over a TCP connection that requires framing as
-/// specified in RFC 4571.  This framing is required for ICE usage of TCP candidates.
-#[derive(Debug)]
-pub struct TcpBuffer {
-    buf: DebugWrapper<Vec<u8>>,
-}
-
-impl TcpBuffer {
-    /// Construct a new [`TcpBuffer`]
-    pub fn new() -> Self {
-        vec![].into()
-    }
-
-    /// Push a chunk of received data into the buffer.
-    pub fn push_data(&mut self, data: &[u8]) {
-        self.buf.extend(data);
-    }
-
-    /// Pull the next chunk of data from the buffer.  If no buffer is available, then None is
-    /// returned.
-    pub fn pull_data(&mut self) -> Option<Vec<u8>> {
-        if self.buf.len() < 2 {
-            trace!(
-                "running buffer is currently too small ({} bytes) to provide data",
-                self.buf.len()
-            );
-            return None;
-        }
-
-        let data_length = BigEndian::read_u16(&self.buf[..2]) as usize;
-        if self.buf.len() < data_length {
-            trace!(
-                "not enough data, buf length {} data specifies length {}",
-                self.buf.len(),
-                data_length
-            );
-            return None;
-        }
-
-        let bytes = self.take(data_length);
-        trace!("return {} bytes", data_length);
-        Some(bytes)
-    }
-
-    fn take(&mut self, data_length: usize) -> Vec<u8> {
-        let offset = data_length + 2;
-        if offset > self.buf.len() {
-            return vec![];
-        }
-        let mut data = self.buf.split_off(offset);
-        core::mem::swap(&mut data, &mut self.buf.1);
-        data[2..].to_vec()
-    }
-
-    /// Consume the [`TcpBuffer`] and return the unconsumed data.
-    pub fn into_inner(self) -> Vec<u8> {
-        self.buf.1
-    }
-}
-
-impl Default for TcpBuffer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl From<Vec<u8>> for TcpBuffer {
-    fn from(value: Vec<u8>) -> Self {
-        Self {
-            buf: DebugWrapper::wrap(value, "..."),
-        }
-    }
 }
 
 /// A piece of data that needs to, or has been transmitted
@@ -1500,22 +1422,6 @@ pub(crate) mod tests {
 
         let request = Message::from_bytes(&transmit.data).unwrap();
         assert_eq!(request.transaction_id(), transaction_id);
-    }
-
-    #[test]
-    fn tcp_buffer_split_recv() {
-        let _log = crate::tests::test_init_log();
-
-        let mut tcp_buffer = TcpBuffer::default();
-
-        let mut len = [0; 2];
-        let data = [0, 1, 2, 4, 3];
-        BigEndian::write_u16(&mut len, data.len() as u16);
-
-        tcp_buffer.push_data(&len);
-        assert!(tcp_buffer.pull_data().is_none());
-        tcp_buffer.push_data(&data);
-        assert_eq!(tcp_buffer.pull_data().unwrap(), &data);
     }
 
     #[test]
