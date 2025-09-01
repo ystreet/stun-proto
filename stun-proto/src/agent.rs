@@ -445,7 +445,7 @@ impl<T: AsRef<[u8]>> core::fmt::Display for Transmit<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "Transmit({}: {} -> {}) of {} bytes",
+            "Transmit({}: {} -> {} of {} bytes)",
             self.transport,
             self.from,
             self.to,
@@ -1445,5 +1445,19 @@ pub(crate) mod tests {
         assert_eq!(owned.from, from);
         assert_eq!(owned.to, to);
         error!("{owned}");
+    }
+
+    #[test]
+    fn transmit_display() {
+        let data = [0x10, 0x20];
+        let from = "127.0.0.1:1000".parse().unwrap();
+        let to = "127.0.0.1:2000".parse().unwrap();
+        assert_eq!(
+            alloc::format!(
+                "{}",
+                Transmit::new(Data::from(data.as_ref()), TransportType::Udp, from, to)
+            ),
+            String::from("Transmit(UDP: 127.0.0.1:1000 -> 127.0.0.1:2000 of 2 bytes)")
+        );
     }
 }
