@@ -865,6 +865,27 @@ impl<'a> Message<'a> {
         )
     }
 
+    /// Create a new indication [`Message`] of the provided method.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
+    /// #     MessageWrite, BINDING};
+    /// let message = Message::builder_indication(BINDING, MessageWriteVec::new());
+    /// let data = message.finish();
+    /// let message = Message::from_bytes(&data).unwrap();
+    /// assert!(message.has_class(MessageClass::Indication));
+    /// assert!(message.has_method(BINDING));
+    /// ```
+    pub fn builder_indication<B: MessageWrite>(method: Method, write: B) -> B {
+        Message::builder(
+            MessageType::from_class_method(MessageClass::Indication, method),
+            TransactionId::generate(),
+            write,
+        )
+    }
+
     /// Retrieve the [`MessageType`] of a [`Message`]
     ///
     /// # Examples
