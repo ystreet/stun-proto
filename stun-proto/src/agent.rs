@@ -132,6 +132,10 @@ impl StunAgent {
     /// Perform any operations needed to be able to send a [`Message`] to a peer.
     ///
     /// The returned [`Transmit`] must be sent to the respective peer after this call.
+    ///
+    /// # Panics
+    ///
+    /// - If the STUN Message is a request. Use [`send_request()`](StunAgent::send_request) instead.
     #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
     pub fn send<T: AsRef<[u8]>>(
         &mut self,
@@ -148,6 +152,10 @@ impl StunAgent {
     /// Perform any operations needed to be able to send a request [`Message`] to a peer.
     ///
     /// The returned [`Transmit`] must be sent to the respective peer after this call.
+    ///
+    /// # Panics
+    ///
+    /// - If the STUN Message is not a request. Use [`send()`](StunAgent::send) instead.
     #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
     pub fn send_request<'a, T: AsRef<[u8]>>(
         &'a mut self,
