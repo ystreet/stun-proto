@@ -86,31 +86,6 @@ pub mod agent;
 pub use sans_io_time::Instant;
 pub use stun_types as types;
 
-#[derive(Clone)]
-pub(crate) struct DebugWrapper<T>(&'static str, T);
-
-impl<T> core::fmt::Debug for DebugWrapper<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-impl<T> core::ops::Deref for DebugWrapper<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.1
-    }
-}
-impl<T> core::ops::DerefMut for DebugWrapper<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.1
-    }
-}
-impl<T> DebugWrapper<T> {
-    pub(crate) fn wrap(obj: T, name: &'static str) -> Self {
-        Self(name, obj)
-    }
-}
-
 /// Public prelude
 pub mod prelude {}
 
