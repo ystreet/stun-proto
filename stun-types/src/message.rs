@@ -594,9 +594,9 @@ impl TransactionId {
     pub fn generate() -> TransactionId {
         #[cfg(not(feature = "std"))]
         {
-            use rand_core::TryRngCore;
+            use rand::TryRngCore;
             let mut dest = [0; 16];
-            rand_core::OsRng
+            rand::rngs::OsRng
                 .try_fill_bytes(&mut dest)
                 .expect("Cannot generate random data");
             u128::from_be_bytes(dest).into()
