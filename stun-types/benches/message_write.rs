@@ -36,10 +36,10 @@ fn bench_message_write(c: &mut Criterion) {
     let nonce = Nonce::new("nonce").unwrap();
     let alt_server = AlternateServer::new(addr);
     let alt_domain = AlternateDomain::new("example.com");
-    let priority = Priority::new(100);
-    let controlled = IceControlled::new(200);
-    let controlling = IceControlling::new(300);
-    let use_candidate = UseCandidate::new();
+    let unknown = UnknownAttributes::new(&[PasswordAlgorithms::TYPE]);
+    let userhash = Userhash::new([0; 32]);
+    let realm = Realm::new("realm").unwrap();
+    let username = Username::new("abcd").unwrap();
     let short_term_integrity =
         MessageIntegrityCredentials::ShortTerm(ShortTermCredentials::new("password".to_owned()));
 
@@ -59,10 +59,10 @@ fn bench_message_write(c: &mut Criterion) {
         &nonce,
         &alt_server,
         &alt_domain,
-        &priority,
-        &controlled,
-        &controlling,
-        &use_candidate,
+        &unknown,
+        &userhash,
+        &realm,
+        &username,
     ];
     for i in 2..=attrs.len() {
         let len = MessageHeader::LENGTH as u64
@@ -155,17 +155,7 @@ fn bench_message_write(c: &mut Criterion) {
         &software,
         |b, software| b.iter(|| write_into_with_attribute(software, &mut scratch)),
     );
-    let attrs: [&dyn AttributeWrite; 9] = [
-        &software,
-        &xor_mapped_address,
-        &nonce,
-        &alt_server,
-        &alt_domain,
-        &priority,
-        &controlled,
-        &controlling,
-        &use_candidate,
-    ];
+
     for i in 2..=attrs.len() {
         group.bench_with_input(
             BenchmarkId::new("Attributes", i),

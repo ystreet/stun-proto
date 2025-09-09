@@ -45,6 +45,8 @@ jobs:
       run: cargo test --verbose
     - name: Run tests (without default features)
       run: cargo test --verbose --no-default-features
+    - name: Build benchmarks
+      run: cargo bench --no-run --verbose
   clippy:
     runs-on: ubuntu-latest
     steps:
