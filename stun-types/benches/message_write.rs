@@ -9,8 +9,8 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use stun_types::attribute::*;
 use stun_types::message::{
-    IntegrityAlgorithm, Message, MessageHeader, MessageIntegrityCredentials, MessageWriteMutSlice,
-    MessageWriteVec, ShortTermCredentials, TransactionId, BINDING,
+    IntegrityAlgorithm, LongTermCredentials, Message, MessageHeader, MessageIntegrityCredentials,
+    MessageWriteMutSlice, MessageWriteVec, ShortTermCredentials, TransactionId, BINDING,
 };
 use stun_types::prelude::*;
 
@@ -42,6 +42,11 @@ fn bench_message_write(c: &mut Criterion) {
     let username = Username::new("abcd").unwrap();
     let short_term_integrity =
         MessageIntegrityCredentials::ShortTerm(ShortTermCredentials::new("password".to_owned()));
+    let long_term_integrity = MessageIntegrityCredentials::LongTerm(LongTermCredentials::new(
+        "user".to_owned(),
+        "password".to_owned(),
+        "realm".to_owned(),
+    ));
 
     let mut group = c.benchmark_group("Message/Build");
 
@@ -228,6 +233,42 @@ fn bench_message_write(c: &mut Criterion) {
                     Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
                 msg.add_attribute(xor_mapped_address).unwrap();
                 msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha256)
+                    .unwrap();
+                msg.add_fingerprint().unwrap();
+                msg.finish();
+            })
+        },
+    );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 32,
+    ));
+    group.bench_with_input(
+        BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha1+Fingerprint"),
+        &(&xor_mapped_address, &long_term_integrity),
+        |b, &(xor_mapped_address, long_term_integrity)| {
+            b.iter(|| {
+                let mut msg =
+                    Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
+                msg.add_attribute(xor_mapped_address).unwrap();
+                msg.add_message_integrity(long_term_integrity, IntegrityAlgorithm::Sha1)
+                    .unwrap();
+                msg.add_fingerprint().unwrap();
+                msg.finish();
+            })
+        },
+    );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 32,
+    ));
+    group.bench_with_input(
+        BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha256+Fingerprint"),
+        &(&xor_mapped_address, &long_term_integrity),
+        |b, &(xor_mapped_address, long_term_integrity)| {
+            b.iter(|| {
+                let mut msg =
+                    Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
+                msg.add_attribute(xor_mapped_address).unwrap();
+                msg.add_message_integrity(long_term_integrity, IntegrityAlgorithm::Sha256)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
                 msg.finish();
