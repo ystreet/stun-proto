@@ -1107,12 +1107,15 @@ impl<'a> Message<'a> {
             if attr.get_type() == Fingerprint::TYPE {
                 let f = Fingerprint::from_raw_ref(&attr)?;
                 let msg_fingerprint = f.fingerprint();
-                let mut fingerprint_data = orig_data[..data_offset].to_vec();
+                let mut header = [0; 4];
+                header[0] = orig_data[0];
+                header[1] = orig_data[1];
                 BigEndian::write_u16(
-                    &mut fingerprint_data[2..4],
+                    &mut header[2..4],
                     (data_offset + padded_len - MessageHeader::LENGTH) as u16,
                 );
-                let calculated_fingerprint = Fingerprint::compute(&fingerprint_data);
+                let fingerprint_data = &orig_data[4..data_offset];
+                let calculated_fingerprint = Fingerprint::compute(&[&header, fingerprint_data]);
                 if &calculated_fingerprint != msg_fingerprint {
                     warn!(
                         "fingerprint mismatch {:?} != {:?}",
@@ -1197,13 +1200,16 @@ impl<'a> Message<'a> {
 
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
-                let mut hmac_data = self.data[..data_offset].to_vec();
+                let mut header = [0; 4];
+                header[0] = self.data[0];
+                header[1] = self.data[1];
+                let hmac_data = &self.data[4..data_offset];
                 BigEndian::write_u16(
-                    &mut hmac_data[2..4],
+                    &mut header[2..4],
                     data_offset as u16 + 24 - MessageHeader::LENGTH as u16,
                 );
                 MessageIntegrity::verify(
-                    &hmac_data,
+                    &[header.as_slice(), hmac_data],
                     &key.0,
                     msg_hmac.as_slice().try_into().unwrap(),
                 )?;
@@ -1216,12 +1222,15 @@ impl<'a> Message<'a> {
 
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
-                let mut hmac_data = self.data[..data_offset].to_vec();
+                let mut header = [0; 4];
+                header[0] = self.data[0];
+                header[1] = self.data[1];
+                let hmac_data = &self.data[4..data_offset];
                 BigEndian::write_u16(
-                    &mut hmac_data[2..4],
+                    &mut header[2..4],
                     data_offset as u16 + attr.padded_len() as u16 - MessageHeader::LENGTH as u16,
                 );
-                MessageIntegritySha256::verify(&hmac_data, &key.0, &msg_hmac)?;
+                MessageIntegritySha256::verify(&[&header, hmac_data], &key.0, &msg_hmac)?;
                 return Ok(algo);
             }
             let padded_len = attr.padded_len();
@@ -2291,14 +2300,14 @@ fn add_message_integrity_unchecked<O, T: MessageWrite<Output = O> + ?Sized>(
             this.push_attribute_unchecked(&MessageIntegrity::new([0; 20]));
             let len = this.len();
             let data = this.mut_data();
-            let integrity = MessageIntegrity::compute(&data[..len - 24], &key.0).unwrap();
+            let integrity = MessageIntegrity::compute(&[&data[..len - 24]], &key.0).unwrap();
             data[len - 20..].copy_from_slice(&integrity);
         }
         IntegrityAlgorithm::Sha256 => {
             this.push_attribute_unchecked(&MessageIntegritySha256::new(&[0; 32]).unwrap());
             let len = this.len();
             let data = this.mut_data();
-            let integrity = MessageIntegritySha256::compute(&data[..len - 36], &key.0).unwrap();
+            let integrity = MessageIntegritySha256::compute(&[&data[..len - 36]], &key.0).unwrap();
             data[len - 32..].copy_from_slice(&integrity);
         }
     }
@@ -2310,7 +2319,7 @@ fn add_fingerprint_unchecked<O, T: MessageWrite<Output = O> + ?Sized>(this: &mut
     this.push_attribute_unchecked(&Fingerprint::new([0; 4]));
     let len = this.len();
     let data = this.mut_data();
-    let fingerprint = Fingerprint::compute(&data[..len - 8]);
+    let fingerprint = Fingerprint::compute(&[&data[..len - 8]]);
     let fingerprint = Fingerprint::new(fingerprint);
     fingerprint.write_into(&mut data[len - 8..]).unwrap();
 }
