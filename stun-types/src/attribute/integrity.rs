@@ -9,7 +9,7 @@
 use alloc::vec::Vec;
 use core::convert::TryFrom;
 
-use crate::message::{StunParseError, StunWriteError};
+use crate::message::{IntegrityKey, StunParseError, StunWriteError};
 
 use super::{
     Attribute, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
@@ -105,9 +105,11 @@ impl MessageIntegrity {
     /// # Examples
     /// ```
     /// # use stun_types::attribute::*;
-    /// let key = [40; 10];
+    /// # use stun_types::message::*;
+    /// let credentials = ShortTermCredentials::new("pass".to_owned());
+    /// let key = MessageIntegrityCredentials::from(credentials).make_key();
     /// let data = [10; 30];
-    /// let expected = [209, 217, 210, 15, 124, 78, 87, 181, 211, 233, 165, 180, 44, 142, 81, 233, 138, 186, 184, 97];
+    /// let expected = [92, 91, 148, 243, 28, 168, 16, 154, 137, 179, 250, 169, 153, 222, 37, 127, 210, 148, 222, 119];
     /// let integrity = MessageIntegrity::compute(&[&data], &key).unwrap();
     /// assert_eq!(integrity, expected);
     /// ```
@@ -117,10 +119,10 @@ impl MessageIntegrity {
         err,
         skip(data, key)
     )]
-    pub fn compute(data: &[&[u8]], key: &[u8]) -> Result<[u8; 20], StunWriteError> {
+    pub fn compute(data: &[&[u8]], key: &IntegrityKey) -> Result<[u8; 20], StunWriteError> {
         use hmac::{Hmac, Mac};
         let mut hmac =
-            Hmac::<sha1::Sha1>::new_from_slice(key).map_err(|_| StunWriteError::IntegrityFailed)?;
+            Hmac::<sha1::Sha1>::new_from_slice(key.as_bytes()).map_err(|_| StunWriteError::IntegrityFailed)?;
         for data in data {
             hmac.update(data);
         }
@@ -132,9 +134,11 @@ impl MessageIntegrity {
     /// # Examples
     /// ```
     /// # use stun_types::attribute::*;
-    /// let key = [40; 10];
+    /// # use stun_types::message::*;
+    /// let credentials = ShortTermCredentials::new("pass".to_owned());
+    /// let key = MessageIntegrityCredentials::from(credentials).make_key();
     /// let data = [10; 30];
-    /// let expected = [209, 217, 210, 15, 124, 78, 87, 181, 211, 233, 165, 180, 44, 142, 81, 233, 138, 186, 184, 97];
+    /// let expected = [92, 91, 148, 243, 28, 168, 16, 154, 137, 179, 250, 169, 153, 222, 37, 127, 210, 148, 222, 119];
     /// assert_eq!(MessageIntegrity::verify(&[&data], &key, &expected).unwrap(), ());
     /// ```
     #[tracing::instrument(
@@ -142,9 +146,9 @@ impl MessageIntegrity {
         level = "debug",
         skip(data, key, expected)
     )]
-    pub fn verify(data: &[&[u8]], key: &[u8], expected: &[u8; 20]) -> Result<(), StunParseError> {
+    pub fn verify(data: &[&[u8]], key: &IntegrityKey, expected: &[u8; 20]) -> Result<(), StunParseError> {
         use hmac::{Hmac, Mac};
-        let mut hmac = Hmac::<sha1::Sha1>::new_from_slice(key).map_err(|_| {
+        let mut hmac = Hmac::<sha1::Sha1>::new_from_slice(key.as_bytes()).map_err(|_| {
             error!("failed to create hmac from key data");
             StunParseError::InvalidAttributeData
         })?;
@@ -275,9 +279,11 @@ impl MessageIntegritySha256 {
     /// # Examples
     /// ```
     /// # use stun_types::attribute::*;
-    /// let key = [40; 10];
+    /// # use stun_types::message::*;
+    /// let credentials = ShortTermCredentials::new("pass".to_owned());
+    /// let key = MessageIntegrityCredentials::from(credentials).make_key();
     /// let data = [10; 30];
-    /// let expected = [141, 112, 214, 41, 247, 110, 61, 95, 46, 245, 132, 79, 99, 16, 167, 95, 239, 168, 3, 63, 101, 78, 150, 24, 241, 139, 34, 229, 189, 37, 14, 113];
+    /// let expected = [16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244, 67, 190, 185, 71, 34, 150, 194, 108, 18, 75, 94, 221, 185];
     /// let integrity = MessageIntegritySha256::compute(&[&data], &key).unwrap();
     /// assert_eq!(integrity, expected);
     /// ```
@@ -287,9 +293,9 @@ impl MessageIntegritySha256 {
         err,
         skip(data, key)
     )]
-    pub fn compute(data: &[&[u8]], key: &[u8]) -> Result<[u8; 32], StunWriteError> {
+    pub fn compute(data: &[&[u8]], key: &IntegrityKey) -> Result<[u8; 32], StunWriteError> {
         use hmac::{Hmac, Mac};
-        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(key)
+        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes())
             .map_err(|_| StunWriteError::IntegrityFailed)?;
         for data in data {
             hmac.update(data);
@@ -303,19 +309,21 @@ impl MessageIntegritySha256 {
     /// # Examples
     /// ```
     /// # use stun_types::attribute::*;
-    /// let key = [40; 10];
+    /// # use stun_types::message::*;
+    /// let credentials = ShortTermCredentials::new("pass".to_owned());
+    /// let key = MessageIntegrityCredentials::from(credentials).make_key();
     /// let data = [10; 30];
-    /// let expected = [141, 112, 214, 41, 247, 110, 61, 95, 46, 245, 132, 79, 99, 16, 167, 95, 239, 168, 3, 63, 101, 78, 150, 24, 241, 139, 34, 229, 189, 37, 14, 113];
+    /// let expected = [16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244, 67, 190, 185, 71, 34, 150, 194, 108, 18, 75, 94, 221, 185];
     /// assert_eq!(MessageIntegritySha256::verify(&[&data], &key, &expected).unwrap(), ());
     /// ```
     #[tracing::instrument(
-        name = "MessageIntegrity::verify",
+        name = "MessageIntegritySha256::verify",
         level = "debug",
         skip(data, key, expected)
     )]
-    pub fn verify(data: &[&[u8]], key: &[u8], expected: &[u8]) -> Result<(), StunParseError> {
+    pub fn verify(data: &[&[u8]], key: &IntegrityKey, expected: &[u8]) -> Result<(), StunParseError> {
         use hmac::{Hmac, Mac};
-        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(key).map_err(|_| {
+        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes()).map_err(|_| {
             error!("failed to create hmac from key data");
             StunParseError::InvalidAttributeData
         })?;
