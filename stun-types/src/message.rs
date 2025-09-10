@@ -386,7 +386,7 @@ impl MessageIntegrityCredentials {
     pub fn make_key(&self) -> IntegrityKey {
         match self {
             MessageIntegrityCredentials::ShortTerm(short) => {
-                IntegrityKey(short.password.as_bytes().to_vec())
+                IntegrityKey::new(short.password.as_bytes().to_vec())
             }
             MessageIntegrityCredentials::LongTerm(long) => {
                 use md5::{Digest, Md5};
@@ -396,7 +396,7 @@ impl MessageIntegrityCredentials {
                 digest.update(long.realm.as_bytes());
                 digest.update(":".as_bytes());
                 digest.update(long.password.as_bytes());
-                IntegrityKey(digest.finalize().to_vec())
+                IntegrityKey::new(digest.finalize().to_vec())
             }
         }
     }
@@ -404,7 +404,18 @@ impl MessageIntegrityCredentials {
 
 /// A cached key for a particular set of credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IntegrityKey(Vec<u8>);
+pub struct IntegrityKey {
+    bytes: Vec<u8>,
+}
+
+impl IntegrityKey {
+    fn new(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
 
 /// The class of a [`Message`].
 ///
@@ -1210,7 +1221,7 @@ impl<'a> Message<'a> {
                 );
                 MessageIntegrity::verify(
                     &[header.as_slice(), hmac_data],
-                    &key.0,
+                    &key,
                     msg_hmac.as_slice().try_into().unwrap(),
                 )?;
                 return Ok(algo);
@@ -1230,7 +1241,7 @@ impl<'a> Message<'a> {
                     &mut header[2..4],
                     data_offset as u16 + attr.padded_len() as u16 - MessageHeader::LENGTH as u16,
                 );
-                MessageIntegritySha256::verify(&[&header, hmac_data], &key.0, &msg_hmac)?;
+                MessageIntegritySha256::verify(&[&header, hmac_data], &key, &msg_hmac)?;
                 return Ok(algo);
             }
             let padded_len = attr.padded_len();
@@ -2300,14 +2311,14 @@ fn add_message_integrity_unchecked<O, T: MessageWrite<Output = O> + ?Sized>(
             this.push_attribute_unchecked(&MessageIntegrity::new([0; 20]));
             let len = this.len();
             let data = this.mut_data();
-            let integrity = MessageIntegrity::compute(&[&data[..len - 24]], &key.0).unwrap();
+            let integrity = MessageIntegrity::compute(&[&data[..len - 24]], key).unwrap();
             data[len - 20..].copy_from_slice(&integrity);
         }
         IntegrityAlgorithm::Sha256 => {
             this.push_attribute_unchecked(&MessageIntegritySha256::new(&[0; 32]).unwrap());
             let len = this.len();
             let data = this.mut_data();
-            let integrity = MessageIntegritySha256::compute(&[&data[..len - 36]], &key.0).unwrap();
+            let integrity = MessageIntegritySha256::compute(&[&data[..len - 36]], key).unwrap();
             data[len - 32..].copy_from_slice(&integrity);
         }
     }
