@@ -8,7 +8,7 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use stun_types::message::{
-    Message, MessageHeader, MessageIntegrityCredentials, ShortTermCredentials,
+    IntegrityKey, Message, MessageHeader, MessageIntegrityCredentials, ShortTermCredentials,
 };
 
 static RFC5679_VECTOR1_DATA: [u8; 108] = [
@@ -177,6 +177,10 @@ fn validate_integrity(msg: &Message, credentials: &MessageIntegrityCredentials) 
     msg.validate_integrity(credentials).unwrap();
 }
 
+fn validate_integrity_with_key(msg: &Message, key: &IntegrityKey) {
+    msg.validate_integrity_with_key(key).unwrap();
+}
+
 fn bench_message_parse(c: &mut Criterion) {
     let test_vectors = [
         (
@@ -229,10 +233,20 @@ fn bench_message_parse(c: &mut Criterion) {
         );
         if let Some(credentials) = test_vector.2 {
             let msg = Message::from_bytes(test_vector.1).unwrap();
+            let key = credentials.make_key();
             group.bench_with_input(
                 BenchmarkId::from_parameter(format!("{}/ValidateIntegrity", test_vector.0)),
                 &(msg, credentials),
                 |b, (msg, credentials)| b.iter(|| validate_integrity(msg, credentials)),
+            );
+            let msg = Message::from_bytes(test_vector.1).unwrap();
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!(
+                    "{}/ValidateIntegrity/CachedKey",
+                    test_vector.0
+                )),
+                &msg,
+                |b, msg| b.iter(|| validate_integrity_with_key(msg, &key)),
             );
         }
     }

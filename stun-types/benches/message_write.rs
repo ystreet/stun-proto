@@ -42,11 +42,13 @@ fn bench_message_write(c: &mut Criterion) {
     let username = Username::new("abcd").unwrap();
     let short_term_integrity =
         MessageIntegrityCredentials::ShortTerm(ShortTermCredentials::new("password".to_owned()));
+    let short_term_key = short_term_integrity.make_key();
     let long_term_integrity = MessageIntegrityCredentials::LongTerm(LongTermCredentials::new(
         "user".to_owned(),
         "password".to_owned(),
         "realm".to_owned(),
     ));
+    let long_term_key = long_term_integrity.make_key();
 
     let mut group = c.benchmark_group("Message/Build");
 
@@ -118,12 +120,12 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha1+Fingerprint"),
-        &(&xor_mapped_address, &short_term_integrity),
-        |b, &(xor_mapped_address, short_term_integrity)| {
+        &(&xor_mapped_address, &short_term_key),
+        |b, &(xor_mapped_address, short_term_key)| {
             b.iter(|| {
                 let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(64));
                 msg.add_attribute(xor_mapped_address).unwrap();
-                msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha1)
+                msg.add_message_integrity_with_key(short_term_key, IntegrityAlgorithm::Sha1)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
                 msg.finish();
@@ -135,12 +137,46 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha256+Fingerprint"),
-        &(&xor_mapped_address, &short_term_integrity),
-        |b, &(xor_mapped_address, short_term_integrity)| {
+        &(&xor_mapped_address, &short_term_key),
+        |b, &(xor_mapped_address, short_term_key)| {
+            b.iter(|| {
+                let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(80));
+                msg.add_attribute(xor_mapped_address).unwrap();
+                msg.add_message_integrity_with_key(short_term_key, IntegrityAlgorithm::Sha256)
+                    .unwrap();
+                msg.add_fingerprint().unwrap();
+                msg.finish();
+            })
+        },
+    );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 32,
+    ));
+    group.bench_with_input(
+        BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha1+Fingerprint"),
+        &(&xor_mapped_address, &long_term_key),
+        |b, &(xor_mapped_address, long_term_key)| {
             b.iter(|| {
                 let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(64));
                 msg.add_attribute(xor_mapped_address).unwrap();
-                msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha256)
+                msg.add_message_integrity_with_key(long_term_key, IntegrityAlgorithm::Sha1)
+                    .unwrap();
+                msg.add_fingerprint().unwrap();
+                msg.finish();
+            })
+        },
+    );
+    group.throughput(criterion::Throughput::Bytes(
+        MessageHeader::LENGTH as u64 + xor_mapped_address.padded_len() as u64 + 42,
+    ));
+    group.bench_with_input(
+        BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha256+Fingerprint"),
+        &(&xor_mapped_address, &long_term_key),
+        |b, &(xor_mapped_address, long_term_key)| {
+            b.iter(|| {
+                let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(80));
+                msg.add_attribute(xor_mapped_address).unwrap();
+                msg.add_message_integrity_with_key(long_term_key, IntegrityAlgorithm::Sha256)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
                 msg.finish();
@@ -208,13 +244,13 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha1+Fingerprint"),
-        &(&xor_mapped_address, &short_term_integrity),
-        |b, &(xor_mapped_address, short_term_integrity)| {
+        &(&xor_mapped_address, &short_term_key),
+        |b, &(xor_mapped_address, short_term_key)| {
             b.iter(|| {
                 let mut msg =
                     Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
                 msg.add_attribute(xor_mapped_address).unwrap();
-                msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha1)
+                msg.add_message_integrity_with_key(short_term_key, IntegrityAlgorithm::Sha1)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
                 msg.finish();
@@ -226,13 +262,13 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha256+Fingerprint"),
-        &(&xor_mapped_address, &short_term_integrity),
-        |b, &(xor_mapped_address, short_term_integrity)| {
+        &(&xor_mapped_address, &short_term_key),
+        |b, &(xor_mapped_address, short_term_key)| {
             b.iter(|| {
                 let mut msg =
                     Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
                 msg.add_attribute(xor_mapped_address).unwrap();
-                msg.add_message_integrity(short_term_integrity, IntegrityAlgorithm::Sha256)
+                msg.add_message_integrity_with_key(short_term_key, IntegrityAlgorithm::Sha256)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
                 msg.finish();
@@ -244,13 +280,13 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha1+Fingerprint"),
-        &(&xor_mapped_address, &long_term_integrity),
-        |b, &(xor_mapped_address, long_term_integrity)| {
+        &(&xor_mapped_address, &long_term_key),
+        |b, &(xor_mapped_address, long_term_key)| {
             b.iter(|| {
                 let mut msg =
                     Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
                 msg.add_attribute(xor_mapped_address).unwrap();
-                msg.add_message_integrity(long_term_integrity, IntegrityAlgorithm::Sha1)
+                msg.add_message_integrity_with_key(long_term_key, IntegrityAlgorithm::Sha1)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
                 msg.finish();
@@ -262,13 +298,13 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha256+Fingerprint"),
-        &(&xor_mapped_address, &long_term_integrity),
-        |b, &(xor_mapped_address, long_term_integrity)| {
+        &(&xor_mapped_address, &long_term_key),
+        |b, &(xor_mapped_address, long_term_key)| {
             b.iter(|| {
                 let mut msg =
                     Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut scratch));
                 msg.add_attribute(xor_mapped_address).unwrap();
-                msg.add_message_integrity(long_term_integrity, IntegrityAlgorithm::Sha256)
+                msg.add_message_integrity_with_key(long_term_key, IntegrityAlgorithm::Sha256)
                     .unwrap();
                 msg.add_fingerprint().unwrap();
                 msg.finish();
