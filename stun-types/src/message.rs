@@ -382,9 +382,12 @@ impl From<ShortTermCredentials> for MessageIntegrityCredentials {
 }
 
 impl MessageIntegrityCredentials {
-    fn make_hmac_key(&self) -> Vec<u8> {
+    /// Compute a key for caching purposes.
+    pub fn make_key(&self) -> IntegrityKey {
         match self {
-            MessageIntegrityCredentials::ShortTerm(short) => short.password.clone().into(),
+            MessageIntegrityCredentials::ShortTerm(short) => {
+                IntegrityKey(short.password.as_bytes().to_vec())
+            }
             MessageIntegrityCredentials::LongTerm(long) => {
                 use md5::{Digest, Md5};
                 let mut digest = Md5::new();
@@ -393,11 +396,15 @@ impl MessageIntegrityCredentials {
                 digest.update(long.realm.as_bytes());
                 digest.update(":".as_bytes());
                 digest.update(long.password.as_bytes());
-                digest.finalize().to_vec()
+                IntegrityKey(digest.finalize().to_vec())
             }
         }
     }
 }
+
+/// A cached key for a particular set of credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntegrityKey(Vec<u8>);
 
 /// The class of a [`Message`].
 ///
@@ -1141,17 +1148,26 @@ impl<'a> Message<'a> {
     /// let message = Message::from_bytes(&data).unwrap();
     /// assert!(message.validate_integrity(&credentials).is_ok());
     /// ```
+    pub fn validate_integrity(
+        &self,
+        credentials: &MessageIntegrityCredentials,
+    ) -> Result<IntegrityAlgorithm, StunParseError> {
+        let key = credentials.make_key();
+        self.validate_integrity_with_key(&key)
+    }
+
+    /// Validates the MESSAGE_INTEGRITY attribute with the provided credentials key.
     #[tracing::instrument(
-        name = "message_validate_integrity",
+        name = "message_validate_integrity_with_key",
         level = "trace",
-        skip(self, credentials),
+        skip(self, key),
         fields(
             msg.transaction = %self.transaction_id(),
         )
     )]
-    pub fn validate_integrity(
+    pub fn validate_integrity_with_key(
         &self,
-        credentials: &MessageIntegrityCredentials,
+        key: &IntegrityKey,
     ) -> Result<IntegrityAlgorithm, StunParseError> {
         let raw_sha1 = self.raw_attribute(MessageIntegrity::TYPE);
         let raw_sha256 = self.raw_attribute(MessageIntegritySha256::TYPE);
@@ -1181,7 +1197,6 @@ impl<'a> Message<'a> {
 
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
-                let key = credentials.make_hmac_key();
                 let mut hmac_data = self.data[..data_offset].to_vec();
                 BigEndian::write_u16(
                     &mut hmac_data[2..4],
@@ -1189,7 +1204,7 @@ impl<'a> Message<'a> {
                 );
                 MessageIntegrity::verify(
                     &hmac_data,
-                    &key,
+                    &key.0,
                     msg_hmac.as_slice().try_into().unwrap(),
                 )?;
                 return Ok(algo);
@@ -1201,13 +1216,12 @@ impl<'a> Message<'a> {
 
                 // HMAC is computed using all the data up to (exclusive of) the MESSAGE_INTEGRITY
                 // but with a length field including the MESSAGE_INTEGRITY attribute...
-                let key = credentials.make_hmac_key();
                 let mut hmac_data = self.data[..data_offset].to_vec();
                 BigEndian::write_u16(
                     &mut hmac_data[2..4],
                     data_offset as u16 + attr.padded_len() as u16 - MessageHeader::LENGTH as u16,
                 );
-                MessageIntegritySha256::verify(&hmac_data, &key, &msg_hmac)?;
+                MessageIntegritySha256::verify(&hmac_data, &key.0, &msg_hmac)?;
                 return Ok(algo);
             }
             let padded_len = attr.padded_len();
@@ -1895,8 +1909,18 @@ pub trait MessageWriteExt: MessageWrite {
     /// let message = Message::from_bytes(&data).unwrap();
     /// assert!(message.validate_integrity(&credentials).is_ok());
     /// ```
+    fn add_message_integrity(
+        &mut self,
+        credentials: &MessageIntegrityCredentials,
+        algorithm: IntegrityAlgorithm,
+    ) -> Result<(), StunWriteError> {
+        let key = credentials.make_key();
+        self.add_message_integrity_with_key(&key, algorithm)
+    }
+
+    /// Adds MESSAGE_INTEGRITY attribute to a [`Message`] using the provided credential key.
     #[tracing::instrument(
-        name = "message_add_integrity",
+        name = "message_add_integrity_with_key",
         level = "trace",
         err,
         skip(self),
@@ -1904,9 +1928,9 @@ pub trait MessageWriteExt: MessageWrite {
             msg.transaction = %self.transaction_id(),
         )
     )]
-    fn add_message_integrity(
+    fn add_message_integrity_with_key(
         &mut self,
-        credentials: &MessageIntegrityCredentials,
+        key: &IntegrityKey,
         algorithm: IntegrityAlgorithm,
     ) -> Result<(), StunWriteError> {
         let mut atypes = [AttributeType::new(0); 3];
@@ -1945,7 +1969,7 @@ pub trait MessageWriteExt: MessageWrite {
             }
         };
 
-        add_message_integrity_unchecked(self, credentials, algorithm);
+        add_message_integrity_unchecked(self, key, algorithm);
 
         Ok(())
     }
@@ -2257,10 +2281,9 @@ fn check_attribute_can_fit<O, T: MessageWrite<Output = O> + ?Sized>(
 
 fn add_message_integrity_unchecked<O, T: MessageWrite<Output = O> + ?Sized>(
     this: &mut T,
-    credentials: &MessageIntegrityCredentials,
+    key: &IntegrityKey,
     algorithm: IntegrityAlgorithm,
 ) {
-    let key = credentials.make_hmac_key();
     // message-integrity is computed using all the data up to (exclusive of) the
     // MESSAGE-INTEGRITY but with a length field including the MESSAGE-INTEGRITY attribute...
     match algorithm {
@@ -2268,14 +2291,14 @@ fn add_message_integrity_unchecked<O, T: MessageWrite<Output = O> + ?Sized>(
             this.push_attribute_unchecked(&MessageIntegrity::new([0; 20]));
             let len = this.len();
             let data = this.mut_data();
-            let integrity = MessageIntegrity::compute(&data[..len - 24], &key).unwrap();
+            let integrity = MessageIntegrity::compute(&data[..len - 24], &key.0).unwrap();
             data[len - 20..].copy_from_slice(&integrity);
         }
         IntegrityAlgorithm::Sha256 => {
             this.push_attribute_unchecked(&MessageIntegritySha256::new(&[0; 32]).unwrap());
             let len = this.len();
             let data = this.mut_data();
-            let integrity = MessageIntegritySha256::compute(&data[..len - 36], &key).unwrap();
+            let integrity = MessageIntegritySha256::compute(&data[..len - 36], &key.0).unwrap();
             data[len - 32..].copy_from_slice(&integrity);
         }
     }
@@ -2610,7 +2633,7 @@ mod tests {
             let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
             msg.add_message_integrity(&credentials, algorithm).unwrap();
             // duplicate integrity attribute. Don't do this in real code!
-            add_message_integrity_unchecked(&mut msg, &credentials, algorithm);
+            add_message_integrity_unchecked(&mut msg, &credentials.make_key(), algorithm);
             let bytes = msg.finish();
             let integrity_type = match algorithm {
                 IntegrityAlgorithm::Sha1 => MessageIntegrity::TYPE,
