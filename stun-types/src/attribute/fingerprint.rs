@@ -105,13 +105,17 @@ impl Fingerprint {
     /// # Examples
     /// ```
     /// # use stun_types::attribute::*;
-    /// let value = [99;4];
-    /// assert_eq!(Fingerprint::compute(&value), [216, 45, 250, 14]);
+    /// let value = [99; 4];
+    /// assert_eq!(Fingerprint::compute(&[&value]), [216, 45, 250, 14]);
     /// ```
-    pub fn compute(data: &[u8]) -> [u8; 4] {
+    pub fn compute(data: &[&[u8]]) -> [u8; 4] {
         use crc::{Crc, CRC_32_ISO_HDLC};
         const CRC_ALGO: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
-        CRC_ALGO.checksum(data).to_be_bytes()
+        let mut digest = CRC_ALGO.digest();
+        for data in data {
+            digest.update(data);
+        }
+        digest.finalize().to_be_bytes()
     }
 }
 
