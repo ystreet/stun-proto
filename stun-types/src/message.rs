@@ -387,13 +387,12 @@ impl MessageIntegrityCredentials {
             MessageIntegrityCredentials::ShortTerm(short) => short.password.clone().into(),
             MessageIntegrityCredentials::LongTerm(long) => {
                 use md5::{Digest, Md5};
-                let data = long.username.clone()
-                    + ":"
-                    + &long.realm.clone()
-                    + ":"
-                    + &long.password.clone();
                 let mut digest = Md5::new();
-                digest.update(&data);
+                digest.update(long.username.as_bytes());
+                digest.update(":".as_bytes());
+                digest.update(long.realm.as_bytes());
+                digest.update(":".as_bytes());
+                digest.update(long.password.as_bytes());
                 digest.finalize().to_vec()
             }
         }
