@@ -16,8 +16,6 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-use tracing::{debug, error};
-
 /// The MessageIntegrity [`Attribute`]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageIntegrity {
@@ -120,13 +118,7 @@ impl MessageIntegrity {
         skip(data, key)
     )]
     pub fn compute(data: &[&[u8]], key: &IntegrityKey) -> Result<[u8; 20], StunWriteError> {
-        use hmac::{Hmac, Mac};
-        let mut hmac =
-            Hmac::<sha1::Sha1>::new_from_slice(key.as_bytes()).map_err(|_| StunWriteError::IntegrityFailed)?;
-        for data in data {
-            hmac.update(data);
-        }
-        Ok(hmac.finalize().into_bytes().into())
+        Ok(key.compute_sha1(data).into_bytes().into())
     }
 
     /// Compute the Message Integrity value of a chunk of data using a key
@@ -146,19 +138,16 @@ impl MessageIntegrity {
         level = "debug",
         skip(data, key, expected)
     )]
-    pub fn verify(data: &[&[u8]], key: &IntegrityKey, expected: &[u8; 20]) -> Result<(), StunParseError> {
-        use hmac::{Hmac, Mac};
-        let mut hmac = Hmac::<sha1::Sha1>::new_from_slice(key.as_bytes()).map_err(|_| {
-            error!("failed to create hmac from key data");
-            StunParseError::InvalidAttributeData
-        })?;
-        for data in data {
-            hmac.update(data);
+    pub fn verify(
+        data: &[&[u8]],
+        key: &IntegrityKey,
+        expected: &[u8; 20],
+    ) -> Result<(), StunParseError> {
+        if key.verify_sha1(data, expected) {
+            Ok(())
+        } else {
+            Err(StunParseError::IntegrityCheckFailed)
         }
-        hmac.verify_slice(expected).map_err(|_| {
-            debug!("integrity check failed");
-            StunParseError::IntegrityCheckFailed
-        })
     }
 }
 
@@ -294,14 +283,7 @@ impl MessageIntegritySha256 {
         skip(data, key)
     )]
     pub fn compute(data: &[&[u8]], key: &IntegrityKey) -> Result<[u8; 32], StunWriteError> {
-        use hmac::{Hmac, Mac};
-        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes())
-            .map_err(|_| StunWriteError::IntegrityFailed)?;
-        for data in data {
-            hmac.update(data);
-        }
-        let ret = hmac.finalize().into_bytes();
-        Ok(ret.into())
+        Ok(key.compute_sha256(data))
     }
 
     /// Compute the Message Integrity value of a chunk of data using a key
@@ -321,19 +303,16 @@ impl MessageIntegritySha256 {
         level = "debug",
         skip(data, key, expected)
     )]
-    pub fn verify(data: &[&[u8]], key: &IntegrityKey, expected: &[u8]) -> Result<(), StunParseError> {
-        use hmac::{Hmac, Mac};
-        let mut hmac = Hmac::<sha2::Sha256>::new_from_slice(key.as_bytes()).map_err(|_| {
-            error!("failed to create hmac from key data");
-            StunParseError::InvalidAttributeData
-        })?;
-        for data in data {
-            hmac.update(data);
+    pub fn verify(
+        data: &[&[u8]],
+        key: &IntegrityKey,
+        expected: &[u8],
+    ) -> Result<(), StunParseError> {
+        if key.verify_sha256(data, expected) {
+            Ok(())
+        } else {
+            Err(StunParseError::IntegrityCheckFailed)
         }
-        hmac.verify_truncated_left(expected).map_err(|_| {
-            debug!("integrity check failed");
-            StunParseError::IntegrityCheckFailed
-        })
     }
 }
 
