@@ -87,6 +87,7 @@
 #[cfg(feature = "std")]
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
@@ -97,7 +98,11 @@ use byteorder::{BigEndian, ByteOrder};
 
 use crate::attribute::*;
 
-use tracing::{trace, warn};
+use tracing::{error, trace, warn};
+
+use hmac::digest::core_api::CoreWrapper;
+use hmac::digest::CtOutput;
+use hmac::HmacCore;
 
 /// The value of the magic cookie (in network byte order) as specified in RFC5389, and RFC8489.
 pub const MAGIC_COOKIE: u32 = 0x2112A442;
@@ -402,18 +407,99 @@ impl MessageIntegrityCredentials {
     }
 }
 
+type HmacSha1 = hmac::Hmac<sha1::Sha1>;
+type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+
 /// A cached key for a particular set of credentials.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct IntegrityKey {
     bytes: Vec<u8>,
+    #[cfg(feature = "std")]
+    sha1: Arc<Mutex<Option<HmacSha1>>>,
+    #[cfg(feature = "std")]
+    sha256: Arc<Mutex<Option<HmacSha256>>>,
 }
+
+impl PartialEq<IntegrityKey> for IntegrityKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for IntegrityKey {}
 
 impl IntegrityKey {
     fn new(bytes: Vec<u8>) -> Self {
-        Self { bytes }
+        Self {
+            bytes,
+            #[cfg(feature = "std")]
+            sha1: Default::default(),
+            #[cfg(feature = "std")]
+            sha256: Default::default(),
+        }
     }
     pub(crate) fn as_bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    pub(crate) fn verify_sha1(&self, data: &[&[u8]], expected: &[u8]) -> bool {
+        use hmac::digest::Output;
+        let computed = self.compute_sha1(data);
+        computed == Output::<sha1::Sha1Core>::from_slice(expected).into()
+    }
+
+    pub(crate) fn compute_sha1(
+        &self,
+        data: &[&[u8]],
+    ) -> CtOutput<CoreWrapper<HmacCore<CoreWrapper<sha1::Sha1Core>>>> {
+        use hmac::Mac;
+        #[cfg(feature = "std")]
+        let mut sha1 = self.sha1.lock().unwrap();
+        #[cfg(feature = "std")]
+        let hmac = sha1.get_or_insert_with(|| HmacSha1::new_from_slice(self.as_bytes()).unwrap());
+        #[cfg(not(feature = "std"))]
+        let mut hmac = HmacSha1::new_from_slice(self.as_bytes()).unwrap();
+
+        for data in data {
+            hmac.update(data);
+        }
+        #[cfg(feature = "std")]
+        let ret = hmac.finalize_reset();
+        #[cfg(not(feature = "std"))]
+        let ret = hmac.finalize();
+        ret
+    }
+
+    pub(crate) fn verify_sha256(&self, data: &[&[u8]], expected: &[u8]) -> bool {
+        if expected.is_empty() {
+            return false;
+        }
+        let computed = self.compute_sha256(data);
+        if computed.len() < expected.len() {
+            return false;
+        }
+        // TODO: use constant time equality
+        &computed[..expected.len()] == expected
+    }
+
+    pub(crate) fn compute_sha256(&self, data: &[&[u8]]) -> [u8; 32] {
+        use hmac::Mac;
+        #[cfg(feature = "std")]
+        let mut sha256 = self.sha256.lock().unwrap();
+        #[cfg(feature = "std")]
+        let hmac =
+            sha256.get_or_insert_with(|| HmacSha256::new_from_slice(self.as_bytes()).unwrap());
+        #[cfg(not(feature = "std"))]
+        let mut hmac = HmacSha256::new_from_slice(self.as_bytes()).unwrap();
+
+        for data in data {
+            hmac.update(data);
+        }
+        #[cfg(feature = "std")]
+        let ret = hmac.finalize_reset();
+        #[cfg(not(feature = "std"))]
+        let ret = hmac.finalize();
+        ret.into_bytes().into()
     }
 }
 
@@ -1221,7 +1307,7 @@ impl<'a> Message<'a> {
                 );
                 MessageIntegrity::verify(
                     &[header.as_slice(), hmac_data],
-                    &key,
+                    key,
                     msg_hmac.as_slice().try_into().unwrap(),
                 )?;
                 return Ok(algo);
@@ -1241,7 +1327,7 @@ impl<'a> Message<'a> {
                     &mut header[2..4],
                     data_offset as u16 + attr.padded_len() as u16 - MessageHeader::LENGTH as u16,
                 );
-                MessageIntegritySha256::verify(&[&header, hmac_data], &key, &msg_hmac)?;
+                MessageIntegritySha256::verify(&[&header, hmac_data], key, &msg_hmac)?;
                 return Ok(algo);
             }
             let padded_len = attr.padded_len();

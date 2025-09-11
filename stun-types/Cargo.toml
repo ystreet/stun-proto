@@ -31,7 +31,7 @@ criterion.workspace = true
 
 [features]
 default = ["std"]
-std = ["thiserror/std", "rand/thread_rng"]
+std = ["thiserror/std", "rand/thread_rng", "hmac/reset"]
 arbitrary = ["dep:arbitrary"]
 
 [[bench]]
