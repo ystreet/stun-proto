@@ -820,7 +820,7 @@ impl MessageHeader {
 ///
 /// Contains the [`MessageType`], a transaction ID, and a list of STUN
 /// [`Attribute`]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Message<'a> {
     data: &'a [u8],
 }
@@ -1687,6 +1687,11 @@ impl<'a> Message<'a> {
     pub fn has_attribute(&self, atype: AttributeType) -> bool {
         self.iter_attributes()
             .any(|(_offset, attr)| attr.get_type() == atype)
+    }
+
+    /// Returns the underlying slice.
+    pub fn as_bytes(&self) -> &[u8] {
+        self.data
     }
 }
 impl<'a> TryFrom<&'a [u8]> for Message<'a> {
