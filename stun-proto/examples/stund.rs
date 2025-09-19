@@ -58,7 +58,7 @@ fn handle_incoming_data(
     let msg = Message::from_bytes(data).ok()?;
     let reply = stun_agent.handle_stun(msg, from);
     match reply {
-        HandleStunReply::Drop => None,
+        HandleStunReply::Drop(_) => None,
         HandleStunReply::ValidatedStunResponse(_response)
         | HandleStunReply::UnvalidatedStunResponse(_response) => {
             error!("received unexpected STUN response from {from}!");

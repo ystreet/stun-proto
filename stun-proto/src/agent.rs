@@ -239,7 +239,7 @@ impl StunAgent {
         if msg.is_response() {
             let Some(request) = self.take_outstanding_request(&msg.transaction_id()) else {
                 trace!("original request disappeared -> ignoring response");
-                return HandleStunReply::Drop;
+                return HandleStunReply::Drop(msg);
             };
             // only validate response if the original request had credentials
             if request.request_had_credentials {
@@ -741,7 +741,7 @@ pub enum HandleStunReply<'a> {
     /// The provided data could be parsed as a STUN message.
     IncomingStun(Message<'a>),
     /// Drop this message.
-    Drop,
+    Drop(Message<'a>),
 }
 
 /// STUN errors
@@ -879,7 +879,7 @@ pub(crate) mod tests {
         let response = Message::from_bytes(&resp_data).unwrap();
         // response without a request is dropped.
         let ret = agent.handle_stun(response, remote_addr);
-        assert!(matches!(ret, HandleStunReply::Drop));
+        assert!(matches!(ret, HandleStunReply::Drop(_)));
     }
 
     #[test]
@@ -1277,7 +1277,7 @@ pub(crate) mod tests {
 
         let response = Message::from_bytes(&data).unwrap();
         let reply = agent.handle_stun(response, to);
-        assert!(matches!(reply, HandleStunReply::Drop));
+        assert!(matches!(reply, HandleStunReply::Drop(_)));
     }
 
     #[test]
