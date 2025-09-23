@@ -12,7 +12,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-stun-types = { path = "../stun-types", version = "1.0.0-alpha3", default-features = false }
+stun-types = { path = "../stun-types", version = "1.0.0-alpha4", default-features = false }
 byteorder.workspace = true
 sans-io-time.workspace = true
 tracing.workspace = true
