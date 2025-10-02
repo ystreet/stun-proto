@@ -98,7 +98,8 @@ impl FromStr for TransportType {
     type Err = ParseTransportTypeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        let value = alloc::string::String::from(s).to_uppercase();
+        match value.to_ascii_uppercase().as_str() {
             "UDP" => Ok(TransportType::Udp),
             "TCP" => Ok(TransportType::Tcp),
             _ => Err(ParseTransportTypeError::UnknownTransport),
@@ -236,6 +237,8 @@ pub(crate) mod tests {
     fn parse_transport_type() {
         assert!(matches!("UDP".parse(), Ok(TransportType::Udp)));
         assert!(matches!("TCP".parse(), Ok(TransportType::Tcp)));
+        assert!(matches!("udp".parse(), Ok(TransportType::Udp)));
+        assert!(matches!("tcp".parse(), Ok(TransportType::Tcp)));
         assert!(matches!(
             TransportType::from_str("Random"),
             Err(ParseTransportTypeError::UnknownTransport)
