@@ -32,16 +32,10 @@ For other examples of sans-IO implementations, take a look at:
 
 ## Relevant standards
 
- - [x] [RFC5245](https://tools.ietf.org/html/rfc5245):
-   Interactive Connectivity Establishment (ICE): A Protocol for Network Address
-   Translator (NAT) Traversal for Offer/Answer Protocols
  - [x] [RFC5389](https://tools.ietf.org/html/rfc5389):
    Session Traversal Utilities for NAT (STUN)
  - [x] [RFC5769](https://tools.ietf.org/html/rfc5769):
    Test Vectors for Session Traversal Utilities for NAT (STUN)
- - [x] [RFC8445](https://tools.ietf.org/html/rfc8445):
-   Interactive Connectivity Establishment (ICE): A Protocol for Network Address
-   Translator (NAT) Traversal
  - [x] [RFC8489](https://tools.ietf.org/html/rfc8489):
    Session Traversal Utilities for NAT (STUN)
 

@@ -26,16 +26,10 @@ implement STUN attributes for TURN.
 
 ## Relevant standards
 
- - [x] [RFC5245](https://tools.ietf.org/html/rfc5245):
-   Interactive Connectivity Establishment (ICE): A Protocol for Network Address
-   Translator (NAT) Traversal for Offer/Answer Protocols
  - [x] [RFC5389](https://tools.ietf.org/html/rfc5389):
    Session Traversal Utilities for NAT (STUN)
  - [x] [RFC5769](https://tools.ietf.org/html/rfc5769):
    Test Vectors for Session Traversal Utilities for NAT (STUN)
- - [x] [RFC8445](https://tools.ietf.org/html/rfc8445):
-   Interactive Connectivity Establishment (ICE): A Protocol for Network Address
-   Translator (NAT) Traversal
  - [x] [RFC8489](https://tools.ietf.org/html/rfc8489):
    Session Traversal Utilities for NAT (STUN)
 
@@ -53,6 +47,16 @@ the [turn-types](https://docs.rs/turn-types/latest/turn_types/) crate which uses
  - [RFC8656](https://tools.ietf.org/html/rfc8656):
    Traversal Using Relays around NAT (TURN): Relay Extensions to Session
    Traversal Utilities for NAT (STUN)
+
+If you are looking for attribute implementation of ICE, have a look at
+[rice-stun-types](https://docs.rs/rice-stun-types/latest/rice-stun-types).
+
+ - [RFC5245](https://tools.ietf.org/html/rfc5245):
+   Interactive Connectivity Establishment (ICE): A Protocol for Network Address
+   Translator (NAT) Traversal for Offer/Answer Protocols
+ - [RFC8445](https://tools.ietf.org/html/rfc8445):
+   Interactive Connectivity Establishment (ICE): A Protocol for Network Address
+   Translator (NAT) Traversal
 
 ## Examples
 
