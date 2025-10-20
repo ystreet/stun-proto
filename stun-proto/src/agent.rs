@@ -136,7 +136,14 @@ impl StunAgent {
     /// # Panics
     ///
     /// - If the STUN Message is a request. Use [`send_request()`](StunAgent::send_request) instead.
-    #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
+    #[tracing::instrument(name = "stun_agent_send",
+        skip(self, msg),
+        fields(
+            transport = %self.transport,
+            from = %self.local_addr,
+            transaction_id,
+        )
+    )]
     pub fn send<T: AsRef<[u8]>>(
         &mut self,
         msg: T,
@@ -145,7 +152,12 @@ impl StunAgent {
     ) -> Result<Transmit<T>, StunError> {
         let data = msg.as_ref();
         let hdr = MessageHeader::from_bytes(data)?;
+        tracing::Span::current().record(
+            "transaction_id",
+            tracing::field::display(hdr.transaction_id()),
+        );
         assert!(!hdr.get_type().has_class(MessageClass::Request));
+        trace!("Sending {} to {to}", hdr.get_type());
         Ok(Transmit::new(msg, self.transport, self.local_addr, to))
     }
 
@@ -156,7 +168,14 @@ impl StunAgent {
     /// # Panics
     ///
     /// - If the STUN Message is not a request. Use [`send()`](StunAgent::send) instead.
-    #[tracing::instrument(name = "stun_agent_send", skip(self, msg))]
+    #[tracing::instrument(name = "stun_agent_send_request",
+        skip(self, msg),
+        fields(
+            transport = %self.transport,
+            from = %self.local_addr,
+            transaction_id,
+        )
+    )]
     pub fn send_request<'a, T: AsRef<[u8]>>(
         &'a mut self,
         msg: T,
@@ -167,12 +186,14 @@ impl StunAgent {
         let hdr = MessageHeader::from_bytes(data)?;
         assert!(hdr.get_type().has_class(MessageClass::Request));
         let transaction_id = hdr.transaction_id();
+        tracing::Span::current().record("transaction_id", tracing::field::display(transaction_id));
         let state = match self.outstanding_requests.entry(transaction_id) {
             alloc::collections::btree_map::Entry::Vacant(entry) => {
                 let has_credentials = MessageAttributesIter::new(data).any(|(_offset, attr)| {
                     [MessageIntegrity::TYPE, MessageIntegritySha256::TYPE]
                         .contains(&attr.get_type())
                 });
+                trace!("Adding request to {to} with credentials: {has_credentials}");
                 entry.insert(StunRequestState::new(
                     msg,
                     self.transport,
@@ -257,7 +278,7 @@ impl StunAgent {
                         }
                     }
                 } else {
-                    debug!("no remote credentials");
+                    debug!("no remote credentials but request contained credentials");
                     self.outstanding_requests
                         .insert(msg.transaction_id(), request);
                     HandleStunReply::UnvalidatedStunResponse(msg)
@@ -559,7 +580,7 @@ impl StunRequestState {
         }
     }
 
-    #[tracing::instrument(skip(self, now), level = "trace", ret)]
+    #[tracing::instrument(skip(self, now), level = "trace")]
     fn next_send_time(&self, now: Instant) -> Option<Instant> {
         let Some(last_send) = self.last_send_time else {
             trace!("not sent yet -> send immediately");
