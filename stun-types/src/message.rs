@@ -445,7 +445,11 @@ impl IntegrityKey {
     pub(crate) fn verify_sha1(&self, data: &[&[u8]], expected: &[u8]) -> bool {
         use hmac::digest::Output;
         let computed = self.compute_sha1(data);
-        computed == Output::<sha1::Sha1Core>::from_slice(expected).into()
+        // FIXME: ignore deprecation due to needing to update to generic-array 1.x
+        #[allow(deprecated)]
+        {
+            computed == Output::<sha1::Sha1Core>::from_slice(expected).into()
+        }
     }
 
     pub(crate) fn compute_sha1(
