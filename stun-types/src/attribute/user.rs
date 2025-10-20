@@ -214,7 +214,10 @@ impl Userhash {
         let data = user.to_string() + ":" + realm;
         use sha2::{Digest, Sha256};
         let ret = Sha256::digest(data);
-        ret.as_slice().try_into().unwrap()
+        #[allow(deprecated)]
+        {
+            ret.as_slice().try_into().unwrap()
+        }
     }
 }
 
