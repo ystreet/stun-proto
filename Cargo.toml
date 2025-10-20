@@ -4,7 +4,7 @@ default-members = ["stun-types", "stun-proto"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 repository = "https://github.com/ystreet/stun-proto"
 edition = "2021"
 rust-version = "1.77.0"
