@@ -2482,7 +2482,9 @@ mod tests {
                 let mtype = MessageType::from_class_method(c, m);
                 trace!("{mtype}");
                 assert_eq!(mtype.class(), c);
+                assert!(mtype.has_class(c));
                 assert_eq!(mtype.method(), m);
+                assert!(mtype.has_method(m));
                 let bytes = mtype.to_bytes();
                 let ptype = MessageType::from_bytes(&bytes).unwrap();
                 assert_eq!(mtype, ptype);
@@ -2523,6 +2525,7 @@ mod tests {
                     assert_eq!(msg_attr, attr);
                     assert_eq!(msg.get_type(), mtype);
                     assert_eq!(msg.transaction_id(), tid.into());
+                    assert_eq!(msg.as_bytes(), &data);
                 }
             }
         }
@@ -2538,7 +2541,10 @@ mod tests {
         let msg = Message::from_bytes(&msg).unwrap();
         assert_eq!(msg.transaction_id(), src.transaction_id());
         assert_eq!(msg.class(), MessageClass::Error);
+        assert!(msg.has_class(MessageClass::Error));
+        assert!(!msg.has_class(MessageClass::Success));
         assert_eq!(msg.method(), src.method());
+        assert!(msg.has_method(src.method()));
         let err = msg.attribute::<ErrorCode>().unwrap();
         assert_eq!(err.code(), 420);
         let unknown_attrs = msg.attribute::<UnknownAttributes>().unwrap();
@@ -2550,7 +2556,13 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let src = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
         let src = Message::from_bytes(&src).unwrap();
-        let msg = Message::bad_request(&src, MessageWriteVec::new()).finish();
+        let msg = Message::bad_request(&src, MessageWriteVec::new());
+        assert!(msg.has_class(MessageClass::Error));
+        assert!(!msg.has_class(MessageClass::Success));
+        assert!(msg.has_method(src.method()));
+        assert!(!msg.has_method(Method::new(0x111)));
+        assert!(msg.is_response());
+        let msg = msg.finish();
         let msg = Message::from_bytes(&msg).unwrap();
         assert_eq!(msg.transaction_id(), src.transaction_id());
         assert_eq!(msg.class(), MessageClass::Error);
@@ -2563,6 +2575,10 @@ mod tests {
     fn fingerprint() {
         let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        assert!(msg.has_class(MessageClass::Request));
+        assert!(!msg.has_class(MessageClass::Success));
+        assert!(msg.has_method(BINDING));
+        assert!(!msg.has_method(Method::new(0x111)));
         let software = Software::new("s").unwrap();
         msg.add_attribute(&software).unwrap();
         msg.add_fingerprint().unwrap();
@@ -2572,7 +2588,8 @@ mod tests {
         let (offset, software) = new_msg.attribute_and_offset::<Software>().unwrap();
         assert_eq!(software.software(), "s");
         assert_eq!(offset, 20);
-        let (offset, _new_fingerprint) = new_msg.attribute_and_offset::<Fingerprint>().unwrap();
+        let (offset, _new_fingerprint) =
+            new_msg.raw_attribute_and_offset(Fingerprint::TYPE).unwrap();
         assert_eq!(offset, 28);
     }
 
@@ -2898,8 +2915,12 @@ mod tests {
         src.add_attribute(&username).unwrap();
         let nonce = Nonce::new("nonce").unwrap();
         src.add_attribute(&nonce).unwrap();
+        assert!(!src.has_attribute(Fingerprint::TYPE));
+        assert!(src.has_attribute(Nonce::TYPE));
         let src = src.finish();
         let src = Message::from_bytes(&src).unwrap();
+        assert!(!src.has_attribute(Fingerprint::TYPE));
+        assert!(src.has_attribute(Nonce::TYPE));
 
         // success case
         let res = Message::check_attribute_types(
@@ -3042,7 +3063,11 @@ mod tests {
         assert!(src.has_class(MessageClass::Request));
         assert!(!src.is_response());
         assert!(src.has_method(BINDING));
+        assert!(src.get_type().has_method(BINDING));
+        assert!(src.get_type().has_class(MessageClass::Request));
         assert!(!src.has_method(Method::new(0x111)));
+        assert!(!src.get_type().has_method(Method::new(0x111)));
+        assert!(!src.get_type().has_class(MessageClass::Error));
     }
 
     #[test]
@@ -3057,7 +3082,13 @@ mod tests {
         let nonce = Nonce::new("nonce").unwrap();
         src.add_attribute(&nonce).unwrap();
         assert!(src.has_attribute(Username::TYPE));
+        assert_eq!(
+            src.has_any_attribute(&[Username::TYPE]),
+            Some(Username::TYPE)
+        );
         assert!(!src.has_attribute(Software::TYPE));
+        assert_eq!(src.has_any_attribute(&[Realm::TYPE]), None);
+        assert_eq!(src.mut_data().len(), src.len());
         assert_eq!(src.finish(), 40);
         let msg = Message::from_bytes(&data[..40]).unwrap();
         let u2 = msg.attribute::<Username>().unwrap();
@@ -3069,13 +3100,13 @@ mod tests {
     #[test]
     fn write_mut_slice_too_short() {
         let _log = crate::tests::test_init_log();
-        let mut data = [0; 20];
+        let mut data = [0; 27];
         let mut src = Message::builder_request(BINDING, MessageWriteMutSlice::new(&mut data));
         assert!(matches!(
             src.add_attribute(&Username::new("123").unwrap()),
             Err(StunWriteError::TooSmall {
                 expected: 28,
-                actual: 20
+                actual: 27
             })
         ));
     }
