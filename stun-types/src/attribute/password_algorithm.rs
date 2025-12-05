@@ -300,14 +300,47 @@ mod tests {
         trace!("{attr}");
         assert_eq!(attr.get_type(), PasswordAlgorithms::TYPE);
         assert_eq!(attr.algorithms(), &vals);
+    }
+
+    #[test]
+    fn password_algorithms_raw() {
+        let _log = crate::tests::test_init_log();
+        let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
+        let attr = PasswordAlgorithms::new(&vals);
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), PasswordAlgorithms::TYPE);
         let mapped2 = PasswordAlgorithms::try_from(&raw).unwrap();
         assert_eq!(mapped2.algorithms(), &vals);
+    }
+
+    #[test]
+    fn password_algorithms_write_into() {
+        let _log = crate::tests::test_init_log();
+        let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
+        let attr = PasswordAlgorithms::new(&vals);
+        let raw = RawAttribute::from(&attr);
         let mut data = [0; 12];
-        mapped2.write_into(&mut data).unwrap();
+        attr.write_into(&mut data).unwrap();
         assert_eq!(data.as_ref(), &raw.to_bytes());
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn password_algorithms_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
+        let attr = PasswordAlgorithms::new(&vals);
+        let mut data = [0; 7];
+        attr.write_into_unchecked(&mut data);
+    }
+
+    #[test]
+    fn password_algorithms_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
+        let attr = PasswordAlgorithms::new(&vals);
+        let raw = RawAttribute::from(&attr);
         // provide incorrectly typed data
         let mut data = raw.to_bytes();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -315,6 +348,14 @@ mod tests {
             PasswordAlgorithms::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+    }
+
+    #[test]
+    fn password_algorithms_unaligned_value() {
+        let _log = crate::tests::test_init_log();
+        let vals = [PasswordAlgorithmValue::MD5, PasswordAlgorithmValue::SHA256];
+        let attr = PasswordAlgorithms::new(&vals);
+        let raw = RawAttribute::from(&attr);
         // Attribute data not aligned to 4 bytes will error
         let mut data = raw.to_bytes();
         data[4] = 7;
@@ -332,14 +373,48 @@ mod tests {
         trace!("{attr}");
         assert_eq!(attr.get_type(), PasswordAlgorithm::TYPE);
         assert_eq!(attr.algorithm(), val);
+    }
+
+    #[test]
+    fn password_algorithm_raw() {
+        let _log = crate::tests::test_init_log();
+        let val = PasswordAlgorithmValue::SHA256;
+        let attr = PasswordAlgorithm::new(val);
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), PasswordAlgorithm::TYPE);
         let mapped2 = PasswordAlgorithm::try_from(&raw).unwrap();
         assert_eq!(mapped2.algorithm(), val);
+    }
+
+    #[test]
+    fn password_algorithm_write_into() {
+        let _log = crate::tests::test_init_log();
+        let val = PasswordAlgorithmValue::SHA256;
+        let attr = PasswordAlgorithm::new(val);
+        let raw = RawAttribute::from(&attr);
         let mut data = [0; 8];
-        mapped2.write_into(&mut data).unwrap();
+        attr.write_into(&mut data).unwrap();
         assert_eq!(data.as_ref(), &raw.to_bytes());
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn password_algorithm_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let val = PasswordAlgorithmValue::SHA256;
+        let attr = PasswordAlgorithm::new(val);
+        let mut data = [0; 7];
+        attr.write_into_unchecked(&mut data);
+    }
+
+    #[test]
+    fn password_algorithm_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let val = PasswordAlgorithmValue::SHA256;
+        let attr = PasswordAlgorithm::new(val);
+        let raw = RawAttribute::from(&attr);
+
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
