@@ -1712,6 +1712,12 @@ impl<'a> TryFrom<&'a [u8]> for Message<'a> {
     }
 }
 
+impl AsRef<[u8]> for Message<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.data
+    }
+}
+
 #[derive(Debug)]
 struct MessageRawAttributesIter<'a> {
     data: &'a [u8],
@@ -2526,6 +2532,7 @@ mod tests {
                     assert_eq!(msg.get_type(), mtype);
                     assert_eq!(msg.transaction_id(), tid.into());
                     assert_eq!(msg.as_bytes(), &data);
+                    assert_eq!(msg.as_ref(), &data);
                 }
             }
         }
