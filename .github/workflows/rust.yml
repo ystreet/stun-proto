@@ -27,13 +27,15 @@ jobs:
         profile: minimal
         toolchain: ${{ matrix.toolchain }}
         override: true
-    - name: Use MSRV Cargo.lock
-      run: cp Cargo.lock.msrv Cargo.lock
+    - name: Build using MSRV
+      run: cp Cargo.lock.msrv Cargo.lock && cargo build --locked --verbose
       if: matrix.toolchain == '1.77'
     - name: Build
       run: cargo build --verbose
+      if: matrix.toolchain != '1.77'
     - name: Build (without default features)
       run: cargo build --verbose --no-default-features
+      if: matrix.toolchain != '1.77'
   test:
     strategy:
       matrix:
