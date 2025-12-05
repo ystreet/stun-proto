@@ -2625,6 +2625,18 @@ mod tests {
     }
 
     #[test]
+    fn integrity_key() {
+        let _log = crate::tests::test_init_log();
+        let credentials1 = ShortTermCredentials::new("pass1".to_owned());
+        let key1 = MessageIntegrityCredentials::from(credentials1).make_key();
+        let credentials2 = ShortTermCredentials::new("pass2".to_owned());
+        let key2 = MessageIntegrityCredentials::from(credentials2).make_key();
+        assert_eq!(key1, key1);
+        assert_eq!(key2, key2);
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
     fn add_duplicate_integrity() {
         let _log = crate::tests::test_init_log();
         let credentials = ShortTermCredentials::new("secret".to_owned()).into();
