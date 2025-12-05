@@ -234,6 +234,7 @@ impl core::fmt::Display for Userhash {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
@@ -246,11 +247,26 @@ mod tests {
         trace!("{user}");
         assert_eq!(user.username(), s);
         assert_eq!(user.length() as usize, s.len());
+    }
+
+    #[test]
+    fn username_raw() {
+        let _log = crate::tests::test_init_log();
+        let s = "woohoo!";
+        let user = Username::new(s).unwrap();
         let raw = RawAttribute::from(&user);
         trace!("{raw}");
         assert_eq!(raw.get_type(), Username::TYPE);
         let user2 = Username::try_from(&raw).unwrap();
         assert_eq!(user2.username(), s);
+    }
+
+    #[test]
+    fn username_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let s = "woohoo!";
+        let user = Username::new(s).unwrap();
+        let raw = RawAttribute::from(&user);
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -258,6 +274,32 @@ mod tests {
             Username::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+    }
+
+    #[test]
+    fn username_write_into() {
+        let _log = crate::tests::test_init_log();
+        let s = "woohoo!";
+        let user = Username::new(s).unwrap();
+        let raw = RawAttribute::from(&user);
+
+        let mut dest = vec![0; raw.padded_len()];
+        user.write_into(&mut dest).unwrap();
+        let raw = RawAttribute::from_bytes(&dest).unwrap();
+        let user2 = Username::try_from(&raw).unwrap();
+        assert_eq!(user2.username(), s);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn username_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let s = "woohoo!";
+        let user = Username::new(s).unwrap();
+        let raw = RawAttribute::from(&user);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        user.write_into_unchecked(&mut dest);
     }
 
     #[test]
@@ -298,11 +340,26 @@ mod tests {
         trace!("{attr}");
         assert_eq!(attr.hash(), &hash);
         assert_eq!(attr.length(), 32);
+    }
+
+    #[test]
+    fn userhash_raw() {
+        let _log = crate::tests::test_init_log();
+        let hash = Userhash::compute("username", "realm1");
+        let attr = Userhash::new(hash);
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), Userhash::TYPE);
         let mapped2 = Userhash::try_from(&raw).unwrap();
         assert_eq!(mapped2.hash(), &hash);
+    }
+
+    #[test]
+    fn userhash_raw_short() {
+        let _log = crate::tests::test_init_log();
+        let hash = Userhash::compute("username", "realm1");
+        let attr = Userhash::new(hash);
+        let raw = RawAttribute::from(&attr);
         // truncate by one byte
         let mut data: Vec<_> = raw.clone().into();
         let len = data.len();
@@ -314,6 +371,14 @@ mod tests {
                 actual: 31
             })
         ));
+    }
+
+    #[test]
+    fn userhash_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let hash = Userhash::compute("username", "realm1");
+        let attr = Userhash::new(hash);
+        let raw = RawAttribute::from(&attr);
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -321,5 +386,31 @@ mod tests {
             Userhash::from_raw_ref(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+    }
+
+    #[test]
+    fn userhash_write_into() {
+        let _log = crate::tests::test_init_log();
+        let hash = Userhash::compute("username", "realm1");
+        let attr = Userhash::new(hash);
+        let raw = RawAttribute::from(&attr);
+
+        let mut dest = vec![0; raw.padded_len()];
+        attr.write_into(&mut dest).unwrap();
+        let raw = RawAttribute::from_bytes(&dest).unwrap();
+        let hash2 = Userhash::try_from(&raw).unwrap();
+        assert_eq!(hash2.hash(), &hash);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn userhash_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let hash = Userhash::compute("username", "realm1");
+        let attr = Userhash::new(hash);
+        let raw = RawAttribute::from(&attr);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        attr.write_into_unchecked(&mut dest);
     }
 }

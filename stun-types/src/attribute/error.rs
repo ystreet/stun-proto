@@ -435,25 +435,44 @@ mod tests {
     use crate::attribute::{AlternateServer, Nonce, Realm};
     use tracing::trace;
 
+    const CODES: [u16; 17] = [
+        300, 301, 400, 401, 403, 420, 437, 438, 440, 441, 442, 443, 486, 487, 500, 508, 699,
+    ];
+
     #[test]
     fn error_code() {
         let _log = crate::tests::test_init_log();
-        let codes = [
-            300, 301, 400, 401, 403, 420, 437, 438, 440, 441, 442, 443, 486, 487, 500, 508, 699,
-        ];
-        for code in codes.iter().copied() {
+        for code in CODES {
             let reason = ErrorCode::default_reason_for_code(code);
             let err = ErrorCode::new(code, reason).unwrap();
             trace!("{err}");
             assert_eq!(err.code(), code);
             assert_eq!(err.reason(), reason);
+        }
+    }
+
+    #[test]
+    fn error_code_raw() {
+        let _log = crate::tests::test_init_log();
+        for code in CODES {
+            let reason = ErrorCode::default_reason_for_code(code);
+            let err = ErrorCode::new(code, reason).unwrap();
             let raw = RawAttribute::from(&err);
             trace!("{raw}");
             assert_eq!(raw.get_type(), ErrorCode::TYPE);
             let err2 = ErrorCode::try_from(&raw).unwrap();
             assert_eq!(err2.code(), code);
             assert_eq!(err2.reason(), reason);
+        }
+    }
 
+    #[test]
+    fn error_code_write_into() {
+        let _log = crate::tests::test_init_log();
+        for code in CODES {
+            let reason = ErrorCode::default_reason_for_code(code);
+            let err = ErrorCode::new(code, reason).unwrap();
+            let raw = RawAttribute::from(&err);
             let mut dest = vec![0; raw.padded_len()];
             err.write_into(&mut dest).unwrap();
             let raw = RawAttribute::from_bytes(&dest).unwrap();
@@ -461,6 +480,17 @@ mod tests {
             assert_eq!(err2.code(), code);
             assert_eq!(err2.reason(), reason);
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn error_code_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let reason = ErrorCode::default_reason_for_code(CODES[0]);
+        let err = ErrorCode::new(CODES[0], reason).unwrap();
+        let raw = RawAttribute::from(&err);
+        let mut dest = vec![0; raw.padded_len() - 1];
+        err.write_into_unchecked(&mut dest);
     }
 
     fn error_code_new(code: u16) -> ErrorCode {
@@ -535,7 +565,7 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let err = ErrorCode::builder(420).build().unwrap();
         assert_eq!(err.code(), 420);
-        assert!(err.reason().len() > 0);
+        assert!(!err.reason().is_empty());
     }
 
     #[test]
@@ -575,12 +605,27 @@ mod tests {
         assert!(unknown.has_attribute(Realm::TYPE));
         assert!(unknown.has_attribute(AlternateServer::TYPE));
         assert!(!unknown.has_attribute(Nonce::TYPE));
+    }
+
+    #[test]
+    fn unknown_attributes_raw() {
+        let _log = crate::tests::test_init_log();
+        let mut unknown = UnknownAttributes::new(&[Realm::TYPE]);
+        unknown.add_attribute(AlternateServer::TYPE);
         let raw = RawAttribute::from(&unknown);
         assert_eq!(raw.get_type(), UnknownAttributes::TYPE);
         let unknown2 = UnknownAttributes::try_from(&raw).unwrap();
         assert!(unknown2.has_attribute(Realm::TYPE));
         assert!(unknown2.has_attribute(AlternateServer::TYPE));
         assert!(!unknown2.has_attribute(Nonce::TYPE));
+    }
+
+    #[test]
+    fn unknown_attributes_raw_short() {
+        let _log = crate::tests::test_init_log();
+        let mut unknown = UnknownAttributes::new(&[Realm::TYPE]);
+        unknown.add_attribute(AlternateServer::TYPE);
+        let raw = RawAttribute::from(&unknown);
         // truncate by one byte
         let mut data: Vec<_> = raw.clone().into();
         let len = data.len();
@@ -594,6 +639,14 @@ mod tests {
                 actual: 3
             })
         ));
+    }
+
+    #[test]
+    fn unknown_attributes_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let mut unknown = UnknownAttributes::new(&[Realm::TYPE]);
+        unknown.add_attribute(AlternateServer::TYPE);
+        let raw = RawAttribute::from(&unknown);
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.clone().into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -601,6 +654,14 @@ mod tests {
             UnknownAttributes::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+    }
+
+    #[test]
+    fn unknown_attributes_write_into() {
+        let _log = crate::tests::test_init_log();
+        let mut unknown = UnknownAttributes::new(&[Realm::TYPE]);
+        unknown.add_attribute(AlternateServer::TYPE);
+        let raw = RawAttribute::from(&unknown);
 
         let mut dest = vec![0; raw.padded_len()];
         unknown.write_into(&mut dest).unwrap();
@@ -609,5 +670,17 @@ mod tests {
         let unknown2 = UnknownAttributes::try_from(&raw).unwrap();
         assert!(unknown2.has_attribute(Realm::TYPE));
         assert!(unknown2.has_attribute(AlternateServer::TYPE));
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn unknown_attributes_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let mut unknown = UnknownAttributes::new(&[Realm::TYPE]);
+        unknown.add_attribute(AlternateServer::TYPE);
+        let raw = RawAttribute::from(&unknown);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        unknown.write_into_unchecked(&mut dest);
     }
 }

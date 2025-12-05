@@ -120,6 +120,7 @@ impl core::fmt::Display for Nonce {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
@@ -131,11 +132,25 @@ mod tests {
         trace!("{attr}");
         assert_eq!(attr.nonce(), "nonce");
         assert_eq!(attr.length() as usize, "nonce".len());
+    }
+
+    #[test]
+    fn nonce_raw() {
+        let _log = crate::tests::test_init_log();
+        let attr = Nonce::new("nonce").unwrap();
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), Nonce::TYPE);
         let mapped2 = Nonce::try_from(&raw).unwrap();
         assert_eq!(mapped2.nonce(), "nonce");
+    }
+
+    #[test]
+    fn nonce_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let attr = Nonce::new("nonce").unwrap();
+        let raw = RawAttribute::from(&attr);
+
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -143,6 +158,30 @@ mod tests {
             Nonce::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+    }
+
+    #[test]
+    fn nonce_write_into() {
+        let _log = crate::tests::test_init_log();
+        let attr = Nonce::new("nonce").unwrap();
+        let raw = RawAttribute::from(&attr);
+
+        let mut dest = vec![0; raw.padded_len()];
+        attr.write_into(&mut dest).unwrap();
+        let raw = RawAttribute::from_bytes(&dest).unwrap();
+        let nonce = Nonce::try_from(&raw).unwrap();
+        assert_eq!(nonce.nonce(), "nonce");
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn nonce_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let attr = Nonce::new("nonce").unwrap();
+        let raw = RawAttribute::from(&attr);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        attr.write_into_unchecked(&mut dest);
     }
 
     #[test]

@@ -328,6 +328,13 @@ impl core::fmt::Display for MessageIntegritySha256 {
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        message::{MessageIntegrityCredentials, ShortTermCredentials},
+        prelude::AttributeExt,
+    };
+    use alloc::string::ToString;
+    use alloc::vec;
+
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
@@ -340,11 +347,26 @@ mod tests {
         trace!("{attr}");
         assert_eq!(attr.hmac(), &val);
         assert_eq!(attr.length(), 20);
+    }
+
+    #[test]
+    fn message_integrity_raw() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 20];
+        let attr = MessageIntegrity::new(val);
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), MessageIntegrity::TYPE);
         let mapped2 = MessageIntegrity::try_from(&raw).unwrap();
         assert_eq!(mapped2.hmac(), &val);
+    }
+
+    #[test]
+    fn message_integrity_raw_short() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 20];
+        let attr = MessageIntegrity::new(val);
+        let raw = RawAttribute::from(&attr);
         // truncate by one byte
         let mut data: Vec<_> = raw.clone().into();
         let len = data.len();
@@ -358,12 +380,52 @@ mod tests {
                 actual: 19
             })
         ));
+    }
+
+    #[test]
+    fn message_integrity_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 20];
+        let attr = MessageIntegrity::new(val);
+        let raw = RawAttribute::from(&attr);
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
         assert!(matches!(
             MessageIntegrity::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
+        ));
+    }
+
+    #[test]
+    fn message_integrity_write_into() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 20];
+        let attr = MessageIntegrity::new(val);
+        let raw = RawAttribute::from(&attr);
+
+        let mut out = vec![0; raw.padded_len()];
+        attr.write_into(&mut out).unwrap();
+        assert_eq!(out, raw.to_bytes());
+    }
+
+    #[test]
+    fn message_integrity_verify_fixed_value() {
+        let credentials = ShortTermCredentials::new("pass".to_string());
+        let key = MessageIntegrityCredentials::from(credentials).make_key();
+        let data = [10; 30];
+        let mut expected = [
+            92, 91, 148, 243, 28, 168, 16, 154, 137, 179, 250, 169, 153, 222, 37, 127, 210, 148,
+            222, 119,
+        ];
+        assert!(matches!(
+            MessageIntegrity::verify(&[&data], &key, &expected),
+            Ok(())
+        ));
+        expected[0] = 0;
+        assert!(matches!(
+            MessageIntegrity::verify(&[&data], &key, &expected),
+            Err(StunParseError::IntegrityCheckFailed)
         ));
     }
 
@@ -375,11 +437,26 @@ mod tests {
         trace!("{attr}");
         assert_eq!(attr.hmac(), &val);
         assert_eq!(attr.length(), 32);
+    }
+
+    #[test]
+    fn message_integrity_sha256_raw() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 32];
+        let attr = MessageIntegritySha256::new(&val).unwrap();
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), MessageIntegritySha256::TYPE);
         let mapped2 = MessageIntegritySha256::try_from(&raw).unwrap();
         assert_eq!(mapped2.hmac(), &val);
+    }
+
+    #[test]
+    fn message_integrity_sha256_raw_short() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 32];
+        let attr = MessageIntegritySha256::new(&val).unwrap();
+        let raw = RawAttribute::from(&attr);
         // truncate by one byte
         let mut data: Vec<_> = raw.clone().into();
         let len = data.len();
@@ -390,12 +467,52 @@ mod tests {
             ),
             Err(StunParseError::InvalidAttributeData)
         ));
+    }
+
+    #[test]
+    fn message_integrity_sha256_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 32];
+        let attr = MessageIntegritySha256::new(&val).unwrap();
+        let raw = RawAttribute::from(&attr);
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
         assert!(matches!(
             MessageIntegritySha256::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
+        ));
+    }
+
+    #[test]
+    fn message_integrity_sha256_write_into() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 32];
+        let attr = MessageIntegritySha256::new(&val).unwrap();
+        let raw = RawAttribute::from(&attr);
+
+        let mut out = vec![0; raw.padded_len()];
+        attr.write_into(&mut out).unwrap();
+        assert_eq!(out, raw.to_bytes());
+    }
+
+    #[test]
+    fn message_integrity_sha256_verify_fixed_value() {
+        let credentials = ShortTermCredentials::new("pass".to_string());
+        let key = MessageIntegrityCredentials::from(credentials).make_key();
+        let data = [10; 30];
+        let mut expected = [
+            16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244,
+            67, 190, 185, 71, 34, 150, 194, 108, 18, 75, 94, 221, 185,
+        ];
+        assert!(matches!(
+            MessageIntegritySha256::verify(&[&data], &key, &expected),
+            Ok(())
+        ));
+        expected[0] = 0;
+        assert!(matches!(
+            MessageIntegritySha256::verify(&[&data], &key, &expected),
+            Err(StunParseError::IntegrityCheckFailed)
         ));
     }
 

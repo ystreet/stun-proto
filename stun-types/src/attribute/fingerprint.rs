@@ -147,11 +147,28 @@ mod tests {
         trace!("{attr}");
         assert_eq!(attr.fingerprint(), &val);
         assert_eq!(attr.length(), 4);
+    }
+
+    #[test]
+    fn fingerprint_raw() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 4];
+        let attr = Fingerprint::new(val);
+
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), Fingerprint::TYPE);
         let mapped2 = Fingerprint::try_from(&raw).unwrap();
         assert_eq!(mapped2.fingerprint(), &val);
+    }
+
+    #[test]
+    fn fingerprint_raw_short() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 4];
+        let attr = Fingerprint::new(val);
+        let raw = RawAttribute::from(&attr);
+
         // truncate by one byte
         let mut data: Vec<_> = raw.clone().into();
         let len = data.len();
@@ -163,6 +180,16 @@ mod tests {
                 actual: 3
             })
         ));
+    }
+
+    #[test]
+    fn fingerprint_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 4];
+        let attr = Fingerprint::new(val);
+
+        let raw = RawAttribute::from(&attr);
+
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.clone().into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -170,11 +197,31 @@ mod tests {
             Fingerprint::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+    }
 
+    #[test]
+    fn fingerprint_write_into() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 4];
+        let attr = Fingerprint::new(val);
+
+        let raw = RawAttribute::from(&attr);
         let mut dest = vec![0; raw.padded_len()];
         attr.write_into(&mut dest).unwrap();
         let raw = RawAttribute::from_bytes(&dest).unwrap();
         let attr2 = Fingerprint::try_from(&raw).unwrap();
         assert_eq!(attr2.fingerprint(), &val);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn fingerprint_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let val = [1; 4];
+        let attr = Fingerprint::new(val);
+
+        let raw = RawAttribute::from(&attr);
+        let mut dest = vec![0; raw.padded_len() - 1];
+        attr.write_into_unchecked(&mut dest);
     }
 }

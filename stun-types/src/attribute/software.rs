@@ -125,6 +125,7 @@ impl core::fmt::Display for Software {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
@@ -136,11 +137,25 @@ mod tests {
         trace!("{software}");
         assert_eq!(software.software(), "software");
         assert_eq!(software.length() as usize, "software".len());
+    }
+
+    #[test]
+    fn software_raw() {
+        let _log = crate::tests::test_init_log();
+        let software = Software::new("software").unwrap();
         let raw = RawAttribute::from(&software);
         trace!("{raw}");
         assert_eq!(raw.get_type(), Software::TYPE);
         let software2 = Software::try_from(&raw).unwrap();
         assert_eq!(software2.software(), "software");
+    }
+
+    #[test]
+    fn software_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let software = Software::new("software").unwrap();
+        let raw = RawAttribute::from(&software);
+
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -148,6 +163,30 @@ mod tests {
             Software::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+    }
+
+    #[test]
+    fn software_write_into() {
+        let _log = crate::tests::test_init_log();
+        let software = Software::new("software").unwrap();
+        let raw = RawAttribute::from(&software);
+
+        let mut dest = vec![0; raw.padded_len()];
+        software.write_into(&mut dest).unwrap();
+        let raw = RawAttribute::from_bytes(&dest).unwrap();
+        let software2 = Software::try_from(&raw).unwrap();
+        assert_eq!(software2.software(), "software");
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn software_write_into_unchcked() {
+        let _log = crate::tests::test_init_log();
+        let software = Software::new("software").unwrap();
+        let raw = RawAttribute::from(&software);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        software.write_into_unchecked(&mut dest);
     }
 
     #[test]

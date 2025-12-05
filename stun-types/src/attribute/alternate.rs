@@ -195,32 +195,61 @@ impl core::fmt::Display for AlternateDomain {
 
 #[cfg(test)]
 mod tests {
+    use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
     use super::*;
     use alloc::vec;
     use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
 
+    const ADDRS: [SocketAddr; 2] = [
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)), 40000),
+        SocketAddr::new(
+            IpAddr::V6(Ipv6Addr::new(
+                0xfd2, 0x3456, 0x789a, 0x01, 0x0, 0x0, 0x0, 0x1,
+            )),
+            41000,
+        ),
+    ];
+
     #[test]
     fn alternate_server() {
         let _log = crate::tests::test_init_log();
-        let addrs = &[
-            "192.168.0.1:40000".parse().unwrap(),
-            "[fd12:3456:789a:1::1]:41000".parse().unwrap(),
-        ];
-        for addr in addrs {
-            let mapped = AlternateServer::new(*addr);
+        for addr in ADDRS {
+            let mapped = AlternateServer::new(addr);
             trace!("{mapped}");
-            assert_eq!(mapped.server(), *addr);
+            assert_eq!(mapped.server(), addr);
             match addr {
                 SocketAddr::V4(_) => assert_eq!(mapped.length(), 8),
                 SocketAddr::V6(_) => assert_eq!(mapped.length(), 20),
             }
+        }
+    }
+
+    #[test]
+    fn alternate_server_raw() {
+        let _log = crate::tests::test_init_log();
+        for addr in ADDRS {
+            let mapped = AlternateServer::new(addr);
             let raw = RawAttribute::from(&mapped);
+            match addr {
+                SocketAddr::V4(_) => assert_eq!(raw.length(), 8),
+                SocketAddr::V6(_) => assert_eq!(raw.length(), 20),
+            }
             trace!("{raw}");
             assert_eq!(raw.get_type(), AlternateServer::TYPE);
             let mapped2 = AlternateServer::try_from(&raw).unwrap();
-            assert_eq!(mapped2.server(), *addr);
+            assert_eq!(mapped2.server(), addr);
+        }
+    }
+
+    #[test]
+    fn alternate_server_raw_short() {
+        let _log = crate::tests::test_init_log();
+        for addr in ADDRS {
+            let mapped = AlternateServer::new(addr);
+            let raw = RawAttribute::from(&mapped);
             // truncate by one byte
             let mut data: Vec<_> = raw.clone().into();
             let len = data.len();
@@ -234,6 +263,15 @@ mod tests {
                     actual: _
                 })
             ));
+        }
+    }
+
+    #[test]
+    fn alternate_server_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        for addr in ADDRS {
+            let mapped = AlternateServer::new(addr);
+            let raw = RawAttribute::from(&mapped);
             // provide incorrectly typed data
             let mut data: Vec<_> = raw.clone().into();
             BigEndian::write_u16(&mut data[0..2], 0);
@@ -241,47 +279,107 @@ mod tests {
                 AlternateServer::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
                 Err(StunParseError::WrongAttributeImplementation)
             ));
+        }
+    }
+
+    #[test]
+    fn alternate_server_write_into() {
+        let _log = crate::tests::test_init_log();
+        for addr in ADDRS {
+            let mapped = AlternateServer::new(addr);
+            let raw = RawAttribute::from(&mapped);
 
             let mut dest = vec![0; raw.padded_len()];
             mapped.write_into(&mut dest).unwrap();
             let raw = RawAttribute::from_bytes(&dest).unwrap();
             let mapped2 = AlternateServer::try_from(&raw).unwrap();
-            assert_eq!(mapped2.server(), *addr);
+            assert_eq!(mapped2.server(), addr);
         }
     }
 
     #[test]
+    #[should_panic(expected = "out of range")]
+    fn alternate_server_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let mapped = AlternateServer::new(ADDRS[0]);
+        let raw = RawAttribute::from(&mapped);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        mapped.write_into_unchecked(&mut dest);
+    }
+
+    const DOMAIN: &str = "example.com";
+
+    #[test]
     fn alternative_domain() {
         let _log = crate::tests::test_init_log();
-        let dns = "example.com";
-        let attr = AlternateDomain::new(dns);
+        let attr = AlternateDomain::new(DOMAIN);
         trace!("{attr}");
-        assert_eq!(attr.domain(), dns);
-        assert_eq!(attr.length() as usize, dns.len());
+        assert_eq!(attr.domain(), DOMAIN);
+        assert_eq!(attr.length() as usize, DOMAIN.len());
+    }
+
+    #[test]
+    fn alternative_domain_raw() {
+        let _log = crate::tests::test_init_log();
+        let attr = AlternateDomain::new(DOMAIN);
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), AlternateDomain::TYPE);
         let mapped2 = AlternateDomain::try_from(&raw).unwrap();
-        assert_eq!(mapped2.domain(), dns);
-        // provide incorrectly typed data
+        assert_eq!(mapped2.domain(), DOMAIN);
+    }
+
+    #[test]
+    fn alternative_domain_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let attr = AlternateDomain::new(DOMAIN);
+        let raw = RawAttribute::from(&attr);
         let mut data: Vec<_> = raw.clone().into();
+        // provide incorrectly typed data
         BigEndian::write_u16(&mut data[0..2], 0);
         assert!(matches!(
             AlternateDomain::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
-        let mut data: Vec<_> = raw.clone().into();
+    }
+
+    #[test]
+    fn alternative_domain_raw_invalid_utf8() {
+        let _log = crate::tests::test_init_log();
+        let attr = AlternateDomain::new(DOMAIN);
+        let raw = RawAttribute::from(&attr);
+
         // invalid utf-8 data
+        let mut data: Vec<_> = raw.clone().into();
         data[8] = 0x88;
         assert!(matches!(
             AlternateDomain::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::InvalidAttributeData)
         ));
+    }
+
+    #[test]
+    fn alternative_domain_write_into() {
+        let _log = crate::tests::test_init_log();
+        let attr = AlternateDomain::new(DOMAIN);
+        let raw = RawAttribute::from(&attr);
 
         let mut dest = vec![0; raw.padded_len()];
         attr.write_into(&mut dest).unwrap();
         let raw = RawAttribute::from_bytes(&dest).unwrap();
         let mapped2 = AlternateDomain::try_from(&raw).unwrap();
-        assert_eq!(mapped2.domain(), dns);
+        assert_eq!(mapped2.domain(), DOMAIN);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn alternative_domain_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let attr = AlternateDomain::new(DOMAIN);
+        let raw = RawAttribute::from(&attr);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        attr.write_into_unchecked(&mut dest);
     }
 }

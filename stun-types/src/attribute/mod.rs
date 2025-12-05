@@ -831,9 +831,14 @@ mod tests {
 
     #[test]
     fn raw_attribute_encoding() {
+        let mut out = [0; 8];
+        let mut out2 = [0; 8];
         let _log = crate::tests::test_init_log();
         let orig = RawAttribute::new(1.into(), &[80, 160]);
         assert_eq!(orig.get_type(), 1.into());
+        orig.write_into(&mut out).unwrap();
+        orig.write_into_unchecked(&mut out2);
+        assert_eq!(out, out2);
         let mut data: Vec<_> = orig.into();
         let len = data.len();
         // one byte too big vs data size
@@ -845,6 +850,21 @@ mod tests {
                 actual: 4
             })
         ));
+    }
+
+    #[test]
+    fn raw_attribute_header() {
+        let mut out = [0; 4];
+        let mut out2 = [0; 4];
+        let _log = crate::tests::test_init_log();
+        let orig = RawAttribute::new(1.into(), &[80, 160]);
+        assert!(matches!(orig.write_header(&mut out), Ok(4)));
+        assert_eq!(orig.write_header_unchecked(&mut out2), 4);
+        assert_eq!(out, out2);
+        assert_eq!(orig.header.to_bytes(), out);
+        assert_eq!(&orig.to_bytes()[..4], out);
+        let bytes: [_; 4] = orig.header.into();
+        assert_eq!(bytes, out);
     }
 
     #[test]

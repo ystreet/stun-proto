@@ -119,6 +119,7 @@ impl core::fmt::Display for Realm {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use alloc::vec::Vec;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
@@ -130,11 +131,25 @@ mod tests {
         trace!("{attr}");
         assert_eq!(attr.realm(), "realm");
         assert_eq!(attr.length() as usize, "realm".len());
+    }
+
+    #[test]
+    fn realm_raw() {
+        let _log = crate::tests::test_init_log();
+        let attr = Realm::new("realm").unwrap();
         let raw = RawAttribute::from(&attr);
         trace!("{raw}");
         assert_eq!(raw.get_type(), Realm::TYPE);
         let mapped2 = Realm::try_from(&raw).unwrap();
         assert_eq!(mapped2.realm(), "realm");
+    }
+
+    #[test]
+    fn realm_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let attr = Realm::new("realm").unwrap();
+        let raw = RawAttribute::from(&attr);
+
         // provide incorrectly typed data
         let mut data: Vec<_> = raw.into();
         BigEndian::write_u16(&mut data[0..2], 0);
@@ -142,6 +157,30 @@ mod tests {
             Realm::try_from(&RawAttribute::from_bytes(data.as_ref()).unwrap()),
             Err(StunParseError::WrongAttributeImplementation)
         ));
+    }
+
+    #[test]
+    fn realm_write_into() {
+        let _log = crate::tests::test_init_log();
+        let attr = Realm::new("realm").unwrap();
+        let raw = RawAttribute::from(&attr);
+
+        let mut dest = vec![0; raw.padded_len()];
+        attr.write_into(&mut dest).unwrap();
+        let raw = RawAttribute::from_bytes(&dest).unwrap();
+        let realm = Realm::try_from(&raw).unwrap();
+        assert_eq!(realm.realm(), "realm");
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn realm_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let attr = Realm::new("realm").unwrap();
+        let raw = RawAttribute::from(&attr);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        attr.write_into_unchecked(&mut dest);
     }
 
     #[test]

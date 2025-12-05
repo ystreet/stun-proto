@@ -110,34 +110,66 @@ impl core::fmt::Display for XorMappedAddress {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use alloc::vec::Vec;
-    use core::net::IpAddr;
+    use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    use crate::prelude::AttributeExt;
 
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
     use tracing::trace;
 
+    const ADDRS: [SocketAddr; 2] = [
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)), 40000),
+        SocketAddr::new(
+            IpAddr::V6(Ipv6Addr::new(
+                0xfd2, 0x3456, 0x789a, 0x01, 0x0, 0x0, 0x0, 0x1,
+            )),
+            41000,
+        ),
+    ];
+
     #[test]
     fn xor_mapped_address() {
         let _log = crate::tests::test_init_log();
         let transaction_id = 0x9876_5432_1098_7654_3210_9876.into();
-        let addrs = &[
-            "192.168.0.1:40000".parse().unwrap(),
-            "[fd12:3456:789a:1::1]:41000".parse().unwrap(),
-        ];
-        for addr in addrs {
-            let mapped = XorMappedAddress::new(*addr, transaction_id);
+        for addr in ADDRS {
+            let mapped = XorMappedAddress::new(addr, transaction_id);
             trace!("mapped: {mapped}");
-            assert_eq!(mapped.addr(transaction_id), *addr);
-            let raw = RawAttribute::from(&mapped);
-            trace!("{raw}");
+            assert_eq!(mapped.addr(transaction_id), addr);
             match addr.ip() {
                 IpAddr::V4(_ip4) => assert_eq!(mapped.length(), 8),
                 IpAddr::V6(_ip6) => assert_eq!(mapped.length(), 20),
             };
+        }
+    }
+
+    #[test]
+    fn xor_mapped_address_raw() {
+        let _log = crate::tests::test_init_log();
+        let transaction_id = 0x9876_5432_1098_7654_3210_9876.into();
+        for addr in ADDRS {
+            let mapped = XorMappedAddress::new(addr, transaction_id);
+            let raw = RawAttribute::from(&mapped);
+            match addr.ip() {
+                IpAddr::V4(_ip4) => assert_eq!(raw.length(), 8),
+                IpAddr::V6(_ip6) => assert_eq!(raw.length(), 20),
+            };
+            trace!("{raw}");
             assert_eq!(raw.get_type(), XorMappedAddress::TYPE);
             let mapped2 = XorMappedAddress::try_from(&raw).unwrap();
-            assert_eq!(mapped2.addr(transaction_id), *addr);
+            assert_eq!(mapped2.addr(transaction_id), addr);
+        }
+    }
+
+    #[test]
+    fn xor_mapped_address_raw_short() {
+        let _log = crate::tests::test_init_log();
+        let transaction_id = 0x9876_5432_1098_7654_3210_9876.into();
+        for addr in ADDRS {
+            let mapped = XorMappedAddress::new(addr, transaction_id);
+            let raw = RawAttribute::from(&mapped);
             // truncate by one byte
             let mut data: Vec<_> = raw.clone().into();
             let len = data.len();
@@ -151,6 +183,16 @@ mod tests {
                     actual: _
                 })
             ));
+        }
+    }
+
+    #[test]
+    fn xor_mapped_address_raw_wrong_type() {
+        let _log = crate::tests::test_init_log();
+        let transaction_id = 0x9876_5432_1098_7654_3210_9876.into();
+        for addr in ADDRS {
+            let mapped = XorMappedAddress::new(addr, transaction_id);
+            let raw = RawAttribute::from(&mapped);
             // provide incorrectly typed data
             let mut data: Vec<_> = raw.into();
             BigEndian::write_u16(&mut data[0..2], 0);
@@ -159,5 +201,33 @@ mod tests {
                 Err(StunParseError::WrongAttributeImplementation)
             ));
         }
+    }
+
+    #[test]
+    fn xor_mapped_address_write_into() {
+        let _log = crate::tests::test_init_log();
+        let transaction_id = 0x9876_5432_1098_7654_3210_9876.into();
+        for addr in ADDRS {
+            let mapped = XorMappedAddress::new(addr, transaction_id);
+            let raw = RawAttribute::from(&mapped);
+
+            let mut dest = vec![0; raw.padded_len()];
+            mapped.write_into(&mut dest).unwrap();
+            let raw = RawAttribute::from_bytes(&dest).unwrap();
+            let mapped2 = XorMappedAddress::try_from(&raw).unwrap();
+            assert_eq!(mapped2.addr(transaction_id), addr);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn xor_mapped_address_write_into_unchecked() {
+        let _log = crate::tests::test_init_log();
+        let transaction_id = 0x9876_5432_1098_7654_3210_9876.into();
+        let mapped = XorMappedAddress::new(ADDRS[0], transaction_id);
+        let raw = RawAttribute::from(&mapped);
+
+        let mut dest = vec![0; raw.padded_len() - 1];
+        mapped.write_into_unchecked(&mut dest);
     }
 }
