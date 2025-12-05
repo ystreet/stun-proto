@@ -3035,6 +3035,32 @@ mod tests {
     }
 
     #[test]
+    fn message_parse_multiple_integrities_fingerprint() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let credentials = ShortTermCredentials::new("pass".to_owned());
+        msg.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha1)
+            .unwrap();
+        msg.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha256)
+            .unwrap();
+        msg.add_fingerprint().unwrap();
+        let mut bytes = msg.finish();
+        let software = Software::new("s").unwrap();
+        let software_bytes = RawAttribute::from(&software).to_bytes();
+        let software_len = software_bytes.len();
+        bytes.extend(software_bytes);
+        bytes[3] += software_len as u8;
+        let msg = Message::from_bytes(&bytes).unwrap();
+        assert!(msg.has_attribute(MessageIntegrity::TYPE));
+        assert!(msg.has_attribute(MessageIntegritySha256::TYPE));
+        assert!(!msg.has_attribute(Software::TYPE));
+        assert_eq!(
+            msg.validate_integrity(&credentials.clone().into()).unwrap(),
+            IntegrityAlgorithm::Sha256
+        );
+    }
+
+    #[test]
     fn attributes_iter_fingerprint_after_fingerprint_ignored() {
         let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
