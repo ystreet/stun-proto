@@ -1089,8 +1089,8 @@ impl<'a> Message<'a> {
     /// #     Method, MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
-    /// assert_eq!(message.has_method(BINDING), true);
-    /// assert_eq!(message.has_method(Method::new(0)), false);
+    /// assert!(message.has_method(BINDING));
+    /// assert!(!message.has_method(Method::new(0)));
     /// ```
     pub fn has_method(&self, method: Method) -> bool {
         self.method() == method
@@ -1113,14 +1113,20 @@ impl<'a> Message<'a> {
         BigEndian::read_u128(&self.data[4..]).into()
     }
 
-    /// Deserialize a `Message`
+    /// Deserialize a `Message` from its network bytes.
+    ///
+    /// This function will ensure that any fingerprint contained within matches the message
+    /// contents and return errors on failure.
+    ///
+    /// Any message integrity value (as required by the STUN usage) should be checked in addition
+    /// by calling [`Message::validate_integrity`].
     ///
     /// # Examples
     ///
     /// ```
     /// # use stun_types::attribute::{RawAttribute, Attribute};
     /// # use stun_types::message::{Message, MessageType, MessageClass, BINDING};
-    /// let msg_data = vec![0, 1, 0, 8, 33, 18, 164, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 232, 0, 1, 0, 1, 3, 0, 0, 0];
+    /// let msg_data = [0, 1, 0, 8, 33, 18, 164, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 232, 0, 1, 0, 1, 3, 0, 0, 0];
     /// let message = Message::from_bytes(&msg_data).unwrap();
     /// let attr = RawAttribute::new(1.into(), &[3]);
     /// let msg_attr = message.raw_attribute(1.into()).unwrap();
@@ -1778,6 +1784,11 @@ impl<'a> MessageAttributesIter<'a> {
     /// Construct an Iterator over the attributes of a [`Message`].
     ///
     /// The provided data is the entirety of the message data.
+    ///
+    /// Note: this entry point does not verify that the message passes integrity and fingerprint
+    /// checks and therefore must be used with care on untrusted data. You should use
+    /// [`Message::from_bytes`] and [`Message::validate_integrity`] to validate the integrity of a
+    /// STUN [`Message`].
     pub fn new(data: &'a [u8]) -> Self {
         Self {
             header_parsed: false,
@@ -1966,8 +1977,8 @@ pub trait MessageWriteExt: MessageWrite {
     /// #     Method, MessageWrite, BINDING};
     /// let message = Message::builder_request(BINDING, MessageWriteVec::new()).finish();
     /// let message = Message::from_bytes(&message).unwrap();
-    /// assert_eq!(message.has_method(BINDING), true);
-    /// assert_eq!(message.has_method(Method::new(0)), false);
+    /// assert!(message.has_method(BINDING));
+    /// assert!(!message.has_method(Method::new(0)));
     /// ```
     fn has_method(&self, method: Method) -> bool {
         self.method() == method
