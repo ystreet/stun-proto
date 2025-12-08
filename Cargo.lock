@@ -67,9 +67,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.48"
+version = "1.2.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c481bdbf0ed3b892f6f806287d72acd515b352a4ec27a208489b8c1bc839633a"
+checksum = "90583009037521a116abf44494efecd645ba48b6622457080f080b85544e2215"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -687,7 +687,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "stun-fuzz"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "arbitrary",
  "libfuzzer-sys",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "stun-proto"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "byteorder",
  "criterion",
@@ -711,7 +711,7 @@ dependencies = [
 
 [[package]]
 name = "stun-types"
-version = "1.0.1"
+version = "1.0.2"
 dependencies = [
  "arbitrary",
  "byteorder",
