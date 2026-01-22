@@ -98,7 +98,7 @@ use byteorder::{BigEndian, ByteOrder};
 
 use crate::attribute::*;
 
-use tracing::{error, trace, warn};
+use tracing::{trace, warn};
 
 use hmac::digest::core_api::CoreWrapper;
 use hmac::digest::CtOutput;
