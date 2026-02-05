@@ -5,6 +5,8 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use stun_types::attribute::*;
