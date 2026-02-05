@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2024 Matthew Waters <matthew@centricular.com>
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
 #![no_main]
 use std::sync::Once;
 
