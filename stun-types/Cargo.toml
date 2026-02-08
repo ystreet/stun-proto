@@ -28,6 +28,8 @@ smallvec = "1.6.1"
 tracing-subscriber.workspace = true
 tracing = { workspace = true, features = ["std"] }
 criterion.workspace = true
+stringprep = "0.1"
+precis-profiles = "0.1"
 
 [features]
 default = ["std"]

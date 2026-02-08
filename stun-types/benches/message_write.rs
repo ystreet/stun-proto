@@ -44,13 +44,15 @@ fn bench_message_write(c: &mut Criterion) {
     let username = Username::new("abcd").unwrap();
     let short_term_integrity =
         MessageIntegrityCredentials::ShortTerm(ShortTermCredentials::new("password".to_owned()));
-    let short_term_key = short_term_integrity.make_key();
+    let short_term_key_sha1 = short_term_integrity.make_key(IntegrityAlgorithm::Sha1);
+    let short_term_key_sha256 = short_term_integrity.make_key(IntegrityAlgorithm::Sha256);
     let long_term_integrity = MessageIntegrityCredentials::LongTerm(LongTermCredentials::new(
         "user".to_owned(),
         "password".to_owned(),
         "realm".to_owned(),
     ));
-    let long_term_key = long_term_integrity.make_key();
+    let long_term_key_sha1 = long_term_integrity.make_key(IntegrityAlgorithm::Sha1);
+    let long_term_key_sha256 = long_term_integrity.make_key(IntegrityAlgorithm::Sha256);
 
     let mut group = c.benchmark_group("Message/Build");
 
@@ -122,7 +124,7 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha1+Fingerprint"),
-        &(&xor_mapped_address, &short_term_key),
+        &(&xor_mapped_address, &short_term_key_sha1),
         |b, &(xor_mapped_address, short_term_key)| {
             b.iter(|| {
                 let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(64));
@@ -139,7 +141,7 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha256+Fingerprint"),
-        &(&xor_mapped_address, &short_term_key),
+        &(&xor_mapped_address, &short_term_key_sha256),
         |b, &(xor_mapped_address, short_term_key)| {
             b.iter(|| {
                 let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(80));
@@ -156,7 +158,7 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha1+Fingerprint"),
-        &(&xor_mapped_address, &long_term_key),
+        &(&xor_mapped_address, &long_term_key_sha1),
         |b, &(xor_mapped_address, long_term_key)| {
             b.iter(|| {
                 let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(64));
@@ -173,7 +175,7 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha256+Fingerprint"),
-        &(&xor_mapped_address, &long_term_key),
+        &(&xor_mapped_address, &long_term_key_sha256),
         |b, &(xor_mapped_address, long_term_key)| {
             b.iter(|| {
                 let mut msg = Message::builder_request(BINDING, MessageWriteVec::with_capacity(80));
@@ -246,7 +248,7 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha1+Fingerprint"),
-        &(&xor_mapped_address, &short_term_key),
+        &(&xor_mapped_address, &short_term_key_sha1),
         |b, &(xor_mapped_address, short_term_key)| {
             b.iter(|| {
                 let mut msg =
@@ -264,7 +266,7 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+ShortTermIntegritySha256+Fingerprint"),
-        &(&xor_mapped_address, &short_term_key),
+        &(&xor_mapped_address, &short_term_key_sha256),
         |b, &(xor_mapped_address, short_term_key)| {
             b.iter(|| {
                 let mut msg =
@@ -282,7 +284,7 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha1+Fingerprint"),
-        &(&xor_mapped_address, &long_term_key),
+        &(&xor_mapped_address, &long_term_key_sha1),
         |b, &(xor_mapped_address, long_term_key)| {
             b.iter(|| {
                 let mut msg =
@@ -300,7 +302,7 @@ fn bench_message_write(c: &mut Criterion) {
     ));
     group.bench_with_input(
         BenchmarkId::from_parameter("XorMappedAddress+LongTermIntegritySha256+Fingerprint"),
-        &(&xor_mapped_address, &long_term_key),
+        &(&xor_mapped_address, &long_term_key_sha256),
         |b, &(xor_mapped_address, long_term_key)| {
             b.iter(|| {
                 let mut msg =
