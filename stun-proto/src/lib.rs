@@ -62,11 +62,14 @@
 //! let data = response.finish();
 //! let to = transmit.to;
 //! let response = Message::from_bytes(&data).unwrap();
-//! let reply = agent.handle_stun(response, to);
 //!
 //! // If running over TCP then there may be multiple messages parsed. However UDP will only ever
 //! // have a single message per datagram.
-//! assert!(matches!(reply, HandleStunReply::ValidatedStunResponse(_)));
+//! let reply = agent.handle_stun(response, to);
+//! let HandleStunReply::StunResponse(response) = reply else {
+//!     unreachable!();
+//! };
+//! assert!(response.validated_message().is_some());
 //!
 //! // Once valid STUN data has been sent and received, then data can be sent and received from the
 //! // peer.

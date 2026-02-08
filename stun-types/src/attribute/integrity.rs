@@ -107,7 +107,7 @@ impl MessageIntegrity {
     /// # use stun_types::attribute::*;
     /// # use stun_types::message::*;
     /// let credentials = ShortTermCredentials::new("pass".to_owned());
-    /// let key = MessageIntegrityCredentials::from(credentials).make_key();
+    /// let key = MessageIntegrityCredentials::from(credentials).make_key(IntegrityAlgorithm::Sha1);
     /// let data = [10; 30];
     /// let expected = [92, 91, 148, 243, 28, 168, 16, 154, 137, 179, 250, 169, 153, 222, 37, 127, 210, 148, 222, 119];
     /// let integrity = MessageIntegrity::compute(&[&data], &key).unwrap();
@@ -130,7 +130,7 @@ impl MessageIntegrity {
     /// # use stun_types::attribute::*;
     /// # use stun_types::message::*;
     /// let credentials = ShortTermCredentials::new("pass".to_owned());
-    /// let key = MessageIntegrityCredentials::from(credentials).make_key();
+    /// let key = MessageIntegrityCredentials::from(credentials).make_key(IntegrityAlgorithm::Sha1);
     /// let data = [10; 30];
     /// let expected = [92, 91, 148, 243, 28, 168, 16, 154, 137, 179, 250, 169, 153, 222, 37, 127, 210, 148, 222, 119];
     /// assert_eq!(MessageIntegrity::verify(&[&data], &key, &expected).unwrap(), ());
@@ -272,7 +272,7 @@ impl MessageIntegritySha256 {
     /// # use stun_types::attribute::*;
     /// # use stun_types::message::*;
     /// let credentials = ShortTermCredentials::new("pass".to_owned());
-    /// let key = MessageIntegrityCredentials::from(credentials).make_key();
+    /// let key = MessageIntegrityCredentials::from(credentials).make_key(IntegrityAlgorithm::Sha256);
     /// let data = [10; 30];
     /// let expected = [16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244, 67, 190, 185, 71, 34, 150, 194, 108, 18, 75, 94, 221, 185];
     /// let integrity = MessageIntegritySha256::compute(&[&data], &key).unwrap();
@@ -295,7 +295,7 @@ impl MessageIntegritySha256 {
     /// # use stun_types::attribute::*;
     /// # use stun_types::message::*;
     /// let credentials = ShortTermCredentials::new("pass".to_owned());
-    /// let key = MessageIntegrityCredentials::from(credentials).make_key();
+    /// let key = MessageIntegrityCredentials::from(credentials).make_key(IntegrityAlgorithm::Sha256);
     /// let data = [10; 30];
     /// let expected = [16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244, 67, 190, 185, 71, 34, 150, 194, 108, 18, 75, 94, 221, 185];
     /// assert_eq!(MessageIntegritySha256::verify(&[&data], &key, &expected).unwrap(), ());
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn message_integrity_verify_fixed_value() {
         let credentials = ShortTermCredentials::new("pass".to_string());
-        let key = MessageIntegrityCredentials::from(credentials).make_key();
+        let key = MessageIntegrityCredentials::from(credentials).make_key(crate::message::IntegrityAlgorithm::Sha1);
         let data = [10; 30];
         let mut expected = [
             92, 91, 148, 243, 28, 168, 16, 154, 137, 179, 250, 169, 153, 222, 37, 127, 210, 148,
@@ -501,7 +501,7 @@ mod tests {
     #[test]
     fn message_integrity_sha256_verify_fixed_value() {
         let credentials = ShortTermCredentials::new("pass".to_string());
-        let key = MessageIntegrityCredentials::from(credentials).make_key();
+        let key = MessageIntegrityCredentials::from(credentials).make_key(crate::message::IntegrityAlgorithm::Sha1);
         let data = [10; 30];
         let mut expected = [
             16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244,
