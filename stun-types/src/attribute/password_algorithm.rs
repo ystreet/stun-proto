@@ -14,7 +14,7 @@ use core::convert::TryFrom;
 
 use byteorder::{BigEndian, ByteOrder};
 
-use crate::message::StunParseError;
+use crate::message::{IntegrityAlgorithm, StunParseError};
 
 use super::{
     padded_attr_len, Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType,
@@ -61,6 +61,14 @@ impl PasswordAlgorithmValue {
             0x2 => Self::SHA256,
             _ => return Err(StunParseError::InvalidAttributeData),
         })
+    }
+
+    /// Return the integrity algorithm to use for this password algorithm value.
+    pub fn as_integrity(&self) -> IntegrityAlgorithm {
+        match self {
+            Self::MD5 => IntegrityAlgorithm::Sha1,
+            Self::SHA256 => IntegrityAlgorithm::Sha256,
+        }
     }
 }
 
@@ -293,6 +301,19 @@ impl core::fmt::Display for PasswordAlgorithm {
 mod tests {
     use super::*;
     use tracing::trace;
+
+    #[test]
+    fn password_algorithm_as_integrity() {
+        let _log = crate::tests::test_init_log();
+        assert_eq!(
+            PasswordAlgorithmValue::MD5.as_integrity(),
+            IntegrityAlgorithm::Sha1
+        );
+        assert_eq!(
+            PasswordAlgorithmValue::SHA256.as_integrity(),
+            IntegrityAlgorithm::Sha256
+        );
+    }
 
     #[test]
     fn password_algorithms() {
