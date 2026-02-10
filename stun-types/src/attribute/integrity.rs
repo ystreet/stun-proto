@@ -133,23 +133,15 @@ impl MessageIntegrity {
     /// let key = MessageIntegrityCredentials::from(credentials).make_key(IntegrityAlgorithm::Sha1);
     /// let data = [10; 30];
     /// let expected = [92, 91, 148, 243, 28, 168, 16, 154, 137, 179, 250, 169, 153, 222, 37, 127, 210, 148, 222, 119];
-    /// assert_eq!(MessageIntegrity::verify(&[&data], &key, &expected).unwrap(), ());
+    /// assert!(MessageIntegrity::verify(&[&data], &key, &expected));
     /// ```
     #[tracing::instrument(
         name = "MessageIntegrity::verify",
         level = "debug",
         skip(data, key, expected)
     )]
-    pub fn verify(
-        data: &[&[u8]],
-        key: &IntegrityKey,
-        expected: &[u8; 20],
-    ) -> Result<(), StunParseError> {
-        if key.verify_sha1(data, expected) {
-            Ok(())
-        } else {
-            Err(StunParseError::IntegrityCheckFailed)
-        }
+    pub fn verify(data: &[&[u8]], key: &IntegrityKey, expected: &[u8; 20]) -> bool {
+        key.verify_sha1(data, expected)
     }
 }
 
@@ -298,23 +290,15 @@ impl MessageIntegritySha256 {
     /// let key = MessageIntegrityCredentials::from(credentials).make_key(IntegrityAlgorithm::Sha256);
     /// let data = [10; 30];
     /// let expected = [16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244, 67, 190, 185, 71, 34, 150, 194, 108, 18, 75, 94, 221, 185];
-    /// assert_eq!(MessageIntegritySha256::verify(&[&data], &key, &expected).unwrap(), ());
+    /// assert!(MessageIntegritySha256::verify(&[&data], &key, &expected));
     /// ```
     #[tracing::instrument(
         name = "MessageIntegritySha256::verify",
         level = "debug",
         skip(data, key, expected)
     )]
-    pub fn verify(
-        data: &[&[u8]],
-        key: &IntegrityKey,
-        expected: &[u8],
-    ) -> Result<(), StunParseError> {
-        if key.verify_sha256(data, expected) {
-            Ok(())
-        } else {
-            Err(StunParseError::IntegrityCheckFailed)
-        }
+    pub fn verify(data: &[&[u8]], key: &IntegrityKey, expected: &[u8]) -> bool {
+        key.verify_sha256(data, expected)
     }
 }
 
@@ -414,21 +398,16 @@ mod tests {
     #[test]
     fn message_integrity_verify_fixed_value() {
         let credentials = ShortTermCredentials::new("pass".to_string());
-        let key = MessageIntegrityCredentials::from(credentials).make_key(crate::message::IntegrityAlgorithm::Sha1);
+        let key = MessageIntegrityCredentials::from(credentials)
+            .make_key(crate::message::IntegrityAlgorithm::Sha1);
         let data = [10; 30];
         let mut expected = [
             92, 91, 148, 243, 28, 168, 16, 154, 137, 179, 250, 169, 153, 222, 37, 127, 210, 148,
             222, 119,
         ];
-        assert!(matches!(
-            MessageIntegrity::verify(&[&data], &key, &expected),
-            Ok(())
-        ));
+        assert!(MessageIntegrity::verify(&[&data], &key, &expected),);
         expected[0] = 0;
-        assert!(matches!(
-            MessageIntegrity::verify(&[&data], &key, &expected),
-            Err(StunParseError::IntegrityCheckFailed)
-        ));
+        assert!(!MessageIntegrity::verify(&[&data], &key, &expected),);
     }
 
     #[test]
@@ -501,21 +480,16 @@ mod tests {
     #[test]
     fn message_integrity_sha256_verify_fixed_value() {
         let credentials = ShortTermCredentials::new("pass".to_string());
-        let key = MessageIntegrityCredentials::from(credentials).make_key(crate::message::IntegrityAlgorithm::Sha1);
+        let key = MessageIntegrityCredentials::from(credentials)
+            .make_key(crate::message::IntegrityAlgorithm::Sha1);
         let data = [10; 30];
         let mut expected = [
             16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244,
             67, 190, 185, 71, 34, 150, 194, 108, 18, 75, 94, 221, 185,
         ];
-        assert!(matches!(
-            MessageIntegritySha256::verify(&[&data], &key, &expected),
-            Ok(())
-        ));
+        assert!(MessageIntegritySha256::verify(&[&data], &key, &expected),);
         expected[0] = 0;
-        assert!(matches!(
-            MessageIntegritySha256::verify(&[&data], &key, &expected),
-            Err(StunParseError::IntegrityCheckFailed)
-        ));
+        assert!(!MessageIntegritySha256::verify(&[&data], &key, &expected),);
     }
 
     #[test]
