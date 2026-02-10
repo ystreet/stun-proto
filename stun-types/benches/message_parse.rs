@@ -10,7 +10,8 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use stun_types::message::{
-    IntegrityAlgorithm, IntegrityKey, LongTermCredentials, Message, MessageHeader, MessageIntegrityCredentials, ShortTermCredentials
+    IntegrityAlgorithm, IntegrityKey, LongTermKeyCredentials, Message, MessageHeader,
+    MessageIntegrityCredentials, ShortTermCredentials,
 };
 
 static RFC5679_VECTOR1_DATA: [u8; 108] = [
@@ -219,7 +220,7 @@ fn bench_message_parse(c: &mut Criterion) {
             "RFC5679/Vector4",
             RFC5679_VECTOR4_DATA.as_slice(),
             Some(MessageIntegrityCredentials::LongTerm(
-                LongTermCredentials::new(
+                LongTermKeyCredentials::new(
                     username.clone(),
                     password.clone(),
                     "example.org".to_owned(),
@@ -231,7 +232,7 @@ fn bench_message_parse(c: &mut Criterion) {
             "RFC8489/Vector1",
             RFC8489_VECTOR1_DATA.as_slice(),
             Some(MessageIntegrityCredentials::LongTerm(
-                LongTermCredentials::new(
+                LongTermKeyCredentials::new(
                     username.clone(),
                     password.clone(),
                     "example.org".to_owned(),

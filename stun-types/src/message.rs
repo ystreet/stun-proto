@@ -196,7 +196,7 @@ impl Method {
 pub const BINDING: Method = Method::new(0x0001);
 
 /// Possible errors when parsing a STUN message.
-#[derive(Debug, thiserror::Error, Clone, Copy)]
+#[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum StunParseError {
     /// Not a STUN message.
@@ -308,7 +308,6 @@ impl From<StunParseError> for ValidateError {
 pub struct LongTermCredentials {
     username: String,
     password: String,
-    realm: String,
 }
 
 impl LongTermCredentials {
@@ -319,6 +318,53 @@ impl LongTermCredentials {
     /// ```
     /// # use stun_types::message::LongTermCredentials;
     /// let credentials = LongTermCredentials::new(
+    ///     "user".to_string(),
+    ///     "pass".to_string(),
+    /// );
+    /// assert_eq!(credentials.username(), "user");
+    /// assert_eq!(credentials.password(), "pass");
+    /// ```
+    pub fn new(username: String, password: String) -> Self {
+        Self { username, password }
+    }
+
+    /// The configured username
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
+    /// The configured password
+    pub fn password(&self) -> &str {
+        &self.password
+    }
+
+    /// Construct credentials suitable for signing STUN messages.
+    pub fn to_key(&self, realm: String) -> LongTermKeyCredentials {
+        LongTermKeyCredentials {
+            username: self.username.clone(),
+            password: self.password.clone(),
+            realm,
+        }
+    }
+}
+
+/// Structure for holding the required credentials for signing STUN messages
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct LongTermKeyCredentials {
+    username: String,
+    password: String,
+    realm: String,
+}
+
+impl LongTermKeyCredentials {
+    /// Create a new set of [`LongTermCredentials`]
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use stun_types::message::LongTermKeyCredentials;
+    /// let credentials = LongTermKeyCredentials::new(
     ///     "user".to_string(),
     ///     "pass".to_string(),
     ///     "realm".to_string(),
@@ -349,6 +395,32 @@ impl LongTermCredentials {
     pub fn realm(&self) -> &str {
         &self.realm
     }
+
+    /// Compute a key for caching purposes.
+    pub fn make_key(&self, algorithm: IntegrityAlgorithm) -> IntegrityKey {
+        match algorithm {
+            IntegrityAlgorithm::Sha1 => {
+                use md5::{Digest, Md5};
+                let mut digest = Md5::new();
+                digest.update(self.username.as_bytes());
+                digest.update(":".as_bytes());
+                digest.update(self.realm.as_bytes());
+                digest.update(":".as_bytes());
+                digest.update(self.password.as_bytes());
+                IntegrityKey::new_with_algo(IntegrityAlgorithm::Sha1, digest.finalize().to_vec())
+            }
+            IntegrityAlgorithm::Sha256 => {
+                use sha2::{Digest, Sha256};
+                let mut digest = Sha256::new();
+                digest.update(self.username.as_bytes());
+                digest.update(":".as_bytes());
+                digest.update(self.realm.as_bytes());
+                digest.update(":".as_bytes());
+                digest.update(self.password.as_bytes());
+                IntegrityKey::new_with_algo(IntegrityAlgorithm::Sha256, digest.finalize().to_vec())
+            }
+        }
+    }
 }
 
 /// Structure for holding the required credentials for handling short-term STUN credentials
@@ -376,6 +448,11 @@ impl ShortTermCredentials {
     pub fn password(&self) -> &str {
         &self.password
     }
+
+    /// Compute a key for caching purposes.
+    pub fn make_key(&self) -> IntegrityKey {
+        IntegrityKey::new(self.password.as_bytes().to_vec())
+    }
 }
 
 /// Enum for holding the credentials used to sign or verify a [`Message`]
@@ -387,11 +464,11 @@ pub enum MessageIntegrityCredentials {
     /// Short term integrity credentials.
     ShortTerm(ShortTermCredentials),
     /// Long term integrity credentials.
-    LongTerm(LongTermCredentials),
+    LongTerm(LongTermKeyCredentials),
 }
 
-impl From<LongTermCredentials> for MessageIntegrityCredentials {
-    fn from(value: LongTermCredentials) -> Self {
+impl From<LongTermKeyCredentials> for MessageIntegrityCredentials {
+    fn from(value: LongTermKeyCredentials) -> Self {
         MessageIntegrityCredentials::LongTerm(value)
     }
 }
@@ -406,31 +483,8 @@ impl MessageIntegrityCredentials {
     /// Compute a key for caching purposes.
     pub fn make_key(&self, algorithm: IntegrityAlgorithm) -> IntegrityKey {
         match self {
-            MessageIntegrityCredentials::ShortTerm(short) => {
-                IntegrityKey::new(short.password.as_bytes().to_vec())
-            }
-            MessageIntegrityCredentials::LongTerm(long) => match algorithm {
-                IntegrityAlgorithm::Sha1 => {
-                    use md5::{Digest, Md5};
-                    let mut digest = Md5::new();
-                    digest.update(long.username.as_bytes());
-                    digest.update(":".as_bytes());
-                    digest.update(long.realm.as_bytes());
-                    digest.update(":".as_bytes());
-                    digest.update(long.password.as_bytes());
-                    IntegrityKey::new_with_algo(IntegrityAlgorithm::Sha1, digest.finalize().to_vec())
-                }
-                IntegrityAlgorithm::Sha256 => {
-                    use sha2::{Digest, Sha256};
-                    let mut digest = Sha256::new();
-                    digest.update(long.username.as_bytes());
-                    digest.update(":".as_bytes());
-                    digest.update(long.realm.as_bytes());
-                    digest.update(":".as_bytes());
-                    digest.update(long.password.as_bytes());
-                    IntegrityKey::new_with_algo(IntegrityAlgorithm::Sha256, digest.finalize().to_vec())
-                }
-            },
+            MessageIntegrityCredentials::ShortTerm(short) => short.make_key(),
+            MessageIntegrityCredentials::LongTerm(long) => long.make_key(algorithm),
         }
     }
 }
@@ -1218,9 +1272,8 @@ impl<'a> Message<'a> {
         let mut seen_ending_len = 0;
         let mut data_offset = MessageHeader::LENGTH;
         for attr in MessageRawAttributesIter::new(data) {
-            let (_offset, attr) = attr.map_err(|e| {
+            let (_offset, attr) = attr.inspect_err(|e| {
                 warn!("failed to parse message attribute at offset {data_offset}: {e}",);
-                e
             })?;
 
             // if we have seen any ending attributes, then there is only a fixed set of attributes
@@ -1294,9 +1347,9 @@ impl<'a> Message<'a> {
     /// ```
     /// # use stun_types::message::{Message, MessageType, MessageClass, MessageWriteVec,
     /// #     MessageWrite, MessageWriteExt, BINDING, MessageIntegrityCredentials,
-    /// #     LongTermCredentials, IntegrityAlgorithm};
+    /// #     LongTermKeyCredentials, IntegrityAlgorithm};
     /// let mut message = Message::builder_request(BINDING, MessageWriteVec::new());
-    /// let credentials = LongTermCredentials::new(
+    /// let credentials = LongTermKeyCredentials::new(
     ///     "user".to_owned(),
     ///     "pass".to_owned(),
     ///     "realm".to_owned()
@@ -3670,7 +3723,7 @@ mod tests {
             .into_owned();
         trace!("password: {password:?}");
 
-        let long_term = LongTermCredentials {
+        let long_term = LongTermKeyCredentials {
             username,
             password,
             realm: "example.org".to_owned(),
@@ -3805,7 +3858,7 @@ mod tests {
 
         // XXX: should really be the OpaqueString value however that does not correctly remove
         // \u{00AD} that SASLprep did as required by RFC8489.
-        let long_term = LongTermCredentials {
+        let long_term = LongTermKeyCredentials {
             username: username.clone(),
             password: sasl_password.clone(),
             realm: "example.org".to_owned(),

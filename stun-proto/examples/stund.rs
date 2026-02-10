@@ -18,12 +18,12 @@ use std::io::{self, Read, Write};
 use std::net::{TcpListener, UdpSocket};
 use std::str::FromStr;
 
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use stun_types::attribute::*;
 use stun_types::message::*;
 
-use stun_proto::agent::{HandleStunReply, StunAgent, StunError};
+use stun_proto::agent::{StunAgent, StunError};
 
 fn warn_on_err<T, E>(res: Result<T, E>, default: T) -> T
 where
@@ -58,32 +58,26 @@ fn handle_incoming_data(
     stun_agent: &mut StunAgent,
 ) -> Option<(Vec<u8>, SocketAddr)> {
     let msg = Message::from_bytes(data).ok()?;
-    let reply = stun_agent.handle_stun(msg, from);
-    match reply {
-        HandleStunReply::Drop(_) => None,
-        HandleStunReply::StunResponse(_response) => {
-            error!("received unexpected STUN response from {from}!");
-            None
-        }
-        HandleStunReply::IncomingStun(msg) => {
-            info!("received from {}: {}", from, msg);
-            if msg.has_class(MessageClass::Request) && msg.has_method(BINDING) {
-                match handle_binding_request(&msg, from) {
-                    Ok(response) => {
-                        info!("sending response to {}: {:?}", from, response);
-                        return Some((response, from));
-                    }
-                    Err(err) => warn!("error: {}", err),
+    if !stun_agent.handle_stun_message(&msg, from) {
+        return None;
+    }
+    if msg.has_class(MessageClass::Request) {
+        if msg.has_method(BINDING) {
+            match handle_binding_request(&msg, from) {
+                Ok(response) => {
+                    info!("sending response to {}: {:?}", from, response);
+                    return Some((response, from));
                 }
-            } else {
-                let mut response = Message::builder_error(&msg, MessageWriteVec::new());
-                let error = ErrorCode::new(400, "Bad Request").unwrap();
-                response.add_attribute(&error).unwrap();
-                return Some((response.finish(), from));
+                Err(err) => warn!("error: {}", err),
             }
-            None
+        } else {
+            let mut response = Message::builder_error(&msg, MessageWriteVec::new());
+            let error = ErrorCode::new(400, "Bad Request").unwrap();
+            response.add_attribute(&error).unwrap();
+            return Some((response.finish(), from));
         }
     }
+    None
 }
 
 fn init_logs() {

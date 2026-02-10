@@ -41,7 +41,7 @@ fn bench_agent_recv(c: &mut Criterion) {
             },
             |data| {
                 let msg = Message::from_bytes(&data).unwrap();
-                let _ = agent.handle_stun(msg, local_addr);
+                let _ = agent.handle_stun_message(&msg, local_addr);
             },
             BatchSize::SmallInput,
         )

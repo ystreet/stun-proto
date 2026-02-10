@@ -747,6 +747,7 @@ version = "1.0.2"
 dependencies = [
  "byteorder",
  "criterion",
+ "rand",
  "sans-io-time",
  "stun-types",
  "thiserror",

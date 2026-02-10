@@ -31,18 +31,21 @@
 //!     MessageWriteVec, ShortTermCredentials
 //! };
 //! use stun_proto::types::prelude::*;
-//! use stun_proto::agent::{HandleStunReply, StunAgent};
+//! use stun_proto::agent::StunAgent;
+//! use stun_proto::auth::ShortTermAuth;
 //!
 //! let local_addr = "10.0.0.1:12345".parse().unwrap();
 //! let remote_addr = "10.0.0.2:3478".parse().unwrap();
 //!
-//! let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+//! let mut auth = ShortTermAuth::new();
+//! let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
+//!     .build();
 //!
 //! // short term or long term credentials may optionally be configured on the agent.
 //! let local_credentials = ShortTermCredentials::new(String::from("local_password"));
 //! let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
-//! agent.set_local_credentials(local_credentials.clone().into());
-//! agent.set_remote_credentials(remote_credentials.clone().into());
+//! auth.set_local_credentials(local_credentials.clone(), IntegrityAlgorithm::Sha1);
+//! auth.set_remote_credentials(remote_credentials.clone(), IntegrityAlgorithm::Sha1);
 //!
 //! // and we can send a Message
 //! let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
@@ -63,13 +66,13 @@
 //! let to = transmit.to;
 //! let response = Message::from_bytes(&data).unwrap();
 //!
+//! // If there is any authentication required for use, then that should be executed before passing
+//! // to the agent.
+//! assert!(matches!(auth.validate_incoming_message(&response), Ok(Some(IntegrityAlgorithm::Sha1))));
+//!
 //! // If running over TCP then there may be multiple messages parsed. However UDP will only ever
 //! // have a single message per datagram.
-//! let reply = agent.handle_stun(response, to);
-//! let HandleStunReply::StunResponse(response) = reply else {
-//!     unreachable!();
-//! };
-//! assert!(response.validated_message().is_some());
+//! assert!(agent.handle_stun_message(&response, to));
 //!
 //! // Once valid STUN data has been sent and received, then data can be sent and received from the
 //! // peer.
@@ -88,6 +91,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod agent;
+pub mod auth;
 
 pub use sans_io_time::Instant;
 pub use stun_types as types;

@@ -17,8 +17,8 @@ use byteorder::{BigEndian, ByteOrder};
 use crate::message::{IntegrityAlgorithm, StunParseError};
 
 use super::{
-    padded_attr_len, Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType,
-    AttributeWrite, AttributeWriteExt, RawAttribute,
+    pad_attribute_len, Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType,
+    AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
 };
 
 /// The hashing algorithm for the password
@@ -99,7 +99,7 @@ impl Attribute for PasswordAlgorithms {
     fn length(&self) -> u16 {
         let mut len = 0;
         for algo in self.algorithms.iter() {
-            len += 4 + padded_attr_len(algo.len() as usize);
+            len += 4 + pad_attribute_len(algo.len() as usize);
         }
         len as u16
     }
@@ -143,7 +143,7 @@ impl TryFrom<&RawAttribute<'_>> for PasswordAlgorithms {
         let mut algorithms = vec![];
         while i < raw.value.len() {
             let algo = PasswordAlgorithmValue::read(&raw.value[i..])?;
-            i += 4 + padded_attr_len(algo.len() as usize);
+            i += 4 + pad_attribute_len(algo.len() as usize);
             algorithms.push(algo);
         }
         Ok(Self { algorithms })
@@ -183,7 +183,7 @@ impl PasswordAlgorithms {
         let mut i = 0;
         for algo in self.algorithms.iter() {
             algo.write(&mut data[i..]);
-            i += 4 + padded_attr_len(algo.len() as usize);
+            i += 4 + pad_attribute_len(algo.len() as usize);
         }
         i
     }
@@ -219,7 +219,7 @@ impl Attribute for PasswordAlgorithm {
     }
 
     fn length(&self) -> u16 {
-        4 + padded_attr_len(self.algorithm.len() as usize) as u16
+        4 + pad_attribute_len(self.algorithm.len() as usize) as u16
     }
 }
 
