@@ -196,7 +196,7 @@ impl Method {
 pub const BINDING: Method = Method::new(0x0001);
 
 /// Possible errors when parsing a STUN message.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone, Copy)]
 #[non_exhaustive]
 pub enum StunParseError {
     /// Not a STUN message.
@@ -218,9 +218,6 @@ pub enum StunParseError {
         /// The encountered number of bytes
         actual: usize,
     },
-    /// Integrity value does not match computed value
-    #[error("Integrity value does not match")]
-    IntegrityCheckFailed,
     /// An attribute was not found in the message
     #[error("Missing attribute {}", .0)]
     MissingAttribute(AttributeType),
@@ -288,7 +285,24 @@ pub enum StunWriteError {
     },
 }
 
-/// Structure for holding the required credentials for handling long-term STUN credentials
+/// Errors produced when validating a STUN message
+#[derive(Debug, thiserror::Error, Copy, Clone)]
+pub enum ValidateError {
+    /// The message failed to parse the relevant integrity attributes.
+    #[error("The message failed to parse the relevant integrity attributes")]
+    Parse(StunParseError),
+    /// The message failed integrity checks.
+    #[error("The message failed integrity checks")]
+    IntegrityFailed,
+}
+
+impl From<StunParseError> for ValidateError {
+    fn from(value: StunParseError) -> Self {
+        Self::Parse(value)
+    }
+}
+
+/// Structure for holding the required credentials for long-term STUN credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct LongTermCredentials {
@@ -1295,7 +1309,7 @@ impl<'a> Message<'a> {
     pub fn validate_integrity(
         &self,
         credentials: &MessageIntegrityCredentials,
-    ) -> Result<IntegrityAlgorithm, StunParseError> {
+    ) -> Result<IntegrityAlgorithm, ValidateError> {
         let raw_sha1 = self.raw_attribute(MessageIntegrity::TYPE);
         let raw_sha256 = self.raw_attribute(MessageIntegritySha256::TYPE);
         let (algo, msg_hmac) = match (raw_sha1, raw_sha256) {
@@ -1308,7 +1322,7 @@ impl<'a> Message<'a> {
                 (IntegrityAlgorithm::Sha1, integrity.hmac().to_vec())
             }
             (None, None) => {
-                return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE))
+                return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into())
             }
         };
         let key = credentials.make_key(algo);
@@ -1319,7 +1333,7 @@ impl<'a> Message<'a> {
     pub fn validate_integrity_with_key(
         &self,
         key: &IntegrityKey,
-    ) -> Result<IntegrityAlgorithm, StunParseError> {
+    ) -> Result<IntegrityAlgorithm, ValidateError> {
         let raw_sha1 = self.raw_attribute(MessageIntegrity::TYPE);
         let raw_sha256 = self.raw_attribute(MessageIntegritySha256::TYPE);
         let (algo, msg_hmac) = if let Some(algo) = key.key_algorithm {
@@ -1332,7 +1346,7 @@ impl<'a> Message<'a> {
                     let integrity = MessageIntegrity::try_from(&sha1)?;
                     (algo, integrity.hmac().to_vec())
                 }
-                _ => return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE)),
+                _ => return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into()),
             }
         } else {
             match (raw_sha1, raw_sha256) {
@@ -1345,7 +1359,7 @@ impl<'a> Message<'a> {
                     (IntegrityAlgorithm::Sha1, integrity.hmac().to_vec())
                 }
                 (None, None) => {
-                    return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE))
+                    return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into())
                 }
             }
         };
@@ -1365,10 +1379,13 @@ impl<'a> Message<'a> {
         algo: IntegrityAlgorithm,
         msg_hmac: &[u8],
         key: &IntegrityKey,
-    ) -> Result<IntegrityAlgorithm, StunParseError> {
+    ) -> Result<IntegrityAlgorithm, ValidateError> {
         if key.key_algorithm.is_some_and(|key_algo| key_algo != algo) {
-            debug!("Key algorithm ({:?}) does not match algo ({algo:?})", key.key_algorithm);
-            return Err(StunParseError::DataMismatch);
+            debug!(
+                "Key algorithm ({:?}) does not match algo ({algo:?})",
+                key.key_algorithm
+            );
+            return Err(StunParseError::DataMismatch.into());
         }
         // find the location of the original MessageIntegrity attribute: XXX: maybe encode this into
         // the attribute instead?
@@ -1392,12 +1409,15 @@ impl<'a> Message<'a> {
                     &mut header[2..4],
                     data_offset as u16 + 24 - MessageHeader::LENGTH as u16,
                 );
-                MessageIntegrity::verify(
+                if MessageIntegrity::verify(
                     &[header.as_slice(), hmac_data],
                     key,
                     msg_hmac.try_into().unwrap(),
-                )?;
-                return Ok(algo);
+                ) {
+                    return Ok(algo);
+                } else {
+                    return Err(ValidateError::IntegrityFailed);
+                }
             } else if algo == IntegrityAlgorithm::Sha256
                 && attr.get_type() == MessageIntegritySha256::TYPE
             {
@@ -1414,8 +1434,11 @@ impl<'a> Message<'a> {
                     &mut header[2..4],
                     data_offset as u16 + attr.padded_len() as u16 - MessageHeader::LENGTH as u16,
                 );
-                MessageIntegritySha256::verify(&[&header, hmac_data], key, msg_hmac)?;
-                return Ok(algo);
+                if MessageIntegritySha256::verify(&[&header, hmac_data], key, msg_hmac) {
+                    return Ok(algo);
+                } else {
+                    return Err(ValidateError::IntegrityFailed);
+                }
             }
             let padded_len = attr.padded_len();
             // checked when initially parsing.
