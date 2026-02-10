@@ -14,6 +14,7 @@ rust-version.workspace = true
 [dependencies]
 stun-types = { path = "../stun-types", version = "1.0.0", default-features = false }
 byteorder.workspace = true
+rand.workspace = true
 sans-io-time.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
@@ -26,7 +27,7 @@ criterion.workspace = true
 
 [features]
 default = ["std"]
-std = ["stun-types/std", "thiserror/std"]
+std = ["stun-types/std", "thiserror/std", "rand/thread_rng"]
 
 [[bench]]
 name = "agent_send"

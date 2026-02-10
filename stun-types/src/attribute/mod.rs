@@ -469,7 +469,8 @@ pub trait AttributeFromRaw<'a>: Attribute {
     }
 }
 
-fn padded_attr_len(len: usize) -> usize {
+/// Computes the padded length of an attribute value to a multiple of 4 bytes.
+pub fn pad_attribute_len(len: usize) -> usize {
     if len % 4 == 0 {
         len
     } else {
@@ -486,7 +487,7 @@ pub trait AttributeExt {
 
 impl<A: Attribute + ?Sized> AttributeExt for A {
     fn padded_len(&self) -> usize {
-        4 + padded_attr_len(self.length() as usize)
+        4 + pad_attribute_len(self.length() as usize)
     }
 }
 

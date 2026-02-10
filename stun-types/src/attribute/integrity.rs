@@ -315,7 +315,7 @@ impl core::fmt::Display for MessageIntegritySha256 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        message::{MessageIntegrityCredentials, ShortTermCredentials},
+        message::{LongTermKeyCredentials, MessageIntegrityCredentials, ShortTermCredentials},
         prelude::AttributeExt,
     };
     use alloc::string::ToString;
@@ -411,6 +411,26 @@ mod tests {
     }
 
     #[test]
+    fn message_integrity_verify_key_long_wrong_type() {
+        let credentials = LongTermKeyCredentials::new(
+            "user".to_string(),
+            "pass".to_string(),
+            "realm".to_string(),
+        );
+        let key = MessageIntegrityCredentials::from(credentials)
+            .make_key(crate::message::IntegrityAlgorithm::Sha256);
+        let data = [10; 30];
+        let mut expected = [
+            6, 162, 255, 56, 215, 134, 145, 90, 154, 49, 51, 6, 22, 49, 202, 8, 176, 159, 24,
+            93,
+            //161, 160, 22, 105, 211, 138, 184, 39, 172, 103, 186, 106,
+        ];
+        assert!(!MessageIntegrity::verify(&[&data], &key, &expected),);
+        expected[0] = 0;
+        assert!(!MessageIntegrity::verify(&[&data], &key, &expected),);
+    }
+
+    #[test]
     fn message_integrity_sha256() {
         let _log = crate::tests::test_init_log();
         let val = [1; 32];
@@ -481,13 +501,51 @@ mod tests {
     fn message_integrity_sha256_verify_fixed_value() {
         let credentials = ShortTermCredentials::new("pass".to_string());
         let key = MessageIntegrityCredentials::from(credentials)
-            .make_key(crate::message::IntegrityAlgorithm::Sha1);
+            .make_key(crate::message::IntegrityAlgorithm::Sha256);
         let data = [10; 30];
         let mut expected = [
             16, 175, 53, 195, 18, 50, 153, 148, 7, 247, 27, 185, 195, 171, 22, 197, 22, 180, 244,
             67, 190, 185, 71, 34, 150, 194, 108, 18, 75, 94, 221, 185,
         ];
         assert!(MessageIntegritySha256::verify(&[&data], &key, &expected),);
+        expected[0] = 0;
+        assert!(!MessageIntegritySha256::verify(&[&data], &key, &expected),);
+    }
+
+    #[test]
+    fn message_integrity_sha256_verify_key_long() {
+        let credentials = LongTermKeyCredentials::new(
+            "user".to_string(),
+            "pass".to_string(),
+            "realm".to_string(),
+        );
+        let key = MessageIntegrityCredentials::from(credentials)
+            .make_key(crate::message::IntegrityAlgorithm::Sha256);
+        let data = [10; 30];
+        let mut expected = [
+            6, 162, 255, 56, 215, 134, 145, 90, 154, 49, 51, 6, 22, 49, 202, 8, 176, 159, 24, 93,
+            161, 160, 22, 105, 211, 138, 184, 39, 172, 103, 186, 106,
+        ];
+        assert!(MessageIntegritySha256::verify(&[&data], &key, &expected),);
+        expected[0] = 0;
+        assert!(!MessageIntegritySha256::verify(&[&data], &key, &expected),);
+    }
+
+    #[test]
+    fn message_integrity_sha256_verify_key_long_wrong_type() {
+        let credentials = LongTermKeyCredentials::new(
+            "user".to_string(),
+            "pass".to_string(),
+            "realm".to_string(),
+        );
+        let key = MessageIntegrityCredentials::from(credentials)
+            .make_key(crate::message::IntegrityAlgorithm::Sha1);
+        let data = [10; 30];
+        let mut expected = [
+            6, 162, 255, 56, 215, 134, 145, 90, 154, 49, 51, 6, 22, 49, 202, 8, 176, 159, 24, 93,
+            161, 160, 22, 105, 211, 138, 184, 39, 172, 103, 186, 106,
+        ];
+        assert!(!MessageIntegritySha256::verify(&[&data], &key, &expected),);
         expected[0] = 0;
         assert!(!MessageIntegritySha256::verify(&[&data], &key, &expected),);
     }

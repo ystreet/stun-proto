@@ -11,8 +11,9 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use stun_types::attribute::*;
 use stun_types::message::{
-    IntegrityAlgorithm, LongTermCredentials, Message, MessageHeader, MessageIntegrityCredentials,
-    MessageWriteMutSlice, MessageWriteVec, ShortTermCredentials, TransactionId, BINDING,
+    IntegrityAlgorithm, LongTermKeyCredentials, Message, MessageHeader,
+    MessageIntegrityCredentials, MessageWriteMutSlice, MessageWriteVec, ShortTermCredentials,
+    TransactionId, BINDING,
 };
 use stun_types::prelude::*;
 
@@ -46,7 +47,7 @@ fn bench_message_write(c: &mut Criterion) {
         MessageIntegrityCredentials::ShortTerm(ShortTermCredentials::new("password".to_owned()));
     let short_term_key_sha1 = short_term_integrity.make_key(IntegrityAlgorithm::Sha1);
     let short_term_key_sha256 = short_term_integrity.make_key(IntegrityAlgorithm::Sha256);
-    let long_term_integrity = MessageIntegrityCredentials::LongTerm(LongTermCredentials::new(
+    let long_term_integrity = MessageIntegrityCredentials::LongTerm(LongTermKeyCredentials::new(
         "user".to_owned(),
         "password".to_owned(),
         "realm".to_owned(),
