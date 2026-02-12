@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "stun-fuzz"
-version = "2.0.0-rc.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "arbitrary",
  "libfuzzer-sys",
@@ -743,7 +743,7 @@ dependencies = [
 
 [[package]]
 name = "stun-proto"
-version = "2.0.0-rc.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "byteorder",
  "criterion",
@@ -757,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "stun-types"
-version = "2.0.0-rc.0"
+version = "2.0.0-rc.1"
 dependencies = [
  "arbitrary",
  "byteorder",
