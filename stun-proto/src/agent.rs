@@ -842,17 +842,15 @@ pub(crate) mod tests {
 
         let mut auth = ShortTermAuth::new();
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
-        let local_credentials = ShortTermCredentials::new(String::from("local_password"));
-        let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
-        auth.set_local_credentials(local_credentials.clone(), IntegrityAlgorithm::Sha1);
-        auth.set_remote_credentials(remote_credentials.clone(), IntegrityAlgorithm::Sha1);
+        let credentials = ShortTermCredentials::new(String::from("local_password"));
+        auth.set_credentials(credentials.clone(), IntegrityAlgorithm::Sha1);
 
         // unvalidated peer data should be dropped
         assert!(!agent.is_validated_peer(remote_addr));
 
         let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
-        msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
+        msg.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         error!("send");
         let transmit = agent
@@ -867,7 +865,7 @@ pub(crate) mod tests {
         let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
         response.add_attribute(&xor_addr).unwrap();
         response
-            .add_message_integrity(&remote_credentials.into(), IntegrityAlgorithm::Sha1)
+            .add_message_integrity(&credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         error!("{response:?}");
 
@@ -1082,13 +1080,12 @@ pub(crate) mod tests {
 
         let mut auth = ShortTermAuth::new();
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
-        let local_credentials = ShortTermCredentials::new(String::from("local_password"));
-        let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
-        auth.set_local_credentials(local_credentials.clone(), IntegrityAlgorithm::Sha1);
-        auth.set_remote_credentials(remote_credentials, IntegrityAlgorithm::Sha1);
+        let credentials = ShortTermCredentials::new(String::from("local_password"));
+        let wrong_credentials = ShortTermCredentials::new(String::from("wrong_password"));
+        auth.set_credentials(credentials.clone(), IntegrityAlgorithm::Sha1);
 
         let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1)
+        msg.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha1)
             .unwrap();
         let transmit = agent
             .send_request(msg.finish(), remote_addr, Instant::ZERO)
@@ -1102,7 +1099,7 @@ pub(crate) mod tests {
         response.add_attribute(&xor_addr).unwrap();
         // wrong credentials, should be `remote_credentials`
         response
-            .add_message_integrity(&local_credentials.into(), IntegrityAlgorithm::Sha1)
+            .add_message_integrity(&wrong_credentials.into(), IntegrityAlgorithm::Sha1)
             .unwrap();
 
         let data = response.finish();

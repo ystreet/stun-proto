@@ -41,15 +41,13 @@
 //! let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
 //!     .build();
 //!
-//! // short term or long term credentials may optionally be configured on the agent.
-//! let local_credentials = ShortTermCredentials::new(String::from("local_password"));
-//! let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
-//! auth.set_local_credentials(local_credentials.clone(), IntegrityAlgorithm::Sha1);
-//! auth.set_remote_credentials(remote_credentials.clone(), IntegrityAlgorithm::Sha1);
+//! // short term or long term credentials may optionally be used.
+//! let credentials = ShortTermCredentials::new(String::from("password"));
+//! auth.set_credentials(credentials.clone(), IntegrityAlgorithm::Sha1);
 //!
 //! // and we can send a Message
 //! let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
-//! msg.add_message_integrity(&local_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
+//! msg.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
 //! let transmit = agent.send_request(msg.finish(), remote_addr, Instant::ZERO).unwrap();
 //!
 //! // The transmit struct indicates what data and where to send it.
@@ -58,7 +56,7 @@
 //! let mut response = Message::builder_success(&request, MessageWriteVec::new());
 //! let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
 //! response.add_attribute(&xor_addr).unwrap();
-//! response.add_message_integrity(&remote_credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
+//! response.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha1).unwrap();
 //!
 //! // when receiving data on the associated socket, we should pass it through the Agent so it can
 //! // parse and handle any STUN messages.
