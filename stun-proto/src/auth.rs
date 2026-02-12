@@ -34,8 +34,7 @@ use tracing::trace;
 /// Authentication for short term credentials.
 #[derive(Debug, Default)]
 pub struct ShortTermAuth {
-    local_credentials: Option<(ShortTermCredentials, IntegrityAlgorithm, IntegrityKey)>,
-    remote_credentials: Option<(ShortTermCredentials, IntegrityAlgorithm, IntegrityKey)>,
+    credentials: Option<(ShortTermCredentials, IntegrityAlgorithm, IntegrityKey)>,
     signature_bytes: usize,
 }
 
@@ -44,57 +43,27 @@ impl ShortTermAuth {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Set the local credentials that all messages should be signed with.
-    ///
-    /// These are the credentials used for validating incoming messages.
-    pub fn set_local_credentials(
+    /// Set the credentials that all messages should be signed with.
+    pub fn set_credentials(
         &mut self,
         credentials: ShortTermCredentials,
         algorithm: IntegrityAlgorithm,
     ) {
-        let local_key = credentials.make_key();
-        self.local_credentials = Some((credentials, algorithm, local_key));
+        let key = credentials.make_key();
+        self.credentials = Some((credentials, algorithm, key));
         self.signature_bytes = bytes_for_integrity(algorithm);
     }
 
-    /// The local credentials that all messages should be signed with.
-    pub fn local_credentials(&self) -> Option<(&ShortTermCredentials, IntegrityAlgorithm)> {
-        self.local_credentials
+    /// The credentials that all messages should be signed with.
+    pub fn credentials(&self) -> Option<(&ShortTermCredentials, IntegrityAlgorithm)> {
+        self.credentials
             .as_ref()
             .map(|(creds, algo, _key)| (creds, *algo))
     }
 
     /// The local integrity key that all messages should be signed with.
-    pub fn local_key(&self) -> Option<&IntegrityKey> {
-        self.local_credentials
-            .as_ref()
-            .map(|(_creds, _algo, key)| key)
-    }
-
-    /// Set the remote credentials that all messages should be signed with.
-    ///
-    /// These are the credentials used for signing messages sent to the peer.
-    pub fn set_remote_credentials(
-        &mut self,
-        credentials: ShortTermCredentials,
-        algorithm: IntegrityAlgorithm,
-    ) {
-        let remote_key = credentials.make_key();
-        self.remote_credentials = Some((credentials, algorithm, remote_key))
-    }
-
-    /// The remote credentials that all messages should be signed with.
-    pub fn remote_credentials(&self) -> Option<(&ShortTermCredentials, IntegrityAlgorithm)> {
-        self.remote_credentials
-            .as_ref()
-            .map(|(creds, algo, _key)| (creds, *algo))
-    }
-
-    /// The remote integrity key that all messages should be signed with.
-    pub fn remote_key(&self) -> Option<&IntegrityKey> {
-        self.remote_credentials
-            .as_ref()
-            .map(|(_creds, _algo, key)| key)
+    pub fn integrity_key(&self) -> Option<&IntegrityKey> {
+        self.credentials.as_ref().map(|(_creds, _algo, key)| key)
     }
 
     /// Number of bytes required to successfully add message integrity to an outgoing message.
@@ -107,7 +76,7 @@ impl ShortTermAuth {
         &mut self,
         mut msg: W,
     ) -> Result<W, StunWriteError> {
-        if let Some((_creds, algo, key)) = self.local_credentials.as_ref() {
+        if let Some((_creds, algo, key)) = self.credentials.as_ref() {
             msg.add_message_integrity_with_key(key, *algo)?;
             Ok(msg)
         } else {
@@ -122,7 +91,7 @@ impl ShortTermAuth {
         &mut self,
         msg: &Message<'_>,
     ) -> Result<Option<IntegrityAlgorithm>, ValidateError> {
-        let Some((_creds, _algo, key)) = self.remote_credentials.as_ref() else {
+        let Some((_creds, _algo, key)) = self.credentials.as_ref() else {
             return Ok(None);
         };
         msg.validate_integrity_with_key(key).map(Some)
@@ -689,7 +658,7 @@ fn is_valid_stale_nonce(msg: &Message<'_>) -> Option<(Nonce, Realm)> {
 #[cfg(test)]
 mod tests {
     use stun_types::{
-        attribute::{MessageIntegritySha256, Userhash, XorMappedAddress},
+        attribute::{MessageIntegritySha256, Userhash},
         message::{MessageWriteVec, BINDING},
     };
 
@@ -700,17 +669,16 @@ mod tests {
         let _log = crate::tests::test_init_log();
 
         let mut auth = ShortTermAuth::new();
-        assert!(auth.local_key().is_none());
-        assert!(auth.remote_key().is_none());
+        assert!(auth.integrity_key().is_none());
         assert_eq!(auth.message_signature_bytes(), 0);
 
-        let local_credentials = ShortTermCredentials::new(String::from("local_password"));
-        auth.set_local_credentials(local_credentials.clone(), IntegrityAlgorithm::Sha1);
+        let credentials = ShortTermCredentials::new(String::from("password"));
+        auth.set_credentials(credentials.clone(), IntegrityAlgorithm::Sha1);
         assert_eq!(
-            auth.local_credentials(),
-            Some((&local_credentials, IntegrityAlgorithm::Sha1))
+            auth.credentials(),
+            Some((&credentials, IntegrityAlgorithm::Sha1))
         );
-        assert!(auth.local_key().is_some());
+        assert!(auth.integrity_key().is_some());
         assert_eq!(auth.message_signature_bytes(), 24);
 
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
@@ -718,44 +686,14 @@ mod tests {
         let request = msg.finish();
         let request = Message::from_bytes(&request).unwrap();
         assert_eq!(
-            request
-                .validate_integrity(&local_credentials.into())
-                .unwrap(),
+            request.validate_integrity(&credentials.into()).unwrap(),
             IntegrityAlgorithm::Sha1
         );
         assert_eq!(
             request
-                .validate_integrity_with_key(auth.local_key().unwrap())
+                .validate_integrity_with_key(auth.integrity_key().unwrap())
                 .unwrap(),
             IntegrityAlgorithm::Sha1
-        );
-
-        let remote_credentials = ShortTermCredentials::new(String::from("remote_password"));
-        auth.set_remote_credentials(remote_credentials.clone(), IntegrityAlgorithm::Sha1);
-        assert_eq!(
-            auth.remote_credentials(),
-            Some((&remote_credentials, IntegrityAlgorithm::Sha1))
-        );
-        assert!(auth.remote_key().is_some());
-
-        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        msg.add_message_integrity(&remote_credentials.into(), IntegrityAlgorithm::Sha1)
-            .unwrap();
-        let request = msg.finish();
-        let request = Message::from_bytes(&request).unwrap();
-        assert_eq!(
-            auth.validate_incoming_message(&request).unwrap(),
-            Some(IntegrityAlgorithm::Sha1)
-        );
-
-        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        msg.add_message_integrity_with_key(auth.remote_key().unwrap(), IntegrityAlgorithm::Sha1)
-            .unwrap();
-        let request = msg.finish();
-        let request = Message::from_bytes(&request).unwrap();
-        assert_eq!(
-            auth.validate_incoming_message(&request).unwrap(),
-            Some(IntegrityAlgorithm::Sha1)
         );
     }
 
@@ -764,8 +702,7 @@ mod tests {
         let _log = crate::tests::test_init_log();
 
         let mut auth = ShortTermAuth::new();
-        assert!(auth.local_key().is_none());
-        assert!(auth.remote_key().is_none());
+        assert!(auth.integrity_key().is_none());
         assert_eq!(auth.message_signature_bytes(), 0);
 
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
@@ -775,30 +712,6 @@ mod tests {
         assert!(msg_has_no_auth(&request));
 
         assert!(matches!(auth.validate_incoming_message(&request), Ok(None)));
-    }
-
-    #[test]
-    fn short_term_response_without_remote_credentials() {
-        let _log = crate::tests::test_init_log();
-        let local_addr = "10.0.0.1:12345".parse().unwrap();
-
-        let mut auth = ShortTermAuth::new();
-        let local_credentials = ShortTermCredentials::new(String::from("local_password"));
-        auth.set_local_credentials(local_credentials.clone(), IntegrityAlgorithm::Sha1);
-
-        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = auth.sign_outgoing_message(msg).unwrap();
-        let request = msg.finish();
-        let request = Message::from_bytes(&request).unwrap();
-
-        let mut response = Message::builder_success(&request, MessageWriteVec::new());
-        let xor_addr = XorMappedAddress::new(local_addr, request.transaction_id());
-        response.add_attribute(&xor_addr).unwrap();
-
-        let data = response.finish();
-        let response = Message::from_bytes(&data).unwrap();
-        // reply is ignored as it does not have credentials
-        assert_eq!(auth.validate_incoming_message(&response).unwrap(), None);
     }
 
     #[test]
