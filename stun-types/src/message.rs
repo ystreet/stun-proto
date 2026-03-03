@@ -570,6 +570,7 @@ impl IntegrityKey {
     }
 
     pub(crate) fn verify_sha256(&self, data: &[&[u8]], expected: &[u8]) -> bool {
+        use subtle::ConstantTimeEq;
         if self
             .key_algorithm
             .is_some_and(|algo| algo != IntegrityAlgorithm::Sha256)
@@ -583,8 +584,7 @@ impl IntegrityKey {
         if computed.len() < expected.len() {
             return false;
         }
-        // TODO: use constant time equality
-        &computed[..expected.len()] == expected
+        computed[..expected.len()].ct_eq(expected).into()
     }
 
     pub(crate) fn compute_sha256(&self, data: &[&[u8]]) -> [u8; 32] {

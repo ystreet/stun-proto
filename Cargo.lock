@@ -785,6 +785,7 @@ dependencies = [
  "sha2",
  "smallvec",
  "stringprep",
+ "subtle",
  "thiserror",
  "tracing",
  "tracing-subscriber",
