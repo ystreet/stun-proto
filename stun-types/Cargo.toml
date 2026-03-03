@@ -19,6 +19,7 @@ md-5 = { version = "0.10", default-features = false }
 rand = { version = "0.9", default-features = false, features = ["os_rng"] }
 sha1 = { version = "0.10", default-features = false }
 sha2 = { version = "0.10", default-features = false }
+subtle.workspace = true
 tracing.workspace = true
 arbitrary ={ workspace = true, optional = true }
 thiserror.workspace = true
