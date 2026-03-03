@@ -31,6 +31,9 @@ use stun_types::prelude::{
 use sans_io_time::Instant;
 use tracing::trace;
 
+use hashbrown::HashMap;
+use siphasher::sip::SipHasher;
+
 /// Authentication for short term credentials.
 #[derive(Debug, Default)]
 pub struct ShortTermAuth {
@@ -388,13 +391,67 @@ static MINIMUM_NONCE_EXPIRY_DURATION: Duration = Duration::from_secs(30);
 static DEFAULT_NONCE_EXPIRY_DURATION: Duration = Duration::from_secs(3600);
 
 /// Authentication for long term credentials.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct LongTermServerAuth {
     nonce_expiry_duration: Duration,
     realm: String,
-    nonces: BTreeMap<SocketAddr, ClientNonce>,
-    users: BTreeMap<String, ClientAuth>,
+    nonces: HashMap<SocketAddr, ClientNonce, RandomState>,
+    users: HashMap<String, ClientAuth, RandomState>,
     clients: BTreeMap<SocketAddr, String>,
+}
+
+struct RandomState {
+    k0: u64,
+    k1: u64,
+}
+
+fn new_hashmap_keys() -> (u64, u64) {
+    #[cfg(not(feature = "std"))]
+    {
+        use rand::Rng;
+        use rand::TryRngCore;
+        let mut rng = rand::rngs::OsRng.unwrap_err();
+        rng.random()
+    }
+    #[cfg(feature = "std")]
+    {
+        use rand::Rng;
+        let mut rng = rand::rng();
+        rng.random()
+    }
+}
+
+impl RandomState {
+    fn new() -> Self {
+        #[cfg(not(feature = "std"))]
+        {
+            let (k0, k1) = new_hashmap_keys();
+            RandomState { k0, k1 }
+        }
+        #[cfg(feature = "std")]
+        {
+            std::thread_local!(static KEYS: core::cell::Cell<(u64, u64)> = {
+                core::cell::Cell::new(new_hashmap_keys())
+            });
+
+            KEYS.with(|keys| {
+                let (k0, k1) = keys.get();
+                keys.set((k0.wrapping_add(1), k1));
+                RandomState { k0, k1 }
+            })
+        }
+    }
+}
+
+impl core::hash::BuildHasher for RandomState {
+    type Hasher = SipHasher;
+    fn build_hasher(&self) -> Self::Hasher {
+        SipHasher::new_with_keys(self.k0, self.k1)
+    }
+}
+
+fn new_hash<K, V>() -> HashMap<K, V, RandomState> {
+    HashMap::with_hasher(RandomState::new())
 }
 
 impl LongTermServerAuth {
@@ -403,8 +460,8 @@ impl LongTermServerAuth {
         Self {
             nonce_expiry_duration: DEFAULT_NONCE_EXPIRY_DURATION,
             realm,
-            nonces: BTreeMap::default(),
-            users: BTreeMap::default(),
+            nonces: new_hash(),
+            users: new_hash(),
             clients: BTreeMap::default(),
         }
     }
