@@ -254,9 +254,11 @@ impl LongTermClientAuth {
         mut msg: W,
     ) -> Result<W, StunWriteError> {
         if let Some(auth) = self.auth.auth() {
-            msg.add_attribute(&Nonce::new(&auth.nonce)?)?;
-            msg.add_attribute(&Realm::new(&auth.realm)?)?;
-            msg.add_attribute(&Username::new(&auth.username)?)?;
+            if !msg.is_response() {
+                msg.add_attribute(&Nonce::new(&auth.nonce)?)?;
+                msg.add_attribute(&Realm::new(&auth.realm)?)?;
+                msg.add_attribute(&Username::new(&auth.username)?)?;
+            }
             msg.add_message_integrity_with_key(&auth.key, auth.algo)?;
             Ok(msg)
         } else {
@@ -707,6 +709,7 @@ impl LongTermServerAuth {
                     integrity: None,
                 });
             }
+            self.clients.insert(from, username.username().to_string());
             Ok(LongTermValidation::Validated(client.key_and_algo.0))
         }
     }
@@ -1193,6 +1196,52 @@ mod tests {
                 reason: AuthErrorReason::Unauthorized,
                 integrity: None
             })
+        ));
+    }
+
+    #[test]
+    fn long_term_client_request() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+
+        let user = test
+            .client
+            .credentials
+            .as_ref()
+            .unwrap()
+            .username()
+            .to_string();
+
+        let request = Message::builder_request(BINDING, MessageWriteVec::new());
+        let request = test
+            .server
+            .sign_outgoing_message(request, &user, test.client_addr)
+            .unwrap();
+        let request = request.finish();
+        let request = Message::from_bytes(&request).unwrap();
+        trace!("sending request to client {request}");
+        assert!(matches!(
+            test.client.validate_incoming_message(&request).unwrap(),
+            LongTermValidation::Validated(IntegrityAlgorithm::Sha1)
+        ));
+
+        let response = Message::builder_success(&request, MessageWriteVec::new());
+        let response = test.client.sign_outgoing_message(response).unwrap();
+        let response = response.finish();
+        let response = Message::from_bytes(&response).unwrap();
+        trace!("sending response to server {response}");
+        assert!(matches!(
+            test.server
+                .validate_incoming_message(&response, test.client_addr, now)
+                .unwrap(),
+            LongTermValidation::Validated(IntegrityAlgorithm::Sha1)
         ));
     }
 }
