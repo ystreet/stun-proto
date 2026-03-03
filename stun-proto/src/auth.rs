@@ -397,7 +397,9 @@ pub struct LongTermServerAuth {
     realm: String,
     nonces: HashMap<SocketAddr, ClientNonce, RandomState>,
     users: HashMap<String, ClientAuth, RandomState>,
+    // remote address -> username
     clients: BTreeMap<SocketAddr, String>,
+    backup_integrity: IntegrityKey,
 }
 
 struct RandomState {
@@ -457,12 +459,19 @@ fn new_hash<K, V>() -> HashMap<K, V, RandomState> {
 impl LongTermServerAuth {
     /// Construct an authentication method for long term credential handling on a server.
     pub fn new(realm: String) -> Self {
+        // only used to prevent username retrieval through timing attacks. This is not a master key
+        // bypass :).
+        let backup_credentials =
+            LongTermCredentials::new("default-user".to_string(), "default-password".to_string());
         Self {
             nonce_expiry_duration: DEFAULT_NONCE_EXPIRY_DURATION,
-            realm,
+            realm: realm.clone(),
             nonces: new_hash(),
             users: new_hash(),
             clients: BTreeMap::default(),
+            backup_integrity: backup_credentials
+                .to_key(realm)
+                .make_key(IntegrityAlgorithm::Sha1),
         }
     }
     /// The realm used for this server.
@@ -675,18 +684,26 @@ impl LongTermServerAuth {
             //      an error code of 401 (Unauthorized).  It MUST include REALM and
             //      NONCE attributes and SHOULD NOT include the USERNAME or MESSAGE-
             //      INTEGRITY attribute.
-            let client = self.users.get(username.username());
-            if client.map_or(true, |client| {
-                msg.validate_integrity_with_key(&client.key_and_algo.1)
-                    .is_err()
-            }) {
+            let Some(client) = self.users.get(username.username()) else {
+                // unknown username will still run integrity checks (to avoid username retrieval
+                // through timing attacks) but always return integrity failed.
+                let _ = msg.validate_integrity_with_key(&self.backup_integrity);
+                trace!("integrity failed");
+                return Err(AuthError {
+                    reason: AuthErrorReason::Unauthorized,
+                    integrity: None,
+                });
+            };
+            if msg
+                .validate_integrity_with_key(&client.key_and_algo.1)
+                .is_err()
+            {
                 trace!("integrity failed");
                 return Err(AuthError {
                     reason: AuthErrorReason::Unauthorized,
                     integrity: None,
                 });
             }
-            let client = client.unwrap();
             Ok(LongTermValidation::Validated(client.key_and_algo.0))
         }
     }
