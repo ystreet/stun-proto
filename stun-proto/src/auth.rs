@@ -600,21 +600,24 @@ impl LongTermServerAuth {
         from: SocketAddr,
         now: Instant,
     ) -> Result<LongTermValidation, AuthError> {
-        let ret = if let Some(auth) = self
-            .clients
-            .get(&from)
-            .and_then(|user| self.users.get(user))
-        {
-            msg.validate_integrity_with_key(&auth.key_and_algo.1)
-        } else {
-            Err(ValidateError::IntegrityFailed)
-        };
         if msg.is_response() {
-            ret.map(LongTermValidation::Validated)
-                .map_err(|e| AuthError {
-                    reason: e.into(),
+            if let Some(auth) = self
+                .clients
+                .get(&from)
+                .and_then(|user| self.users.get(user))
+            {
+                msg.validate_integrity_with_key(&auth.key_and_algo.1)
+                    .map(LongTermValidation::Validated)
+                    .map_err(|e| AuthError {
+                        reason: e.into(),
+                        integrity: None,
+                    })
+            } else {
+                Err(AuthError {
+                    reason: AuthErrorReason::IntegrityFailed,
                     integrity: None,
                 })
+            }
         } else {
             let mut integrity = None;
             let mut username = None;
