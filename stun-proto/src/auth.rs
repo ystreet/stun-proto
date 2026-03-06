@@ -18,7 +18,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 
 use stun_types::attribute::{
-    pad_attribute_len, ErrorCode, MessageIntegrity, Nonce, Realm, Username,
+    pad_attribute_len, ErrorCode, MessageIntegrity, MessageIntegritySha256, Nonce, Realm, Username,
 };
 use stun_types::message::{
     IntegrityAlgorithm, IntegrityKey, LongTermCredentials, Message, MessageClass,
@@ -275,6 +275,13 @@ impl LongTermClientAuth {
     ) -> Result<LongTermValidation, AuthError> {
         let ret = if let Some(auth) = self.auth.auth() {
             msg.validate_integrity_with_key(&auth.key)
+                .map_err(|e| match e {
+                    ValidateError::IntegrityFailed
+                    | ValidateError::Parse(StunParseError::MissingAttribute(
+                        MessageIntegrity::TYPE | MessageIntegritySha256::TYPE,
+                    )) => ValidateError::IntegrityFailed,
+                    e => e,
+                })
         } else {
             Err(ValidateError::IntegrityFailed)
         };
@@ -292,7 +299,7 @@ impl LongTermClientAuth {
                     }
                 }
                 if let Ok(error_code) = error_code {
-                    let reason = match error_code.code() {
+                    match error_code.code() {
                         ErrorCode::UNAUTHORIZED
                             if !matches!(self.auth, AuthState::Authenticated(_)) =>
                         {
@@ -328,10 +335,12 @@ impl LongTermClientAuth {
                                 return Ok(LongTermValidation::ResendRequest(ret.ok()));
                             } else {
                                 // possible DoS?
-                                AuthErrorReason::Unauthorized
+                                return Err(AuthError {
+                                    reason: AuthErrorReason::Unauthorized,
+                                    integrity: None,
+                                });
                             }
                         }
-                        ErrorCode::BAD_REQUEST => AuthErrorReason::BadRequest,
                         ErrorCode::STALE_NONCE => {
                             if let Some((new_nonce, new_realm)) = is_valid_stale_nonce(msg) {
                                 self.auth.replace_nonce(
@@ -349,21 +358,15 @@ impl LongTermClientAuth {
                                         .unwrap_or_default();
                                 return Ok(LongTermValidation::ResendRequest(ret.ok()));
                             }
-                            AuthErrorReason::IntegrityFailed
                         }
-                        _ => {
-                            return ret
-                                .map(LongTermValidation::Validated)
-                                .map_err(|e| AuthError {
-                                    reason: e.into(),
-                                    integrity: None,
-                                })
-                        }
+                        _ => (),
                     };
-                    return Err(AuthError {
-                        reason,
-                        integrity: ret.ok(),
-                    });
+                    return ret
+                        .map(LongTermValidation::Validated)
+                        .map_err(|e| AuthError {
+                            reason: e.into(),
+                            integrity: None,
+                        });
                 }
             } else if msg.has_class(MessageClass::Success) && ret.is_ok() {
                 self.auth.as_authenticated();
@@ -739,7 +742,7 @@ fn is_valid_stale_nonce(msg: &Message<'_>) -> Option<(Nonce, Realm)> {
 mod tests {
     use stun_types::{
         attribute::{MessageIntegritySha256, Userhash},
-        message::{MessageWriteVec, BINDING},
+        message::{MessageType, MessageWriteVec, TransactionId, BINDING},
     };
 
     use super::*;
@@ -1130,6 +1133,254 @@ mod tests {
     }
 
     #[test]
+    fn long_term_full_auth_client_stale_nonce_missing_attributes() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        for atype in [Realm::TYPE, Nonce::TYPE] {
+            let mut test = LongTermTest::new();
+            test.initial_auth(now);
+            assert!(matches!(
+                test.full_auth(now),
+                Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            ));
+
+            let mut response = Message::builder(
+                MessageType::from_class_method(MessageClass::Error, BINDING),
+                TransactionId::generate(),
+                MessageWriteVec::new(),
+            );
+            response
+                .add_attribute(&ErrorCode::builder(ErrorCode::STALE_NONCE).build().unwrap())
+                .unwrap();
+            if atype != Realm::TYPE {
+                response
+                    .add_attribute(&Realm::new(test.server.realm()).unwrap())
+                    .unwrap();
+            }
+            if atype != Nonce::TYPE {
+                response
+                    .add_attribute(
+                        &Nonce::new(test.server.nonce_for_client(test.client_addr).unwrap())
+                            .unwrap(),
+                    )
+                    .unwrap();
+            }
+            let response = Message::from_bytes(&response).unwrap();
+            assert!(matches!(
+                test.client.validate_incoming_message(&response),
+                Err(AuthError {
+                    reason: AuthErrorReason::IntegrityFailed,
+                    integrity: None,
+                })
+            ));
+        }
+    }
+
+    #[test]
+    fn long_term_full_auth_client_bad_request_authed() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+
+        let mut response = Message::builder(
+            MessageType::from_class_method(MessageClass::Error, BINDING),
+            TransactionId::generate(),
+            MessageWriteVec::new(),
+        );
+        response
+            .add_attribute(&ErrorCode::builder(ErrorCode::BAD_REQUEST).build().unwrap())
+            .unwrap();
+        let response = test
+            .server
+            .sign_outgoing_message(
+                response,
+                test.client.credentials.as_ref().unwrap().username(),
+                test.client_addr,
+            )
+            .unwrap()
+            .finish();
+        let response = Message::from_bytes(&response).unwrap();
+        assert!(matches!(
+            test.client.validate_incoming_message(&response),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+    }
+
+    #[test]
+    fn long_term_full_auth_client_bad_request_unauthed() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+
+        let mut response = Message::builder(
+            MessageType::from_class_method(MessageClass::Error, BINDING),
+            TransactionId::generate(),
+            MessageWriteVec::new(),
+        );
+        response
+            .add_attribute(&ErrorCode::builder(ErrorCode::BAD_REQUEST).build().unwrap())
+            .unwrap();
+        let response = response.finish();
+        let response = Message::from_bytes(&response).unwrap();
+        assert!(matches!(
+            test.client.validate_incoming_message(&response),
+            Err(AuthError {
+                reason: AuthErrorReason::IntegrityFailed,
+                integrity: None,
+            })
+        ));
+    }
+
+    #[test]
+    fn long_term_full_auth_client_other_error_response_unauthed() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+
+        let mut response = Message::builder(
+            MessageType::from_class_method(MessageClass::Error, BINDING),
+            TransactionId::generate(),
+            MessageWriteVec::new(),
+        );
+        response
+            .add_attribute(
+                &ErrorCode::builder(ErrorCode::WRONG_CREDENTIALS)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let response = response.finish();
+        let response = Message::from_bytes(&response).unwrap();
+        assert!(matches!(
+            test.client.validate_incoming_message(&response),
+            Err(AuthError {
+                reason: AuthErrorReason::IntegrityFailed,
+                integrity: None,
+            })
+        ));
+    }
+
+    #[test]
+    fn long_term_full_auth_client_other_error_response_authed() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+
+        let mut response = Message::builder(
+            MessageType::from_class_method(MessageClass::Error, BINDING),
+            TransactionId::generate(),
+            MessageWriteVec::new(),
+        );
+        response
+            .add_attribute(
+                &ErrorCode::builder(ErrorCode::WRONG_CREDENTIALS)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let response = test
+            .server
+            .sign_outgoing_message(
+                response,
+                test.client.credentials.as_ref().unwrap().username(),
+                test.client_addr,
+            )
+            .unwrap()
+            .finish();
+        let response = Message::from_bytes(&response).unwrap();
+        assert!(matches!(
+            test.client.validate_incoming_message(&response),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+    }
+
+    #[test]
+    fn long_term_full_auth_client_success_response_unauthed() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+
+        let response = Message::builder(
+            MessageType::from_class_method(MessageClass::Success, BINDING),
+            TransactionId::generate(),
+            MessageWriteVec::new(),
+        );
+        let response = response.finish();
+        let response = Message::from_bytes(&response).unwrap();
+        assert!(matches!(
+            test.client.validate_incoming_message(&response),
+            Err(AuthError {
+                reason: AuthErrorReason::IntegrityFailed,
+                integrity: None,
+            })
+        ));
+    }
+
+    #[test]
+    fn long_term_full_auth_client_success_response_authed() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+
+        let response = Message::builder(
+            MessageType::from_class_method(MessageClass::Success, BINDING),
+            TransactionId::generate(),
+            MessageWriteVec::new(),
+        );
+        let response = test
+            .server
+            .sign_outgoing_message(
+                response,
+                test.client.credentials.as_ref().unwrap().username(),
+                test.client_addr,
+            )
+            .unwrap()
+            .finish();
+        let response = Message::from_bytes(&response).unwrap();
+        assert!(matches!(
+            test.client.validate_incoming_message(&response),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+    }
+
+    #[test]
     fn long_term_initial_auth_wrong_password() {
         let _log = crate::tests::test_init_log();
         let now = Instant::ZERO;
@@ -1165,6 +1416,27 @@ mod tests {
     }
 
     #[test]
+    fn long_term_server_change_password() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.client.set_credentials(LongTermCredentials::new(
+            test.client.credentials().unwrap().username().to_string(),
+            "wrong-password".to_string(),
+        ));
+        test.server.add_user(LongTermCredentials::new(
+            test.client.credentials().unwrap().username().to_string(),
+            "wrong-password".to_string(),
+        ));
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+    }
+
+    #[test]
     fn long_term_initial_auth_wrong_user() {
         let _log = crate::tests::test_init_log();
         let now = Instant::ZERO;
@@ -1192,6 +1464,50 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
+            Err(AuthError {
+                reason: AuthErrorReason::Unauthorized,
+                integrity: None
+            })
+        ));
+    }
+
+    #[test]
+    fn long_term_server_add_user() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.client.set_credentials(LongTermCredentials::new(
+            "wrong-user".to_string(),
+            test.client.credentials().unwrap().password().to_string(),
+        ));
+        test.server.add_user(LongTermCredentials::new(
+            "wrong-user".to_string(),
+            test.client.credentials().unwrap().password().to_string(),
+        ));
+        test.initial_auth(now);
+        assert!(matches!(
+            test.full_auth(now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+    }
+
+    #[test]
+    fn long_term_server_remove_user() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        test.initial_auth(now);
+        test.server
+            .remove_user(test.client.credentials.as_ref().unwrap().username());
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = Message::from_bytes(&msg).unwrap();
+        assert!(!msg_has_no_auth(&msg));
+        assert!(matches!(
+            test.server
+                .validate_incoming_message(&msg, test.client_addr, now),
             Err(AuthError {
                 reason: AuthErrorReason::Unauthorized,
                 integrity: None
