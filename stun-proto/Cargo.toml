@@ -29,7 +29,7 @@ criterion.workspace = true
 
 [features]
 default = ["std"]
-std = ["stun-types/std", "thiserror/std", "rand/thread_rng"]
+std = ["stun-types/std", "thiserror/std", "rand/thread_rng", "sans-io-time/std"]
 
 [[bench]]
 name = "agent_send"
