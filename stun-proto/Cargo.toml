@@ -39,5 +39,13 @@ harness = false
 name = "agent_recv"
 harness = false
 
+[[bench]]
+name = "auth_short_term"
+harness = false
+
+[[bench]]
+name = "auth_long_term"
+harness = false
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin)'] }
