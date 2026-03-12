@@ -23,7 +23,7 @@ subtle.workspace = true
 tracing.workspace = true
 arbitrary ={ workspace = true, optional = true }
 thiserror.workspace = true
-smallvec = "1.6.1"
+smallvec.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true
