@@ -1222,6 +1222,14 @@ impl LongTermServerAuth {
             Ok(LongTermValidation::Validated(password_algo))
         }
     }
+
+    /// Remove a client from this server.
+    ///
+    /// Used when the STUN usage requires to remove an authenticated client from accessing the
+    /// server.
+    pub fn remove_client(&mut self, client: SocketAddr) {
+        self.clients.remove(&client);
+    }
 }
 
 fn is_valid_stale_nonce(msg: &Message<'_>) -> Option<(Nonce, Realm)> {
@@ -2480,6 +2488,36 @@ mod tests {
                 reason,
                 integrity,
             }) if reason == AuthErrorReason::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn long_term_server_remove_client() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let mut test = LongTermTest::new();
+        assert!(matches!(
+            test.initial_auth(now),
+            Ok(LongTermValidation::ResendRequest(None))
+        ));
+        assert!(matches!(
+            test.full_auth(now, IntegrityAlgorithm::Sha1),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        ));
+
+        test.server.remove_client(test.client_addr);
+        let credentials = test.client.credentials().cloned().unwrap();
+        test.client = LongTermClientAuth::new();
+        test.client.set_credentials(credentials);
+
+        assert!(matches!(
+            test.initial_auth(now),
+            Ok(LongTermValidation::ResendRequest(None))
+        ));
+        assert!(matches!(
+            test.full_auth(now, IntegrityAlgorithm::Sha1),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
         ));
     }
 }
