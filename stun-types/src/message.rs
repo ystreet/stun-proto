@@ -954,7 +954,7 @@ impl core::fmt::Display for Message<'_> {
 }
 
 /// The supported hashing algorithms for ensuring integrity of a [`Message`]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IntegrityAlgorithm {
     /// SHA-1 algorithm
     Sha1,
