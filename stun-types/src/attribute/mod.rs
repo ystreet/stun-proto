@@ -589,7 +589,7 @@ impl core::fmt::Display for RawAttribute<'_> {
                 display_attr!(self, f, MessageIntegritySha256)
             }
             PasswordAlgorithm::TYPE => display_attr!(self, f, PasswordAlgorithm),
-            //UserHash::TYPE => display_attr!(self, UserHash),
+            Userhash::TYPE => display_attr!(self, f, Userhash),
             XorMappedAddress::TYPE => display_attr!(self, f, XorMappedAddress),
             PasswordAlgorithms::TYPE => display_attr!(self, f, PasswordAlgorithms),
             AlternateDomain::TYPE => display_attr!(self, f, AlternateDomain),
