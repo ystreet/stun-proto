@@ -48,12 +48,9 @@ fn server_authorized_response(
     server: &mut LongTermServerAuth,
     msg: &Message<'_>,
     client_addr: SocketAddr,
-    user: &str,
 ) -> MessageWriteVec {
     let response = Message::builder_success(msg, MessageWriteVec::new());
-    server
-        .sign_outgoing_message(response, user, client_addr)
-        .unwrap()
+    server.sign_outgoing_message(response, client_addr).unwrap()
 }
 
 fn initial_auth(
@@ -99,13 +96,7 @@ fn complete_auth(
             .unwrap(),
         LongTermValidation::Validated(IntegrityAlgorithm::Sha1)
     ));
-    let response = server_authorized_response(
-        server,
-        &request,
-        from,
-        client.credentials().unwrap().username(),
-    )
-    .finish();
+    let response = server_authorized_response(server, &request, from).finish();
     let response = Message::from_bytes(&response).unwrap();
     assert!(matches!(
         client.validate_incoming_message(&response),
@@ -258,9 +249,7 @@ fn bench_auth_long_term(c: &mut Criterion) {
                     (msg, server)
                 },
                 |(msg, mut server)| {
-                    let msg = server
-                        .sign_outgoing_message(msg, credentials.username(), client_addr)
-                        .unwrap();
+                    let msg = server.sign_outgoing_message(msg, client_addr).unwrap();
                     (msg, server)
                 },
                 BatchSize::SmallInput,
@@ -282,7 +271,7 @@ fn bench_auth_long_term(c: &mut Criterion) {
                     complete_auth(&mut client, &mut server, client_addr, now, software);
                     let msg = request(software);
                     let msg = server
-                        .sign_outgoing_message(msg, credentials.username(), client_addr)
+                        .sign_outgoing_message(msg, client_addr)
                         .unwrap()
                         .finish();
                     (msg, client)

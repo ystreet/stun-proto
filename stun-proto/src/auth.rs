@@ -921,7 +921,7 @@ impl LongTermServerAuth {
     }
 
     /// Number of bytes required to successfully add message integrity to an outgoing message.
-    pub fn message_signature_bytes(&self, to: SocketAddr, user: &str, is_request: bool) -> usize {
+    pub fn message_signature_bytes(&self, to: SocketAddr, is_request: bool) -> usize {
         if let Some(nonce_len) = self
             .nonces
             .nonces
@@ -929,19 +929,14 @@ impl LongTermServerAuth {
             .map(|nonce| 4 + pad_attribute_len(nonce.value.len()))
         {
             let user_algo_len = self
-                .users
-                .get(user)
-                .map(|auth| {
-                    auth.keys
-                        .keys()
-                        .map(|algo| bytes_for_integrity(*algo))
-                        .sum::<usize>()
-                })
+                .clients
+                .get(&to)
+                .map(|(_user, algo)| bytes_for_integrity(*algo))
                 .unwrap_or_default();
             if is_request {
-                nonce_len + user_algo_len + 4 + pad_attribute_len(self.realm.len())
-            } else {
                 user_algo_len
+            } else {
+                nonce_len + user_algo_len + 4 + pad_attribute_len(self.realm.len())
             }
         } else {
             0
@@ -953,7 +948,6 @@ impl LongTermServerAuth {
     pub fn sign_outgoing_message<W: MessageWrite>(
         &mut self,
         mut msg: W,
-        user: &str,
         to: SocketAddr,
     ) -> Result<W, StunWriteError> {
         // this is an address we have received data from succesfully and generated a nonce.
@@ -1415,14 +1409,8 @@ mod tests {
         let credentials = LongTermCredentials::new("user".to_string(), "password".to_string());
         auth.add_user(credentials.clone());
         // no negotiation with a client yet so cannot currently sign messages
-        assert_eq!(
-            auth.message_signature_bytes(client_addr, credentials.username(), false),
-            0
-        );
-        assert_eq!(
-            auth.message_signature_bytes(client_addr, credentials.username(), true),
-            0
-        );
+        assert_eq!(auth.message_signature_bytes(client_addr, false), 0);
+        assert_eq!(auth.message_signature_bytes(client_addr, true), 0);
         auth.add_supported_integrity(IntegrityAlgorithm::Sha256);
         assert_eq!(
             auth.supported_integrity(),
@@ -1438,9 +1426,7 @@ mod tests {
         assert_eq!(auth.anonymous_username(), Feature::Auto);
 
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = auth
-            .sign_outgoing_message(msg, credentials.username(), client_addr)
-            .unwrap();
+        let msg = auth.sign_outgoing_message(msg, client_addr).unwrap();
         let request = msg.finish();
         let request = Message::from_bytes(&request).unwrap();
         assert!(msg_has_no_auth(&request));
@@ -1512,10 +1498,9 @@ mod tests {
                 })
             ));
             let response = server_unauthorized_response(&msg);
-            let user = self.client.credentials().unwrap().username().to_string();
             let response = self
                 .server
-                .sign_outgoing_message(response, &user, self.client_addr)
+                .sign_outgoing_message(response, self.client_addr)
                 .unwrap()
                 .finish();
             let response = Message::from_bytes(&response).unwrap();
@@ -1540,11 +1525,7 @@ mod tests {
             let response = Message::builder_success(&msg, MessageWriteVec::new());
             let response = self
                 .server
-                .sign_outgoing_message(
-                    response,
-                    self.client.credentials().unwrap().username(),
-                    self.client_addr,
-                )
+                .sign_outgoing_message(response, self.client_addr)
                 .unwrap();
             let response = response.finish();
             let response = Message::from_bytes(&response).unwrap();
@@ -1596,20 +1577,12 @@ mod tests {
             Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
         ));
         assert_eq!(
-            test.server.message_signature_bytes(
-                test.client_addr,
-                test.client.credentials().unwrap().username(),
-                true
-            ),
-            56
+            test.server.message_signature_bytes(test.client_addr, true),
+            24
         );
         assert_eq!(
-            test.server.message_signature_bytes(
-                test.client_addr,
-                test.client.credentials().unwrap().username(),
-                false
-            ),
-            24
+            test.server.message_signature_bytes(test.client_addr, false),
+            56
         );
     }
 
@@ -1630,20 +1603,12 @@ mod tests {
             Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
         ));
         assert_eq!(
-            test.server.message_signature_bytes(
-                test.client_addr,
-                test.client.credentials().unwrap().username(),
-                true
-            ),
-            72
+            test.server.message_signature_bytes(test.client_addr, true),
+            24
         );
         assert_eq!(
-            test.server.message_signature_bytes(
-                test.client_addr,
-                test.client.credentials().unwrap().username(),
-                false
-            ),
-            24
+            test.server.message_signature_bytes(test.client_addr, false),
+            72
         );
     }
 
@@ -1668,20 +1633,12 @@ mod tests {
             Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha256))
         ));
         assert_eq!(
-            test.server.message_signature_bytes(
-                test.client_addr,
-                test.client.credentials().unwrap().username(),
-                true
-            ),
-            84
+            test.server.message_signature_bytes(test.client_addr, true),
+            36
         );
         assert_eq!(
-            test.server.message_signature_bytes(
-                test.client_addr,
-                test.client.credentials().unwrap().username(),
-                false
-            ),
-            36
+            test.server.message_signature_bytes(test.client_addr, false),
+            84
         );
     }
 
@@ -1959,11 +1916,7 @@ mod tests {
             .unwrap();
         let response = test
             .server
-            .sign_outgoing_message(
-                response,
-                test.client.credentials.as_ref().unwrap().username(),
-                test.client_addr,
-            )
+            .sign_outgoing_message(response, test.client_addr)
             .unwrap()
             .finish();
         let response = Message::from_bytes(&response).unwrap();
@@ -2074,11 +2027,7 @@ mod tests {
             .unwrap();
         let response = test
             .server
-            .sign_outgoing_message(
-                response,
-                test.client.credentials.as_ref().unwrap().username(),
-                test.client_addr,
-            )
+            .sign_outgoing_message(response, test.client_addr)
             .unwrap()
             .finish();
         let response = Message::from_bytes(&response).unwrap();
@@ -2141,11 +2090,7 @@ mod tests {
         );
         let response = test
             .server
-            .sign_outgoing_message(
-                response,
-                test.client.credentials.as_ref().unwrap().username(),
-                test.client_addr,
-            )
+            .sign_outgoing_message(response, test.client_addr)
             .unwrap()
             .finish();
         let response = Message::from_bytes(&response).unwrap();
@@ -2186,7 +2131,7 @@ mod tests {
         let response = server_unauthorized_response(&msg);
         let response = test
             .server
-            .sign_outgoing_message(response, &user, test.client_addr)
+            .sign_outgoing_message(response, test.client_addr)
             .unwrap()
             .finish();
         let response = Message::from_bytes(&response).unwrap();
@@ -2229,7 +2174,6 @@ mod tests {
         let now = Instant::ZERO;
 
         let mut test = LongTermTest::new();
-        let expected_user = test.client.credentials().unwrap().username().to_string();
         test.client.set_credentials(LongTermCredentials::new(
             "wrong-user".to_string(),
             test.client.credentials().unwrap().password().to_string(),
@@ -2254,7 +2198,7 @@ mod tests {
         let response = server_unauthorized_response(&msg);
         let response = test
             .server
-            .sign_outgoing_message(response, &expected_user, test.client_addr)
+            .sign_outgoing_message(response, test.client_addr)
             .unwrap()
             .finish();
         let response = Message::from_bytes(&response).unwrap();
@@ -2332,18 +2276,10 @@ mod tests {
             Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
         ));
 
-        let user = test
-            .client
-            .credentials
-            .as_ref()
-            .unwrap()
-            .username()
-            .to_string();
-
         let request = Message::builder_request(BINDING, MessageWriteVec::new());
         let request = test
             .server
-            .sign_outgoing_message(request, &user, test.client_addr)
+            .sign_outgoing_message(request, test.client_addr)
             .unwrap();
         let request = request.finish();
         let request = Message::from_bytes(&request).unwrap();
@@ -2387,10 +2323,9 @@ mod tests {
             })
         ));
         let response = server_unauthorized_response(&msg);
-        let user = test.client.credentials().unwrap().username().to_string();
         let response = test
             .server
-            .sign_outgoing_message(response, &user, test.client_addr)
+            .sign_outgoing_message(response, test.client_addr)
             .unwrap()
             .finish();
         let response = Message::from_bytes(&response).unwrap();
@@ -2505,10 +2440,9 @@ mod tests {
             })
         ));
         let response = server_unauthorized_response(&msg);
-        let user = test.client.credentials().unwrap().username().to_string();
         let response = test
             .server
-            .sign_outgoing_message(response, &user, test.client_addr)
+            .sign_outgoing_message(response, test.client_addr)
             .unwrap()
             .finish();
         let response = Message::from_bytes(&response).unwrap();
