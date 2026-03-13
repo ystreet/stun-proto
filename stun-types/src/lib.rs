@@ -11,6 +11,8 @@
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![deny(clippy::std_instead_of_core)]
+#![deny(clippy::std_instead_of_alloc)]
 
 //! # stun-types
 //!
