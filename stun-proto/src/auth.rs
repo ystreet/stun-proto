@@ -1126,6 +1126,8 @@ impl LongTermServerAuth {
                             });
                         }
                         algo.algorithm().as_integrity()
+                    } else if password_algo.is_none() && password_algos.is_none() {
+                        IntegrityAlgorithm::Sha1
                     } else {
                         trace!(
                             "bad request due to missing password algorithm, or password algorithms"
@@ -1684,6 +1686,56 @@ mod tests {
                     Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha256))
                 ));
             }
+        }
+    }
+
+    #[test]
+    fn long_term_full_auth_uses_sha1() {
+        let _log = crate::tests::test_init_log();
+        let now = Instant::ZERO;
+
+        let auths = [
+            (
+                [IntegrityAlgorithm::Sha1].as_ref(),
+                [IntegrityAlgorithm::Sha1].as_ref(),
+            ),
+            (
+                [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256].as_ref(),
+                [IntegrityAlgorithm::Sha1].as_ref(),
+            ),
+            (
+                [IntegrityAlgorithm::Sha256, IntegrityAlgorithm::Sha1].as_ref(),
+                [IntegrityAlgorithm::Sha1].as_ref(),
+            ),
+            (
+                [IntegrityAlgorithm::Sha1].as_ref(),
+                [IntegrityAlgorithm::Sha1, IntegrityAlgorithm::Sha256].as_ref(),
+            ),
+            (
+                [IntegrityAlgorithm::Sha1].as_ref(),
+                [IntegrityAlgorithm::Sha256, IntegrityAlgorithm::Sha1].as_ref(),
+            ),
+        ];
+
+        for (client, server) in auths.iter() {
+            std::println!("creating test with client auth {client:?} and server auth {server:?}");
+            let mut test = LongTermTest::new();
+            test.client.set_supported_integrity(client[0]);
+            for client in client[1..].iter() {
+                test.client.add_supported_integrity(*client);
+            }
+            test.server.set_supported_integrity(server[0]);
+            for server in server[1..].iter() {
+                test.server.add_supported_integrity(*server);
+            }
+            assert!(matches!(
+                test.initial_auth(now),
+                Ok(LongTermValidation::ResendRequest(None))
+            ));
+            assert!(matches!(
+                test.full_auth(now, IntegrityAlgorithm::Sha1),
+                Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            ));
         }
     }
 
@@ -2488,6 +2540,111 @@ mod tests {
                 reason,
                 integrity,
             }) if reason == AuthErrorReason::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn long_term_rfc5389_backward_compat() {
+        let _log = crate::tests::test_init_log();
+
+        let now = Instant::ZERO;
+        let mut test = LongTermTest::new();
+        test.client
+            .add_supported_integrity(IntegrityAlgorithm::Sha256);
+        test.server
+            .add_supported_integrity(IntegrityAlgorithm::Sha256);
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = Message::from_bytes(&msg).unwrap();
+        assert!(matches!(
+            test.server
+                .validate_incoming_message(&msg, test.client_addr, now),
+            Err(AuthError {
+                reason: AuthErrorReason::Unauthorized,
+                integrity: None,
+            })
+        ));
+        let response = server_unauthorized_response(&msg);
+        let response = test
+            .server
+            .sign_outgoing_message(response, test.client_addr)
+            .unwrap()
+            .finish();
+        let response = Message::from_bytes(&response).unwrap();
+        let mut new_response = Message::builder(
+            response.get_type(),
+            response.transaction_id(),
+            MessageWriteVec::new(),
+        );
+        let mut old_nonce = None;
+        for (_offset, attr) in response.iter_attributes() {
+            if attr.get_type() == Nonce::TYPE {
+                // strip the password algorithms indication from the nonce
+                let nonce = Nonce::from_raw_ref(&attr).unwrap();
+                let mut security = NonceSecurityBits::from_nonce(nonce.nonce()).unwrap();
+                assert!(security.password_algorithms());
+                security.set_password_algorithms(false);
+                let mut new_nonce = security.as_string();
+                new_nonce.push_str(&nonce.nonce()[LONG_TERM_RFC8489_NONCE_COOKIE.len() + 4..]);
+                new_response
+                    .add_attribute(&Nonce::new(&new_nonce).unwrap())
+                    .unwrap();
+                old_nonce = Some(nonce);
+            } else if ![
+                PasswordAlgorithm::TYPE,
+                PasswordAlgorithms::TYPE,
+                MessageIntegrity::TYPE,
+                MessageIntegritySha256::TYPE,
+            ]
+            .contains(&attr.get_type())
+            {
+                new_response.add_attribute(&attr).unwrap();
+            }
+        }
+        let old_nonce = old_nonce.unwrap();
+        let response = new_response.finish();
+        let response = Message::from_bytes(&response).unwrap();
+        let ret = test.client.validate_incoming_message(&response);
+        assert!(matches!(ret, Ok(LongTermValidation::ResendRequest(None))));
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = Message::from_bytes(&msg).unwrap();
+        let mut new_request =
+            Message::builder(msg.get_type(), msg.transaction_id(), MessageWriteVec::new());
+        for (_offset, attr) in msg.iter_attributes() {
+            if attr.get_type() == Nonce::TYPE {
+                new_request.add_attribute(&old_nonce).unwrap();
+            } else if ![
+                PasswordAlgorithm::TYPE,
+                PasswordAlgorithms::TYPE,
+                MessageIntegrity::TYPE,
+                MessageIntegritySha256::TYPE,
+            ]
+            .contains(&attr.get_type())
+            {
+                new_request.add_attribute(&attr).unwrap();
+            }
+        }
+        // This is the secure part of this operation. If an attacker can do this, they can control
+        // the connection.  We are doing it for testing to dowgrade the integrity to Md5/Sha1
+        // instead of Sha256 for RFC 5389 backward compatibility.
+        new_request
+            .add_message_integrity(
+                &test
+                    .client
+                    .credentials()
+                    .unwrap()
+                    .to_key(test.server.realm().to_string())
+                    .into(),
+                IntegrityAlgorithm::Sha1,
+            )
+            .unwrap();
+        let msg = new_request.finish();
+        let msg = Message::from_bytes(&msg).unwrap();
+        assert!(matches!(
+            test.server
+                .validate_incoming_message(&msg, test.client_addr, now),
+            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
         ));
     }
 
