@@ -11,7 +11,8 @@
 use core::net::SocketAddr;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use stun_proto::auth::{
-    AuthErrorReason, LongTermClientAuth, LongTermServerAuth, LongTermValidation,
+    LongTermClientAuth, LongTermClientValidation, LongTermServerAuth,
+    LongTermServerAuthErrorReason, LongTermServerValidation,
 };
 use stun_proto::Instant;
 use stun_types::attribute::*;
@@ -68,13 +69,13 @@ fn initial_auth(
     assert!(matches!(
         server
             .validate_incoming_message(&request, from, now),
-        Err(e) if e.reason() == AuthErrorReason::Unauthorized
+        Err(e) if e.reason() == LongTermServerAuthErrorReason::Unauthorized
     ));
     let response = server_unauthorized_response(server, &request, from).finish();
     let response = Message::from_bytes(&response).unwrap();
     assert!(matches!(
         client.validate_incoming_message(&response),
-        Ok(LongTermValidation::ResendRequest(None))
+        Ok(LongTermClientValidation::ResendRequest(None))
     ));
 }
 
@@ -94,13 +95,15 @@ fn complete_auth(
         server
             .validate_incoming_message(&request, from, now)
             .unwrap(),
-        LongTermValidation::Validated(IntegrityAlgorithm::Sha1)
+        LongTermServerValidation::Validated(IntegrityAlgorithm::Sha1)
     ));
     let response = server_authorized_response(server, &request, from).finish();
     let response = Message::from_bytes(&response).unwrap();
     assert!(matches!(
         client.validate_incoming_message(&response),
-        Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+        Ok(LongTermClientValidation::Validated(
+            IntegrityAlgorithm::Sha1
+        ))
     ));
 }
 
@@ -162,7 +165,7 @@ fn bench_auth_long_term(c: &mut Criterion) {
                         server
                             .validate_incoming_message(&incoming, client_addr, now)
                             .unwrap(),
-                        LongTermValidation::Validated(IntegrityAlgorithm::Sha1)
+                        LongTermServerValidation::Validated(IntegrityAlgorithm::Sha1)
                     ));
                     (msg, server)
                 },
@@ -193,7 +196,7 @@ fn bench_auth_long_term(c: &mut Criterion) {
                     assert!(matches!(
                         server
                             .validate_incoming_message(&incoming, client_addr, now),
-                        Err(e) if e.reason() == AuthErrorReason::Unauthorized
+                        Err(e) if e.reason() == LongTermServerAuthErrorReason::Unauthorized
                     ));
                     (msg, server)
                 },
@@ -224,7 +227,7 @@ fn bench_auth_long_term(c: &mut Criterion) {
                     assert!(matches!(
                         server
                             .validate_incoming_message(&incoming, client_addr, now),
-                        Err(e) if e.reason() == AuthErrorReason::Unauthorized
+                        Err(e) if e.reason() == LongTermServerAuthErrorReason::Unauthorized
                     ));
                     (msg, server)
                 },
@@ -280,7 +283,9 @@ fn bench_auth_long_term(c: &mut Criterion) {
                     let incoming = Message::from_bytes(&msg).unwrap();
                     assert!(matches!(
                         client.validate_incoming_message(&incoming),
-                        Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+                        Ok(LongTermClientValidation::Validated(
+                            IntegrityAlgorithm::Sha1
+                        ))
                     ));
                     (msg, client)
                 },

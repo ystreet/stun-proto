@@ -112,7 +112,7 @@ fn bytes_for_integrity(integrity: IntegrityAlgorithm) -> usize {
 
 /// Possible results on authentication validation.
 #[derive(Debug)]
-pub enum LongTermValidation {
+pub enum LongTermClientValidation {
     /// The request should be re-signed and resent as some authentication parameters have changed.
     ResendRequest(Option<IntegrityAlgorithm>),
     /// The STUN message has been validated (possibly) with the algorithm.
@@ -121,16 +121,7 @@ pub enum LongTermValidation {
 
 /// Errors that can occur during an authentication flow.
 #[derive(Debug, Clone, Copy, thiserror::Error, PartialEq, Eq)]
-pub enum AuthErrorReason {
-    /// Parsing error of the message.
-    #[error("{}", .0)]
-    Parse(StunParseError),
-    /// The request is malformed in some way.
-    #[error("The request is malformed in some way")]
-    BadRequest,
-    /// The nonce provided is out of date and must be updated.
-    #[error("The provided nonce is out of date and must be updated")]
-    StaleNonce,
+pub enum LongTermClientAuthErrorReason {
     /// The message is not sufficiently authenticated.
     #[error("The message is not sufficiently authenticated")]
     Unauthorized,
@@ -142,36 +133,27 @@ pub enum AuthErrorReason {
     UnsupportedFeature,
 }
 
-impl From<ValidateError> for AuthErrorReason {
-    fn from(value: ValidateError) -> Self {
-        match value {
-            ValidateError::Parse(e) => Self::Parse(e),
-            ValidateError::IntegrityFailed => Self::IntegrityFailed,
-        }
+impl From<ValidateError> for LongTermClientAuthErrorReason {
+    fn from(_value: ValidateError) -> Self {
+        Self::IntegrityFailed
     }
 }
 
 /// Errors that can occur during an authentication flow.
 #[derive(Debug)]
-pub struct AuthError {
-    reason: AuthErrorReason,
+pub struct LongTermClientAuthError {
+    reason: LongTermClientAuthErrorReason,
     integrity: Option<IntegrityAlgorithm>,
 }
 
-impl AuthError {
+impl LongTermClientAuthError {
     /// The reason for the authentication error.
-    pub fn reason(&self) -> AuthErrorReason {
+    pub fn reason(&self) -> LongTermClientAuthErrorReason {
         self.reason
     }
     /// Any validated integrity that was present on the offending message.
     pub fn integrity(&self) -> Option<IntegrityAlgorithm> {
         self.integrity
-    }
-}
-
-impl From<StunParseError> for AuthErrorReason {
-    fn from(value: StunParseError) -> Self {
-        Self::Parse(value)
     }
 }
 
@@ -422,16 +404,9 @@ impl LongTermClientAuth {
     pub fn validate_incoming_message(
         &mut self,
         msg: &Message<'_>,
-    ) -> Result<LongTermValidation, AuthError> {
+    ) -> Result<LongTermClientValidation, LongTermClientAuthError> {
         let ret = if let Some(auth) = self.auth.auth() {
             msg.validate_integrity_with_key(&auth.key)
-                .map_err(|e| match e {
-                    ValidateError::IntegrityFailed
-                    | ValidateError::Parse(StunParseError::MissingAttribute(
-                        MessageIntegrity::TYPE | MessageIntegritySha256::TYPE,
-                    )) => ValidateError::IntegrityFailed,
-                    e => e,
-                })
         } else {
             Err(ValidateError::IntegrityFailed)
         };
@@ -464,8 +439,8 @@ impl LongTermClientAuth {
                                     // credentials are not changing so therefore must be wrong for
                                     // accessing this server.
                                     if auth.realm == realm.realm() && auth.nonce == nonce.nonce() {
-                                        return Err(AuthError {
-                                            reason: AuthErrorReason::Unauthorized,
+                                        return Err(LongTermClientAuthError {
+                                            reason: LongTermClientAuthErrorReason::Unauthorized,
                                             integrity: None,
                                         });
                                     }
@@ -482,16 +457,16 @@ impl LongTermClientAuth {
                                             .find(|algo| self.supported_integrity.contains(algo))
                                         else {
                                             trace!("No compatible password algorithms supported");
-                                            return Err(AuthError {
-                                                reason: AuthErrorReason::UnsupportedFeature,
+                                            return Err(LongTermClientAuthError {
+                                                reason: LongTermClientAuthErrorReason::UnsupportedFeature,
                                                 integrity: None,
                                             });
                                         };
                                         algo
                                     } else if security.password_algorithms() {
                                         trace!("nonce indicates password algorithms attribute that does not exist on message");
-                                        return Err(AuthError {
-                                            reason: AuthErrorReason::Unauthorized,
+                                        return Err(LongTermClientAuthError {
+                                            reason: LongTermClientAuthErrorReason::Unauthorized,
                                             integrity: None,
                                         });
                                     } else {
@@ -505,16 +480,18 @@ impl LongTermClientAuth {
                                 } else {
                                     if matches!(self.anonymous_username, Feature::Required) {
                                         trace!("nonce does not support anonymous username");
-                                        return Err(AuthError {
-                                            reason: AuthErrorReason::UnsupportedFeature,
+                                        return Err(LongTermClientAuthError {
+                                            reason:
+                                                LongTermClientAuthErrorReason::UnsupportedFeature,
                                             integrity: None,
                                         });
                                     }
                                     if !self.supported_integrity.contains(&IntegrityAlgorithm::Sha1)
                                     {
                                         trace!("nonce does not support integrity other than Sha1");
-                                        return Err(AuthError {
-                                            reason: AuthErrorReason::UnsupportedFeature,
+                                        return Err(LongTermClientAuthError {
+                                            reason:
+                                                LongTermClientAuthErrorReason::UnsupportedFeature,
                                             integrity: None,
                                         });
                                     }
@@ -546,11 +523,11 @@ impl LongTermClientAuth {
                                 });
 
                                 trace!("retry request as credentials have changed");
-                                return Ok(LongTermValidation::ResendRequest(ret.ok()));
+                                return Ok(LongTermClientValidation::ResendRequest(ret.ok()));
                             } else {
                                 // possible DoS?
-                                return Err(AuthError {
-                                    reason: AuthErrorReason::Unauthorized,
+                                return Err(LongTermClientAuthError {
+                                    reason: LongTermClientAuthErrorReason::Unauthorized,
                                     integrity: None,
                                 });
                             }
@@ -570,24 +547,24 @@ impl LongTermClientAuth {
                                         .auth()
                                         .map(|auth| bytes_for_integrity(auth.algo))
                                         .unwrap_or_default();
-                                return Ok(LongTermValidation::ResendRequest(ret.ok()));
+                                return Ok(LongTermClientValidation::ResendRequest(ret.ok()));
                             }
                         }
                         _ => (),
                     };
-                    return ret
-                        .map(LongTermValidation::Validated)
-                        .map_err(|e| AuthError {
+                    return ret.map(LongTermClientValidation::Validated).map_err(|e| {
+                        LongTermClientAuthError {
                             reason: e.into(),
                             integrity: None,
-                        });
+                        }
+                    });
                 }
             } else if msg.has_class(MessageClass::Success) && ret.is_ok() {
                 self.auth.as_authenticated();
             }
         }
-        ret.map(LongTermValidation::Validated)
-            .map_err(|e| AuthError {
+        ret.map(LongTermClientValidation::Validated)
+            .map_err(|e| LongTermClientAuthError {
                 reason: e.into(),
                 integrity: None,
             })
@@ -750,6 +727,57 @@ impl core::hash::BuildHasher for RandomState {
 
 fn new_hash<K, V>() -> HashMap<K, V, RandomState> {
     HashMap::with_hasher(RandomState::new())
+}
+
+/// Possible results on authentication validation.
+#[derive(Debug)]
+pub enum LongTermServerValidation {
+    /// The STUN message has been validated (possibly) with the algorithm.
+    Validated(IntegrityAlgorithm),
+}
+
+/// Errors that can occur during an authentication flow.
+#[derive(Debug, Clone, Copy, thiserror::Error, PartialEq, Eq)]
+pub enum LongTermServerAuthErrorReason {
+    /// The message is not sufficiently authenticated.
+    #[error("The message is not sufficiently authenticated")]
+    Unauthorized,
+    /// Message failed integrity checks.
+    #[error("The message failed integrity checks")]
+    IntegrityFailed,
+    /// A required feature is not supported.
+    #[error("A required feature is not supported")]
+    UnsupportedFeature,
+    /// The request message is not well-formed.
+    #[error("The request message is not well-formed")]
+    BadRequest,
+    /// The request presented with an out of data nonce.
+    #[error("The request presented with an out of date nonce.")]
+    StaleNonce,
+}
+
+impl From<ValidateError> for LongTermServerAuthErrorReason {
+    fn from(_value: ValidateError) -> Self {
+        Self::IntegrityFailed
+    }
+}
+
+/// Errors that can occur during an authentication flow.
+#[derive(Debug)]
+pub struct LongTermServerAuthError {
+    reason: LongTermServerAuthErrorReason,
+    integrity: Option<IntegrityAlgorithm>,
+}
+
+impl LongTermServerAuthError {
+    /// The reason for the authentication error.
+    pub fn reason(&self) -> LongTermServerAuthErrorReason {
+        self.reason
+    }
+    /// Any validated integrity that was present on the offending message.
+    pub fn integrity(&self) -> Option<IntegrityAlgorithm> {
+        self.integrity
+    }
 }
 
 impl LongTermServerAuth {
@@ -1003,7 +1031,7 @@ impl LongTermServerAuth {
         msg: &Message<'_>,
         from: SocketAddr,
         now: Instant,
-    ) -> Result<LongTermValidation, AuthError> {
+    ) -> Result<LongTermServerValidation, LongTermServerAuthError> {
         if msg.is_response() {
             if let Some(key) = self.clients.get(&from).and_then(|user| {
                 self.users
@@ -1011,14 +1039,14 @@ impl LongTermServerAuth {
                     .and_then(|auth| auth.keys.get(&user.1))
             }) {
                 msg.validate_integrity_with_key(key)
-                    .map(LongTermValidation::Validated)
-                    .map_err(|e| AuthError {
+                    .map(LongTermServerValidation::Validated)
+                    .map_err(|e| LongTermServerAuthError {
                         reason: e.into(),
                         integrity: None,
                     })
             } else {
-                Err(AuthError {
-                    reason: AuthErrorReason::IntegrityFailed,
+                Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::IntegrityFailed,
                     integrity: None,
                 })
             }
@@ -1065,8 +1093,8 @@ impl LongTermServerAuth {
                     "no message-integrity, returning unauthorized with nonce: {}",
                     nonce_value.value
                 );
-                return Err(AuthError {
-                    reason: AuthErrorReason::Unauthorized,
+                return Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::Unauthorized,
                     integrity: None,
                 });
             }
@@ -1081,8 +1109,8 @@ impl LongTermServerAuth {
             //    generate them are missing.
             let Some((_realm, nonce)) = realm.zip(nonce) else {
                 trace!("bad request due to missing realm, or nonce");
-                return Err(AuthError {
-                    reason: AuthErrorReason::BadRequest,
+                return Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::BadRequest,
                     integrity: None,
                 });
             };
@@ -1092,8 +1120,8 @@ impl LongTermServerAuth {
                 Some(user.username())
             } else {
                 trace!("bad request due to missing username, or userhash");
-                return Err(AuthError {
-                    reason: AuthErrorReason::BadRequest,
+                return Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::BadRequest,
                     integrity: None,
                 });
             };
@@ -1114,14 +1142,14 @@ impl LongTermServerAuth {
                     if let Some((algo, algos)) = password_algo.as_ref().zip(password_algos.as_ref())
                     {
                         if !algos.algorithms().contains(&algo.algorithm()) {
-                            return Err(AuthError {
-                                reason: AuthErrorReason::BadRequest,
+                            return Err(LongTermServerAuthError {
+                                reason: LongTermServerAuthErrorReason::BadRequest,
                                 integrity: None,
                             });
                         }
                         if algos.algorithms() != nonce_value.password_algorithms.as_ref() {
-                            return Err(AuthError {
-                                reason: AuthErrorReason::BadRequest,
+                            return Err(LongTermServerAuthError {
+                                reason: LongTermServerAuthErrorReason::BadRequest,
                                 integrity: None,
                             });
                         }
@@ -1132,8 +1160,8 @@ impl LongTermServerAuth {
                         trace!(
                             "bad request due to missing password algorithm, or password algorithms"
                         );
-                        return Err(AuthError {
-                            reason: AuthErrorReason::BadRequest,
+                        return Err(LongTermServerAuthError {
+                            reason: LongTermServerAuthErrorReason::BadRequest,
                             integrity: None,
                         });
                     }
@@ -1155,16 +1183,16 @@ impl LongTermServerAuth {
                     if let Some(request_security) = NonceSecurityBits::from_nonce(nonce.nonce()) {
                         if security != request_security {
                             // something is in the middle modifying nonces. This is problematic.
-                            return Err(AuthError {
-                                reason: AuthErrorReason::Unauthorized,
+                            return Err(LongTermServerAuthError {
+                                reason: LongTermServerAuthErrorReason::Unauthorized,
                                 integrity: None,
                             });
                         }
                     }
                 }
                 trace!("stale nonce {} vs {}", nonce_value.value, nonce.nonce());
-                return Err(AuthError {
-                    reason: AuthErrorReason::StaleNonce,
+                return Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::StaleNonce,
                     integrity: None,
                 });
             }
@@ -1182,15 +1210,15 @@ impl LongTermServerAuth {
                 // through timing attacks) but always return integrity failed.
                 let Some(key) = self.backup_integrity.get(&password_algo) else {
                     warn!("No backup integrity! Timing attack on usernames possible!");
-                    return Err(AuthError {
-                        reason: AuthErrorReason::Unauthorized,
+                    return Err(LongTermServerAuthError {
+                        reason: LongTermServerAuthErrorReason::Unauthorized,
                         integrity: None,
                     });
                 };
                 let _ = msg.validate_integrity_with_key(key);
                 trace!("integrity failed");
-                return Err(AuthError {
-                    reason: AuthErrorReason::Unauthorized,
+                return Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::Unauthorized,
                     integrity: None,
                 });
             };
@@ -1198,22 +1226,22 @@ impl LongTermServerAuth {
                 trace!("no key for password algo {password_algo:?}");
                 let Some(key) = self.backup_integrity.get(&password_algo) else {
                     warn!("No backup integrity! Timing attack on usernames possible!");
-                    return Err(AuthError {
-                        reason: AuthErrorReason::Unauthorized,
+                    return Err(LongTermServerAuthError {
+                        reason: LongTermServerAuthErrorReason::Unauthorized,
                         integrity: None,
                     });
                 };
                 let _ = msg.validate_integrity_with_key(key);
                 trace!("integrity failed");
-                return Err(AuthError {
-                    reason: AuthErrorReason::Unauthorized,
+                return Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::Unauthorized,
                     integrity: None,
                 });
             };
             if msg.validate_integrity_with_key(key).is_err() {
                 trace!("integrity failed");
-                return Err(AuthError {
-                    reason: AuthErrorReason::Unauthorized,
+                return Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::Unauthorized,
                     integrity: None,
                 });
             }
@@ -1221,7 +1249,7 @@ impl LongTermServerAuth {
                 from,
                 (client.credentials.username().to_string(), password_algo),
             );
-            Ok(LongTermValidation::Validated(password_algo))
+            Ok(LongTermServerValidation::Validated(password_algo))
         }
     }
 
@@ -1381,8 +1409,8 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             auth.validate_incoming_message(&response),
-            Err(AuthError {
-                reason: AuthErrorReason::IntegrityFailed,
+            Err(LongTermClientAuthError {
+                reason: LongTermClientAuthErrorReason::IntegrityFailed,
                 integrity: None,
             })
         ));
@@ -1391,18 +1419,33 @@ mod tests {
     #[test]
     fn auth_error_getters() {
         for reason in [
-            AuthErrorReason::BadRequest,
-            AuthErrorReason::StaleNonce,
-            AuthErrorReason::Unauthorized,
-            AuthErrorReason::IntegrityFailed,
-            StunParseError::NotStun.into(),
+            LongTermClientAuthErrorReason::Unauthorized,
+            LongTermClientAuthErrorReason::IntegrityFailed,
+            LongTermClientAuthErrorReason::UnsupportedFeature,
         ] {
             for integrity in [
                 None,
                 Some(IntegrityAlgorithm::Sha1),
                 Some(IntegrityAlgorithm::Sha256),
             ] {
-                let err = AuthError { reason, integrity };
+                let err = LongTermClientAuthError { reason, integrity };
+                assert_eq!(err.reason(), reason);
+                assert_eq!(err.integrity(), integrity);
+            }
+        }
+        for reason in [
+            LongTermServerAuthErrorReason::Unauthorized,
+            LongTermServerAuthErrorReason::IntegrityFailed,
+            LongTermServerAuthErrorReason::UnsupportedFeature,
+            LongTermServerAuthErrorReason::BadRequest,
+            LongTermServerAuthErrorReason::StaleNonce,
+        ] {
+            for integrity in [
+                None,
+                Some(IntegrityAlgorithm::Sha1),
+                Some(IntegrityAlgorithm::Sha256),
+            ] {
+                let err = LongTermServerAuthError { reason, integrity };
                 assert_eq!(err.reason(), reason);
                 assert_eq!(err.integrity(), integrity);
             }
@@ -1447,8 +1490,8 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             auth.validate_incoming_message(&response, client_addr, now),
-            Err(AuthError {
-                reason: AuthErrorReason::IntegrityFailed,
+            Err(LongTermServerAuthError {
+                reason: LongTermServerAuthErrorReason::IntegrityFailed,
                 integrity: None,
             })
         ));
@@ -1495,15 +1538,18 @@ mod tests {
             }
         }
 
-        fn initial_auth(&mut self, now: Instant) -> Result<LongTermValidation, AuthError> {
+        fn initial_auth(
+            &mut self,
+            now: Instant,
+        ) -> Result<LongTermClientValidation, LongTermClientAuthError> {
             let msg = Message::builder_request(BINDING, MessageWriteVec::new());
             let msg = self.client.sign_outgoing_message(msg).unwrap().finish();
             let msg = Message::from_bytes(&msg).unwrap();
             assert!(matches!(
                 self.server
                     .validate_incoming_message(&msg, self.client_addr, now),
-                Err(AuthError {
-                    reason: AuthErrorReason::Unauthorized,
+                Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::Unauthorized,
                     integrity: None,
                 })
             ));
@@ -1521,7 +1567,7 @@ mod tests {
             &mut self,
             now: Instant,
             integrity: IntegrityAlgorithm,
-        ) -> Result<LongTermValidation, AuthError> {
+        ) -> Result<LongTermClientValidation, LongTermClientAuthError> {
             let msg = Message::builder_request(BINDING, MessageWriteVec::new());
             let msg = self.client.sign_outgoing_message(msg).unwrap().finish();
             let msg = Message::from_bytes(&msg).unwrap();
@@ -1529,7 +1575,7 @@ mod tests {
             assert!(matches!(
                 self.server
                     .validate_incoming_message(&msg, self.client_addr, now),
-                Ok(LongTermValidation::Validated(algo)) if algo == integrity
+                Ok(LongTermServerValidation::Validated(algo)) if algo == integrity
             ));
 
             let response = Message::builder_success(&msg, MessageWriteVec::new());
@@ -1580,11 +1626,13 @@ mod tests {
         test.server.set_anonymous_username(Feature::Disabled);
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
         assert_eq!(
             test.server.message_signature_bytes(test.client_addr, true),
@@ -1606,11 +1654,13 @@ mod tests {
         test.server.set_anonymous_username(Feature::Required);
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
         assert_eq!(
             test.server.message_signature_bytes(test.client_addr, true),
@@ -1636,11 +1686,13 @@ mod tests {
             .set_supported_integrity(IntegrityAlgorithm::Sha256);
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha256),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha256))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha256
+            ))
         ));
         assert_eq!(
             test.server.message_signature_bytes(test.client_addr, true),
@@ -1679,11 +1731,13 @@ mod tests {
                 }
                 assert!(matches!(
                     test.initial_auth(now),
-                    Ok(LongTermValidation::ResendRequest(None))
+                    Ok(LongTermClientValidation::ResendRequest(None))
                 ));
                 assert!(matches!(
                     test.full_auth(now, IntegrityAlgorithm::Sha256),
-                    Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha256))
+                    Ok(LongTermClientValidation::Validated(
+                        IntegrityAlgorithm::Sha256
+                    ))
                 ));
             }
         }
@@ -1730,11 +1784,13 @@ mod tests {
             }
             assert!(matches!(
                 test.initial_auth(now),
-                Ok(LongTermValidation::ResendRequest(None))
+                Ok(LongTermClientValidation::ResendRequest(None))
             ));
             assert!(matches!(
                 test.full_auth(now, IntegrityAlgorithm::Sha1),
-                Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+                Ok(LongTermClientValidation::Validated(
+                    IntegrityAlgorithm::Sha1
+                ))
             ));
         }
     }
@@ -1749,10 +1805,10 @@ mod tests {
         test.server.set_anonymous_username(Feature::Disabled);
         assert!(matches!(
             test.initial_auth(now),
-            Err(AuthError {
+            Err(LongTermClientAuthError {
                 reason,
                 integrity,
-            }) if reason == AuthErrorReason::UnsupportedFeature
+            }) if reason == LongTermClientAuthErrorReason::UnsupportedFeature
         ));
     }
 
@@ -1766,10 +1822,10 @@ mod tests {
             .set_supported_integrity(IntegrityAlgorithm::Sha256);
         assert!(matches!(
             test.initial_auth(now),
-            Err(AuthError {
+            Err(LongTermClientAuthError {
                 reason,
                 integrity,
-            }) if reason == AuthErrorReason::UnsupportedFeature
+            }) if reason == LongTermClientAuthErrorReason::UnsupportedFeature
         ));
     }
 
@@ -1784,10 +1840,10 @@ mod tests {
             .set_supported_integrity(IntegrityAlgorithm::Sha256);
         assert!(matches!(
             test.initial_auth(now),
-            Err(AuthError {
+            Err(LongTermClientAuthError {
                 reason,
                 integrity,
-            }) if reason == AuthErrorReason::UnsupportedFeature
+            }) if reason == LongTermClientAuthErrorReason::UnsupportedFeature
         ));
     }
 
@@ -1802,10 +1858,10 @@ mod tests {
             .set_supported_integrity(IntegrityAlgorithm::Sha256);
         assert!(matches!(
             test.initial_auth(now),
-            Err(AuthError {
+            Err(LongTermClientAuthError {
                 reason,
                 integrity,
-            }) if reason == AuthErrorReason::UnsupportedFeature
+            }) if reason == LongTermClientAuthErrorReason::UnsupportedFeature
         ));
     }
 
@@ -1819,11 +1875,13 @@ mod tests {
             .set_nonce_expiry_duration(MINIMUM_NONCE_EXPIRY_DURATION);
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         let now = now + MINIMUM_NONCE_EXPIRY_DURATION + Duration::from_secs(1);
@@ -1834,8 +1892,8 @@ mod tests {
         assert!(matches!(
             test.server
                 .validate_incoming_message(&msg, test.client_addr, now),
-            Err(AuthError {
-                reason: AuthErrorReason::StaleNonce,
+            Err(LongTermServerAuthError {
+                reason: LongTermServerAuthErrorReason::StaleNonce,
                 integrity: None,
             })
         ));
@@ -1843,11 +1901,13 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ))
     }
 
@@ -1860,7 +1920,7 @@ mod tests {
         test.client.set_anonymous_username(Feature::Disabled);
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         for atype in [Realm::TYPE, Nonce::TYPE, Username::TYPE] {
             let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
@@ -1895,8 +1955,8 @@ mod tests {
             assert!(matches!(
                 test.server
                     .validate_incoming_message(&msg, test.client_addr, now),
-                Err(AuthError {
-                    reason: AuthErrorReason::BadRequest,
+                Err(LongTermServerAuthError {
+                    reason: LongTermServerAuthErrorReason::BadRequest,
                     integrity: None,
                 })
             ));
@@ -1912,11 +1972,13 @@ mod tests {
             let mut test = LongTermTest::new();
             assert!(matches!(
                 test.initial_auth(now),
-                Ok(LongTermValidation::ResendRequest(None))
+                Ok(LongTermClientValidation::ResendRequest(None))
             ));
             assert!(matches!(
                 test.full_auth(now, IntegrityAlgorithm::Sha1),
-                Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+                Ok(LongTermClientValidation::Validated(
+                    IntegrityAlgorithm::Sha1
+                ))
             ));
 
             let mut response = Message::builder(
@@ -1943,8 +2005,8 @@ mod tests {
             let response = Message::from_bytes(&response).unwrap();
             assert!(matches!(
                 test.client.validate_incoming_message(&response),
-                Err(AuthError {
-                    reason: AuthErrorReason::IntegrityFailed,
+                Err(LongTermClientAuthError {
+                    reason: LongTermClientAuthErrorReason::IntegrityFailed,
                     integrity: None,
                 })
             ));
@@ -1959,11 +2021,13 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         let mut response = Message::builder(
@@ -1982,7 +2046,9 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
     }
 
@@ -1994,11 +2060,13 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         let mut response = Message::builder(
@@ -2013,8 +2081,8 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Err(AuthError {
-                reason: AuthErrorReason::IntegrityFailed,
+            Err(LongTermClientAuthError {
+                reason: LongTermClientAuthErrorReason::IntegrityFailed,
                 integrity: None,
             })
         ));
@@ -2028,11 +2096,13 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         let mut response = Message::builder(
@@ -2051,8 +2121,8 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Err(AuthError {
-                reason: AuthErrorReason::IntegrityFailed,
+            Err(LongTermClientAuthError {
+                reason: LongTermClientAuthErrorReason::IntegrityFailed,
                 integrity: None,
             })
         ));
@@ -2066,11 +2136,13 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         let mut response = Message::builder(
@@ -2093,7 +2165,9 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
     }
 
@@ -2105,11 +2179,13 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         let response = Message::builder(
@@ -2121,8 +2197,8 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Err(AuthError {
-                reason: AuthErrorReason::IntegrityFailed,
+            Err(LongTermClientAuthError {
+                reason: LongTermClientAuthErrorReason::IntegrityFailed,
                 integrity: None,
             })
         ));
@@ -2136,11 +2212,13 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         let response = Message::builder(
@@ -2156,7 +2234,9 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
     }
 
@@ -2173,7 +2253,7 @@ mod tests {
         ));
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
@@ -2182,8 +2262,8 @@ mod tests {
         assert!(matches!(
             test.server
                 .validate_incoming_message(&msg, test.client_addr, now),
-            Err(AuthError {
-                reason: AuthErrorReason::Unauthorized,
+            Err(LongTermServerAuthError {
+                reason: LongTermServerAuthErrorReason::Unauthorized,
                 integrity: None
             })
         ));
@@ -2197,8 +2277,8 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Err(AuthError {
-                reason: AuthErrorReason::Unauthorized,
+            Err(LongTermClientAuthError {
+                reason: LongTermClientAuthErrorReason::Unauthorized,
                 integrity: None
             })
         ));
@@ -2220,11 +2300,13 @@ mod tests {
         ));
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
     }
 
@@ -2240,7 +2322,7 @@ mod tests {
         ));
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
@@ -2249,8 +2331,8 @@ mod tests {
         assert!(matches!(
             test.server
                 .validate_incoming_message(&msg, test.client_addr, now),
-            Err(AuthError {
-                reason: AuthErrorReason::Unauthorized,
+            Err(LongTermServerAuthError {
+                reason: LongTermServerAuthErrorReason::Unauthorized,
                 integrity: None
             })
         ));
@@ -2264,8 +2346,8 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Err(AuthError {
-                reason: AuthErrorReason::Unauthorized,
+            Err(LongTermClientAuthError {
+                reason: LongTermClientAuthErrorReason::Unauthorized,
                 integrity: None
             })
         ));
@@ -2287,11 +2369,13 @@ mod tests {
         ));
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
     }
 
@@ -2303,7 +2387,7 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         test.server
             .remove_user(test.client.credentials.as_ref().unwrap().username());
@@ -2314,8 +2398,8 @@ mod tests {
         assert!(matches!(
             test.server
                 .validate_incoming_message(&msg, test.client_addr, now),
-            Err(AuthError {
-                reason: AuthErrorReason::Unauthorized,
+            Err(LongTermServerAuthError {
+                reason: LongTermServerAuthErrorReason::Unauthorized,
                 integrity: None
             })
         ));
@@ -2329,11 +2413,13 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         let request = Message::builder_request(BINDING, MessageWriteVec::new());
@@ -2346,7 +2432,7 @@ mod tests {
         trace!("sending request to client {request}");
         assert!(matches!(
             test.client.validate_incoming_message(&request).unwrap(),
-            LongTermValidation::Validated(IntegrityAlgorithm::Sha1)
+            LongTermClientValidation::Validated(IntegrityAlgorithm::Sha1)
         ));
 
         let response = Message::builder_success(&request, MessageWriteVec::new());
@@ -2358,13 +2444,13 @@ mod tests {
             test.server
                 .validate_incoming_message(&response, test.client_addr, now)
                 .unwrap(),
-            LongTermValidation::Validated(IntegrityAlgorithm::Sha1)
+            LongTermServerValidation::Validated(IntegrityAlgorithm::Sha1)
         ));
     }
 
     fn test_server_bid_down_attack<F: FnOnce(&Message<'_>) -> Vec<u8>>(
         modify_response: F,
-    ) -> Result<LongTermValidation, AuthError> {
+    ) -> Result<LongTermServerValidation, LongTermServerAuthError> {
         let now = Instant::ZERO;
         let mut test = LongTermTest::new();
         test.client
@@ -2377,8 +2463,8 @@ mod tests {
         assert!(matches!(
             test.server
                 .validate_incoming_message(&msg, test.client_addr, now),
-            Err(AuthError {
-                reason: AuthErrorReason::Unauthorized,
+            Err(LongTermServerAuthError {
+                reason: LongTermServerAuthErrorReason::Unauthorized,
                 integrity: None,
             })
         ));
@@ -2393,7 +2479,7 @@ mod tests {
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
-            Ok(LongTermValidation::ResendRequest(None)),
+            Ok(LongTermClientValidation::ResendRequest(None)),
         ));
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
@@ -2439,10 +2525,10 @@ mod tests {
         });
         assert!(matches!(
             ret,
-            Err(AuthError {
+            Err(LongTermServerAuthError {
                 reason,
                 integrity,
-            }) if reason == AuthErrorReason::Unauthorized
+            }) if reason == LongTermServerAuthErrorReason::Unauthorized
         ));
     }
 
@@ -2472,16 +2558,16 @@ mod tests {
         });
         assert!(matches!(
             ret,
-            Err(AuthError {
+            Err(LongTermServerAuthError {
                 reason,
                 integrity,
-            }) if reason == AuthErrorReason::BadRequest
+            }) if reason == LongTermServerAuthErrorReason::BadRequest
         ));
     }
 
     fn test_client_bid_down_attack<F: FnOnce(&Message<'_>) -> Vec<u8>>(
         modify_response: F,
-    ) -> Result<LongTermValidation, AuthError> {
+    ) -> Result<LongTermClientValidation, LongTermClientAuthError> {
         let now = Instant::ZERO;
         let mut test = LongTermTest::new();
         test.client
@@ -2494,8 +2580,8 @@ mod tests {
         assert!(matches!(
             test.server
                 .validate_incoming_message(&msg, test.client_addr, now),
-            Err(AuthError {
-                reason: AuthErrorReason::Unauthorized,
+            Err(LongTermServerAuthError {
+                reason: LongTermServerAuthErrorReason::Unauthorized,
                 integrity: None,
             })
         ));
@@ -2536,10 +2622,10 @@ mod tests {
         });
         assert!(matches!(
             ret,
-            Err(AuthError {
+            Err(LongTermClientAuthError {
                 reason,
                 integrity,
-            }) if reason == AuthErrorReason::Unauthorized
+            }) if reason == LongTermClientAuthErrorReason::Unauthorized
         ));
     }
 
@@ -2559,8 +2645,8 @@ mod tests {
         assert!(matches!(
             test.server
                 .validate_incoming_message(&msg, test.client_addr, now),
-            Err(AuthError {
-                reason: AuthErrorReason::Unauthorized,
+            Err(LongTermServerAuthError {
+                reason: LongTermServerAuthErrorReason::Unauthorized,
                 integrity: None,
             })
         ));
@@ -2605,7 +2691,10 @@ mod tests {
         let response = new_response.finish();
         let response = Message::from_bytes(&response).unwrap();
         let ret = test.client.validate_incoming_message(&response);
-        assert!(matches!(ret, Ok(LongTermValidation::ResendRequest(None))));
+        assert!(matches!(
+            ret,
+            Ok(LongTermClientValidation::ResendRequest(None))
+        ));
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
         let msg = Message::from_bytes(&msg).unwrap();
@@ -2644,7 +2733,9 @@ mod tests {
         assert!(matches!(
             test.server
                 .validate_incoming_message(&msg, test.client_addr, now),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermServerValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
     }
 
@@ -2656,11 +2747,13 @@ mod tests {
         let mut test = LongTermTest::new();
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
 
         test.server.remove_client(test.client_addr);
@@ -2670,11 +2763,13 @@ mod tests {
 
         assert!(matches!(
             test.initial_auth(now),
-            Ok(LongTermValidation::ResendRequest(None))
+            Ok(LongTermClientValidation::ResendRequest(None))
         ));
         assert!(matches!(
             test.full_auth(now, IntegrityAlgorithm::Sha1),
-            Ok(LongTermValidation::Validated(IntegrityAlgorithm::Sha1))
+            Ok(LongTermClientValidation::Validated(
+                IntegrityAlgorithm::Sha1
+            ))
         ));
     }
 }
