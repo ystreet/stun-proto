@@ -684,19 +684,43 @@ impl StunRequestMut<'_> {
         retransmits: u32,
         last_retransmit_timeout: Duration,
     ) {
+        self.configure_timeout_with_max(
+            initial_rto,
+            retransmits,
+            last_retransmit_timeout,
+            Duration::MAX,
+        );
+    }
+
+    /// Configure timeouts for the STUN transaction.  As specified in RFC 8489, `initial_rto`
+    /// should be >= 500ms, `retransmits` has a default value of 7, and `last_retransmit_timeout`
+    /// should be 16 * `initial_rto`.
+    ///
+    /// STUN transactions over TCP will only send a single request and have a timeout of the sum of
+    /// the timeouts of a UDP transaction.
+    ///
+    ///
+    pub fn configure_timeout_with_max(
+        &mut self,
+        initial_rto: Duration,
+        retransmits: u32,
+        last_retransmit_timeout: Duration,
+        max_rto: Duration,
+    ) {
         if let Some(state) = self.agent.mut_request_state(self.transaction_id) {
             match state.transport {
                 TransportType::Udp => {
                     state.timeouts_ms = (0..retransmits)
-                        .map(|i| (initial_rto * 2u32.pow(i)).as_millis() as u64)
+                        .map(|i| (initial_rto * 2u32.pow(i)).min(max_rto).as_millis() as u64)
                         .collect::<Vec<_>>();
                     state.last_retransmit_timeout_ms = last_retransmit_timeout.as_millis() as u64;
                 }
                 TransportType::Tcp => {
                     state.timeouts_ms = vec![];
                     state.last_retransmit_timeout_ms = (last_retransmit_timeout
-                        + (0..retransmits)
-                            .fold(Duration::ZERO, |acc, i| acc + initial_rto * 2u32.pow(i)))
+                        + (0..retransmits).fold(Duration::ZERO, |acc, i| {
+                            acc + (initial_rto * 2u32.pow(i)).min(max_rto)
+                        }))
                     .as_millis() as u64;
                 }
             }
@@ -933,7 +957,12 @@ pub(crate) mod tests {
         let mut now = Instant::ZERO;
         agent.send_request(msg.finish(), remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
-        transaction.configure_timeout(Duration::from_secs(1), 2, Duration::from_secs(10));
+        transaction.configure_timeout_with_max(
+            Duration::from_secs(1),
+            3,
+            Duration::from_secs(10),
+            Duration::from_secs(2),
+        );
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
             unreachable!();
         };
@@ -944,6 +973,14 @@ pub(crate) mod tests {
             unreachable!();
         };
         assert_eq!(wait, now);
+        let Some(_) = agent.poll_transmit(now) else {
+            unreachable!();
+        };
+        let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
+            unreachable!();
+        };
+        assert_eq!(wait - now, Duration::from_secs(2));
+        now = wait;
         let Some(_) = agent.poll_transmit(now) else {
             unreachable!();
         };
@@ -1016,11 +1053,16 @@ pub(crate) mod tests {
         let mut now = Instant::ZERO;
         agent.send_request(msg.finish(), remote_addr, now).unwrap();
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
-        transaction.configure_timeout(Duration::from_secs(1), 3, Duration::from_secs(3));
+        transaction.configure_timeout_with_max(
+            Duration::from_secs(1),
+            3,
+            Duration::from_secs(3),
+            Duration::from_secs(2),
+        );
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
             unreachable!();
         };
-        assert_eq!(wait - now, Duration::from_secs(1 + 2 + 4 + 3));
+        assert_eq!(wait - now, Duration::from_secs(1 + 2 + 2 + 3));
         now = wait;
         let StunAgentPollRet::TransactionTimedOut(timed_out) = agent.poll(now) else {
             unreachable!();
