@@ -17,7 +17,7 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-/// The Fingerprint [`Attribute`]
+/// The Fingerprint [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fingerprint {
     fingerprint: [u8; 4],
@@ -74,7 +74,7 @@ impl TryFrom<&RawAttribute<'_>> for Fingerprint {
 impl Fingerprint {
     const XOR_CONSTANT: [u8; 4] = [0x53, 0x54, 0x55, 0x4E];
 
-    /// Create a new Fingerprint [`Attribute`]
+    /// Create a new Fingerprint [`Attribute`].
     ///
     /// # Examples
     ///
@@ -88,7 +88,7 @@ impl Fingerprint {
         Self { fingerprint }
     }
 
-    /// Retrieve the fingerprint value
+    /// Retrieve the fingerprint value.
     ///
     /// # Examples
     ///
@@ -102,7 +102,7 @@ impl Fingerprint {
         &self.fingerprint
     }
 
-    /// Compute the fingerprint of a specified block of data as required by STUN
+    /// Compute the fingerprint of a specified block of data as required by STUN.
     ///
     /// # Examples
     /// ```

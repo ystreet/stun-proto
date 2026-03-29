@@ -37,7 +37,7 @@ impl MappedSocketAddr {
         }
     }
 
-    /// Convert this [`MappedSocketAddr`] into a [`RawAttribute`]
+    /// Convert this [`MappedSocketAddr`] into a [`RawAttribute`].
     pub fn to_raw(&self, atype: AttributeType) -> RawAttribute<'_> {
         match self.addr {
             SocketAddr::V4(_addr) => {
@@ -53,7 +53,7 @@ impl MappedSocketAddr {
         }
     }
 
-    /// Try to convert a [`RawAttribute`] into a [`MappedSocketAddr`]
+    /// Try to convert a [`RawAttribute`] into a [`MappedSocketAddr`].
     pub fn from_raw(raw: &RawAttribute) -> Result<Self, StunParseError> {
         if raw.value.len() < 4 {
             return Err(StunParseError::Truncated {
@@ -82,7 +82,7 @@ impl MappedSocketAddr {
         })
     }
 
-    /// The `SocketAddr` in this [`MappedSocketAddr`]
+    /// The `SocketAddr` in this [`MappedSocketAddr`].
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -123,7 +123,7 @@ impl core::fmt::Display for MappedSocketAddr {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct XorSocketAddr {
-    /// The parent [`MappedSocketAddr`]
+    /// The parent [`MappedSocketAddr`].
     pub addr: MappedSocketAddr,
 }
 
@@ -140,12 +140,12 @@ impl XorSocketAddr {
         self.addr.length()
     }
 
-    /// Convert this [`XorSocketAddr`] into a [`RawAttribute`]
+    /// Convert this [`XorSocketAddr`] into a [`RawAttribute`].
     pub fn to_raw(&self, atype: AttributeType) -> RawAttribute<'_> {
         self.addr.to_raw(atype)
     }
 
-    /// Try to convert a [`RawAttribute`] into a [`XorSocketAddr`]
+    /// Try to convert a [`RawAttribute`] into a [`XorSocketAddr`].
     pub fn from_raw(raw: &RawAttribute) -> Result<Self, StunParseError> {
         let addr = MappedSocketAddr::from_raw(raw)?;
         Ok(Self { addr })
@@ -174,7 +174,7 @@ impl XorSocketAddr {
         }
     }
 
-    /// Retrieve the `SocketAddr` from this [`XorSocketAddr`]
+    /// Retrieve the `SocketAddr` from this [`XorSocketAddr`].
     pub fn addr(&self, transaction: TransactionId) -> SocketAddr {
         XorSocketAddr::xor_addr(self.addr.addr(), transaction)
     }

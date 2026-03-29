@@ -18,7 +18,7 @@ use super::{
     AttributeWriteExt, RawAttribute, XorSocketAddr,
 };
 
-/// The XorMappedAddress [`Attribute`]
+/// The XorMappedAddress [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XorMappedAddress {
     // stored XOR-ed as we need the transaction id to get the original value
@@ -71,7 +71,7 @@ impl TryFrom<&RawAttribute<'_>> for XorMappedAddress {
 }
 
 impl XorMappedAddress {
-    /// Create a new XorMappedAddress [`Attribute`]
+    /// Create a new XorMappedAddress [`Attribute`].
     ///
     /// # Examples
     ///
@@ -88,7 +88,7 @@ impl XorMappedAddress {
         }
     }
 
-    /// Retrieve the address stored in a XorMappedAddress
+    /// Retrieve the address stored in a XorMappedAddress.
     ///
     /// # Examples
     ///

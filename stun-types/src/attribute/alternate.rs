@@ -20,7 +20,7 @@ use super::{
     AttributeWriteExt, MappedSocketAddr, RawAttribute,
 };
 
-/// The AlternateServer [`Attribute`]
+/// The AlternateServer [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlternateServer {
     addr: MappedSocketAddr,
@@ -66,7 +66,7 @@ impl TryFrom<&RawAttribute<'_>> for AlternateServer {
 }
 
 impl AlternateServer {
-    /// Create a new AlternateServer [`Attribute`]
+    /// Create a new AlternateServer [`Attribute`].
     ///
     /// # Examples
     ///
@@ -82,7 +82,7 @@ impl AlternateServer {
         }
     }
 
-    /// Retrieve the server value
+    /// Retrieve the server value.
     ///
     /// # Examples
     ///
@@ -103,7 +103,7 @@ impl core::fmt::Display for AlternateServer {
     }
 }
 
-/// The AlternateDomain [`Attribute`]
+/// The AlternateDomain [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlternateDomain {
     domain: String,
@@ -158,7 +158,7 @@ impl AttributeWrite for AlternateDomain {
 }
 
 impl AlternateDomain {
-    /// Create a new AlternateDomain [`Attribute`]
+    /// Create a new AlternateDomain [`Attribute`].
     ///
     /// # Examples
     ///
@@ -174,7 +174,7 @@ impl AlternateDomain {
         }
     }
 
-    /// Retrieve the domain value
+    /// Retrieve the domain value.
     ///
     /// # Examples
     ///

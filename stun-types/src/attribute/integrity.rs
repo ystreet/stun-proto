@@ -18,7 +18,7 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-/// The MessageIntegrity [`Attribute`]
+/// The MessageIntegrity [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageIntegrity {
     hmac: [u8; 20],
@@ -69,7 +69,7 @@ impl TryFrom<&RawAttribute<'_>> for MessageIntegrity {
 }
 
 impl MessageIntegrity {
-    /// Create a new MessageIntegrity [`Attribute`]
+    /// Create a new MessageIntegrity [`Attribute`].
     ///
     /// # Examples
     ///
@@ -83,7 +83,7 @@ impl MessageIntegrity {
         Self { hmac }
     }
 
-    /// Retrieve the value of the hmac
+    /// Retrieve the value of the hmac.
     ///
     /// # Examples
     ///
@@ -97,7 +97,7 @@ impl MessageIntegrity {
         &self.hmac
     }
 
-    /// Compute the Message Integrity value of a chunk of data using a key
+    /// Compute the Message Integrity value of a chunk of data using a key.
     ///
     /// Note: use `MessageIntegrity::verify` for the actual verification to ensure constant time
     /// checks of the values to defeat certain types of timing attacks.
@@ -123,7 +123,7 @@ impl MessageIntegrity {
         Ok(key.compute_sha1(data).into_bytes().into())
     }
 
-    /// Compute the Message Integrity value of a chunk of data using a key
+    /// Compute the Message Integrity value of a chunk of data using a key.
     ///
     /// # Examples
     /// ```
@@ -155,7 +155,7 @@ impl core::fmt::Display for MessageIntegrity {
     }
 }
 
-/// The MessageIntegritySha256 [`Attribute`]
+/// The MessageIntegritySha256 [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageIntegritySha256 {
     hmac: Vec<u8>,
@@ -209,7 +209,7 @@ impl TryFrom<&RawAttribute<'_>> for MessageIntegritySha256 {
 }
 
 impl MessageIntegritySha256 {
-    /// Create a new MessageIntegritySha256 [`Attribute`]
+    /// Create a new MessageIntegritySha256 [`Attribute`].
     ///
     /// # Examples
     ///
@@ -240,7 +240,7 @@ impl MessageIntegritySha256 {
         })
     }
 
-    /// Retrieve the value of the hmac
+    /// Retrieve the value of the hmac.
     ///
     /// # Examples
     ///
@@ -254,7 +254,7 @@ impl MessageIntegritySha256 {
         &self.hmac
     }
 
-    /// Compute the Message Integrity value of a chunk of data using a key
+    /// Compute the Message Integrity value of a chunk of data using a key.
     ///
     /// Note: use `MessageIntegritySha256::verify` for the actual verification to ensure constant time
     /// checks of the values to defeat certain types of timing attacks.
@@ -280,7 +280,7 @@ impl MessageIntegritySha256 {
         Ok(key.compute_sha256(data))
     }
 
-    /// Compute the Message Integrity value of a chunk of data using a key
+    /// Compute the Message Integrity value of a chunk of data using a key.
     ///
     /// # Examples
     /// ```

@@ -21,7 +21,7 @@ use super::{
     AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
 };
 
-/// The hashing algorithm for the password
+/// The hashing algorithm for the password.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PasswordAlgorithmValue {
     /// The MD-5 hashing algorithm.
@@ -81,7 +81,7 @@ impl core::fmt::Display for PasswordAlgorithmValue {
     }
 }
 
-/// The PasswordAlgorithms [`Attribute`]
+/// The PasswordAlgorithms [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasswordAlgorithms {
     algorithms: Vec<PasswordAlgorithmValue>,
@@ -151,7 +151,7 @@ impl TryFrom<&RawAttribute<'_>> for PasswordAlgorithms {
 }
 
 impl PasswordAlgorithms {
-    /// Create a new PasswordAlgorithms [`Attribute`]
+    /// Create a new PasswordAlgorithms [`Attribute`].
     ///
     /// # Examples
     ///
@@ -166,7 +166,7 @@ impl PasswordAlgorithms {
         }
     }
 
-    /// Retrieve the algorithms value
+    /// Retrieve the algorithms value.
     ///
     /// # Examples
     ///
@@ -203,7 +203,7 @@ impl core::fmt::Display for PasswordAlgorithms {
     }
 }
 
-/// The PasswordAlgorithm [`Attribute`]
+/// The PasswordAlgorithm [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasswordAlgorithm {
     algorithm: PasswordAlgorithmValue,
@@ -264,7 +264,7 @@ impl TryFrom<&RawAttribute<'_>> for PasswordAlgorithm {
 }
 
 impl PasswordAlgorithm {
-    /// Create a new PasswordAlgorithm [`Attribute`]
+    /// Create a new PasswordAlgorithm [`Attribute`].
     ///
     /// # Examples
     ///
@@ -277,7 +277,7 @@ impl PasswordAlgorithm {
         Self { algorithm }
     }
 
-    /// Retrieve the algorithm value
+    /// Retrieve the algorithm value.
     ///
     /// # Examples
     ///

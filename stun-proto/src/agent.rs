@@ -8,7 +8,7 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! STUN agent
+//! # STUN agent
 //!
 //! A STUN Agent that follows the procedures of [RFC5389] and [RFC8489] and is implemented with the
 //! sans-IO pattern. This agent does no IO processing and operates solely on inputs it is
@@ -37,7 +37,7 @@ use tracing::{debug, trace, warn};
 
 static STUN_AGENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-/// Implementation of a STUN agent
+/// Implementation of a STUN agent.
 #[derive(Debug)]
 pub struct StunAgent {
     id: usize,
@@ -48,7 +48,7 @@ pub struct StunAgent {
     outstanding_requests: BTreeMap<TransactionId, StunRequestState>,
 }
 
-/// Builder struct for a [`StunAgent`]
+/// Builder struct for a [`StunAgent`].
 #[derive(Debug)]
 pub struct StunAgentBuilder {
     transport: TransportType,
@@ -57,13 +57,13 @@ pub struct StunAgentBuilder {
 }
 
 impl StunAgentBuilder {
-    /// Set the remote address the [`StunAgent`] will be configured to only send data to
+    /// Set the remote address the [`StunAgent`] will be configured to only send data to.
     pub fn remote_addr(mut self, addr: SocketAddr) -> Self {
         self.remote_addr = Some(addr);
         self
     }
 
-    /// Build the [`StunAgent`]
+    /// Build the [`StunAgent`].
     pub fn build(self) -> StunAgent {
         let id = STUN_AGENT_COUNT.fetch_add(1, Ordering::SeqCst);
         StunAgent {
@@ -78,7 +78,7 @@ impl StunAgentBuilder {
 }
 
 impl StunAgent {
-    /// Create a new [`StunAgentBuilder`]
+    /// Create a new [`StunAgentBuilder`].
     pub fn builder(transport: TransportType, local_addr: SocketAddr) -> StunAgentBuilder {
         StunAgentBuilder {
             transport,
@@ -87,22 +87,22 @@ impl StunAgent {
         }
     }
 
-    /// The [`TransportType`] of this [`StunAgent`]
+    /// The [`TransportType`] of this [`StunAgent`].
     pub fn transport(&self) -> TransportType {
         self.transport
     }
 
-    /// The local address of this [`StunAgent`]
+    /// The local address of this [`StunAgent`].
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
 
-    /// The remote address of this [`StunAgent`]
+    /// The remote address of this [`StunAgent`].
     pub fn remote_addr(&self) -> Option<SocketAddr> {
         self.remote_addr
     }
 
-    /// Perform any operations needed to be able to send data to a peer
+    /// Perform any operations needed to be able to send data to a peer.
     pub fn send_data<T: AsRef<[u8]>>(&self, bytes: T, to: SocketAddr) -> Transmit<T> {
         send_data(self.transport, bytes, self.local_addr, to)
     }
@@ -372,7 +372,7 @@ impl StunAgent {
     }
 }
 
-/// Return value for [`StunAgent::poll`]
+/// Return value for [`StunAgent::poll`].
 #[derive(Debug)]
 pub enum StunAgentPollRet {
     /// An oustanding transaction timed out and has been removed from the agent.
@@ -392,16 +392,16 @@ fn send_data<T: AsRef<[u8]>>(
     Transmit::new(bytes, transport, from, to)
 }
 
-/// A piece of data that needs to, or has been transmitted
+/// A piece of data that needs to, or has been transmitted.
 #[derive(Debug)]
 pub struct Transmit<T: AsRef<[u8]>> {
-    /// The data blob
+    /// The data blob.
     pub data: T,
-    /// The transport for the transmission
+    /// The transport for the transmission.
     pub transport: TransportType,
-    /// The source address of the transmission
+    /// The source address of the transmission.
     pub from: SocketAddr,
-    /// The destination address of the transmission
+    /// The destination address of the transmission.
     pub to: SocketAddr,
 }
 
@@ -459,18 +459,18 @@ impl<T: AsRef<[u8]>> Transmit<T> {
 }
 
 impl Transmit<Data<'_>> {
-    /// Construct a new owned [`Transmit`] from a provided [`Transmit`]
+    /// Construct a new owned [`Transmit`] from a provided [`Transmit`].
     pub fn into_owned<'b>(self) -> Transmit<Data<'b>> {
         self.reinterpret_data(|data| data.into_owned())
     }
 }
 
-/// Return value for [`StunRequest::poll`]
+/// Return value for [`StunRequest::poll`].
 #[derive(Debug)]
 enum StunRequestPollRet {
-    /// Wait until the specified time has passed
+    /// Wait until the specified time has passed.
     WaitUntil(Instant),
-    /// The request has been cancelled and will not make further progress
+    /// The request has been cancelled and will not make further progress.
     Cancelled,
     /// The request timed out.
     TimedOut,
@@ -603,7 +603,7 @@ impl StunRequestState {
     }
 }
 
-/// A STUN Request
+/// A STUN Request.
 #[derive(Debug, Clone)]
 pub struct StunRequest<'a> {
     agent: &'a StunAgent,
@@ -611,7 +611,7 @@ pub struct StunRequest<'a> {
 }
 
 impl StunRequest<'_> {
-    /// The remote address the request is sent to
+    /// The remote address the request is sent to.
     pub fn peer_address(&self) -> SocketAddr {
         let state = self.agent.request_state(self.transaction_id).unwrap();
         state.to
@@ -624,7 +624,7 @@ impl StunRequest<'_> {
     }
 }
 
-/// A STUN Request
+/// A STUN Request.
 #[derive(Debug)]
 pub struct StunRequestMut<'a> {
     agent: &'a mut StunAgent,
@@ -632,7 +632,7 @@ pub struct StunRequestMut<'a> {
 }
 
 impl StunRequestMut<'_> {
-    /// The remote address the request is sent to
+    /// The remote address the request is sent to.
     pub fn peer_address(&self) -> SocketAddr {
         let state = self.agent.request_state(self.transaction_id).unwrap();
         state.to
@@ -728,7 +728,7 @@ impl StunRequestMut<'_> {
     }
 }
 
-/// STUN errors
+/// STUN errors.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum StunError {
