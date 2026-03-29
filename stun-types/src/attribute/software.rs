@@ -19,7 +19,7 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-/// The Software [`Attribute`]
+/// The Software [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Software {
     software: String,
@@ -78,11 +78,11 @@ impl TryFrom<&RawAttribute<'_>> for Software {
 }
 
 impl Software {
-    /// Create a new unknown attributes [`Attribute`]
+    /// Create a new unknown attributes [`Attribute`].
     ///
     /// # Errors
     ///
-    /// If the length of the provided string is too long for the [`Attribute`]
+    /// If the length of the provided string is too long for the [`Attribute`].
     ///
     /// # Examples
     ///
@@ -104,7 +104,7 @@ impl Software {
         })
     }
 
-    /// The value of the software field
+    /// The value of the software field.
     ///
     /// # Examples
     ///

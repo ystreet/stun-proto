@@ -19,7 +19,7 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-/// The Realm [`Attribute`]
+/// The Realm [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Realm {
     realm: String,
@@ -77,7 +77,7 @@ impl TryFrom<&RawAttribute<'_>> for Realm {
 }
 
 impl Realm {
-    /// Create a new Realm [`Attribute`]
+    /// Create a new Realm [`Attribute`].
     ///
     /// # Examples
     ///
@@ -98,7 +98,7 @@ impl Realm {
         })
     }
 
-    /// Retrieve the realm value
+    /// Retrieve the realm value.
     ///
     /// # Examples
     ///

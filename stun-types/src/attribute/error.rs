@@ -23,7 +23,7 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-/// The ErrorCode [`Attribute`]
+/// The ErrorCode [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ErrorCode {
     code: u16,
@@ -92,7 +92,7 @@ impl TryFrom<&RawAttribute<'_>> for ErrorCode {
     }
 }
 
-/// Builder for an [`ErrorCode`]
+/// Builder for an [`ErrorCode`].
 #[derive(Debug)]
 pub struct ErrorCodeBuilder<'reason> {
     code: u16,
@@ -104,13 +104,13 @@ impl<'reason> ErrorCodeBuilder<'reason> {
         Self { code, reason: None }
     }
 
-    /// Set the custom reason for this [`ErrorCode`]
+    /// Set the custom reason for this [`ErrorCode`].
     pub fn reason(mut self, reason: &'reason str) -> Self {
         self.reason = Some(reason);
         self
     }
 
-    /// Create the [`ErrorCode`] with the configured paramaters
+    /// Create the [`ErrorCode`] with the configured paramaters.
     ///
     /// # Errors
     ///
@@ -188,7 +188,7 @@ impl ErrorCode {
         ErrorCodeBuilder::new(code)
     }
 
-    /// Create a new [`ErrorCode`] [`Attribute`]
+    /// Create a new [`ErrorCode`] [`Attribute`].
     ///
     /// # Errors
     ///
@@ -216,7 +216,7 @@ impl ErrorCode {
         })
     }
 
-    /// The error code value
+    /// The error code value.
     ///
     /// # Examples
     ///
@@ -229,7 +229,7 @@ impl ErrorCode {
         self.code
     }
 
-    /// The error code reason string
+    /// The error code reason string.
     ///
     /// # Examples
     ///
@@ -242,9 +242,9 @@ impl ErrorCode {
         &self.reason
     }
 
-    /// Return some default reason strings for some error code values
+    /// Return some default reason strings for some error code values.
     ///
-    /// Currently the following are supported.
+    /// Currently the following are supported..
     ///
     /// ```
     /// # use stun_types::attribute::*;
@@ -306,7 +306,7 @@ impl core::fmt::Display for ErrorCode {
     }
 }
 
-/// The UnknownAttributes [`Attribute`]
+/// The UnknownAttributes [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownAttributes {
     attributes: Vec<AttributeType>,
@@ -370,7 +370,7 @@ impl TryFrom<&RawAttribute<'_>> for UnknownAttributes {
     }
 }
 impl UnknownAttributes {
-    /// Create a new unknown attributes [`Attribute`]
+    /// Create a new unknown attributes [`Attribute`].
     ///
     /// # Examples
     ///
@@ -385,7 +385,7 @@ impl UnknownAttributes {
         }
     }
 
-    /// Add an [`AttributeType`] that is unsupported
+    /// Add an [`AttributeType`] that is unsupported.
     ///
     /// # Examples
     ///
@@ -401,7 +401,7 @@ impl UnknownAttributes {
         }
     }
 
-    /// Check if an [`AttributeType`] is present
+    /// Check if an [`AttributeType`] is present.
     ///
     /// # Examples
     ///

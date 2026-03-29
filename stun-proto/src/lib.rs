@@ -96,7 +96,7 @@ pub mod auth;
 pub use sans_io_time::Instant;
 pub use stun_types as types;
 
-/// Public prelude
+/// Public prelude.
 pub mod prelude {}
 
 #[cfg(test)]

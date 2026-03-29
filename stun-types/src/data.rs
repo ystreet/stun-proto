@@ -8,13 +8,13 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Data handling
+//! # Data handling
 //!
-//! Provides a CoW interface for slices of `[u8]` and `Box<[u8]>`
+//! Provides a CoW interface for slices of `[u8]` and `Box<[u8]>`.
 
 use alloc::boxed::Box;
 
-/// A slice of data
+/// A slice of data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct DataSlice<'a>(&'a [u8]);
@@ -50,7 +50,7 @@ impl<'a> From<&'a [u8]> for DataSlice<'a> {
     }
 }
 
-/// An owned piece of data
+/// An owned piece of data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct DataOwned(Box<[u8]>);
@@ -81,7 +81,7 @@ impl From<Box<[u8]>> for DataOwned {
     }
 }
 
-/// An owned or borrowed piece of data
+/// An owned or borrowed piece of data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Data<'a> {
     /// Borrowed data.
@@ -101,7 +101,7 @@ impl core::ops::Deref for Data<'_> {
 }
 
 impl Data<'_> {
-    /// Create a new owned version of this data
+    /// Create a new owned version of this data.
     pub fn into_owned<'b>(self) -> Data<'b> {
         match self {
             Self::Borrowed(data) => Data::Owned(data.to_owned()),

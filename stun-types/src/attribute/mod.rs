@@ -186,8 +186,9 @@ pub type AttributeDisplay =
 static ATTRIBUTE_EXTERNAL_DISPLAY_IMPL: OnceLock<Mutex<BTreeMap<AttributeType, AttributeDisplay>>> =
     OnceLock::new();
 
-/// Adds an externally provided Display implementation for a particular [`AttributeType`].  Any
-/// previous implementation is overidden.
+/// Adds an externally provided Display implementation for a particular [`AttributeType`].
+///
+/// Any previous implementation is overidden.
 #[cfg(feature = "std")]
 pub fn add_display_impl(atype: AttributeType, imp: AttributeDisplay) {
     let mut display_impls = ATTRIBUTE_EXTERNAL_DISPLAY_IMPL
@@ -269,7 +270,7 @@ macro_rules! attribute_display {
 static ATTRIBUTE_TYPE_NAME_MAP: OnceLock<Mutex<BTreeMap<AttributeType, &'static str>>> =
     OnceLock::new();
 
-/// The type of an [`Attribute`] in a STUN [`Message`](crate::message::Message)
+/// The type of an [`Attribute`] in a STUN [`Message`](crate::message::Message).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AttributeType(u16);
 
@@ -290,9 +291,9 @@ impl AttributeType {
         anames.insert(self, name);
     }
 
-    /// Create a new AttributeType from an existing value
+    /// Create a new AttributeType from an existing value.
     ///
-    /// Note: the value passed in is not encoded as in a stun message
+    /// Note: the value passed in is not encoded as in a stun message.
     ///
     /// # Examples
     /// ```
@@ -303,9 +304,9 @@ impl AttributeType {
         Self(val)
     }
 
-    /// Return the integer value of this AttributeType
+    /// Return the integer value of this AttributeType.
     ///
-    /// Note: the value returned is not encoded as in a stun message
+    /// Note: the value returned is not encoded as in a stun message.
     ///
     /// # Examples
     /// ```
@@ -316,7 +317,7 @@ impl AttributeType {
         self.0
     }
 
-    /// Returns a human readable name of this `AttributeType` or "unknown"
+    /// Returns a human readable name of this `AttributeType` or "unknown".
     ///
     /// # Examples
     /// ```
@@ -357,8 +358,9 @@ impl AttributeType {
         }
     }
 
-    /// Check if comprehension is required for an `AttributeType`.  All attribute
-    /// values < 0x8000 require comprehension.
+    /// Check if comprehension is required for an `AttributeType`.
+    ///
+    /// All attribute values < 0x8000 require comprehension.
     ///
     /// # Examples
     ///
@@ -382,7 +384,9 @@ impl From<AttributeType> for u16 {
     }
 }
 
-/// Structure for holding the header of a STUN attribute.  Contains the type and the length
+/// Structure for holding the header of a STUN attribute.
+///
+/// Contains the type and the length.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct AttributeHeader {
     atype: AttributeType,
@@ -415,12 +419,12 @@ impl AttributeHeader {
         BigEndian::write_u16(&mut ret[2..4], self.length);
     }
 
-    /// Returns the type of the attribute
+    /// Returns the type of the attribute.
     pub fn get_type(&self) -> AttributeType {
         self.atype
     }
 
-    /// Returns the length of the attribute
+    /// Returns the length in bytes of the attribute.
     pub fn length(&self) -> u16 {
         self.length
     }
@@ -438,13 +442,13 @@ impl TryFrom<&[u8]> for AttributeHeader {
     }
 }
 
-/// A static type for an [`Attribute`]
+/// A static type for an [`Attribute`].
 pub trait AttributeStaticType {
-    /// The [`AttributeType`]
+    /// The [`AttributeType`].
     const TYPE: AttributeType;
 }
 
-/// A STUN attribute for use in [`Message`](crate::message::Message)s
+/// A STUN attribute for use in [`Message`](crate::message::Message)s.
 pub trait Attribute: core::fmt::Debug + core::marker::Sync + core::marker::Send {
     /// Retrieve the type of an `Attribute`.
     fn get_type(&self) -> AttributeType;
@@ -456,12 +460,12 @@ pub trait Attribute: core::fmt::Debug + core::marker::Sync + core::marker::Send 
 
 /// A trait for converting from a [`RawAttribute`] to a concrete [`Attribute`].
 pub trait AttributeFromRaw<'a>: Attribute {
-    /// Produce an `Attribute` from a `RawAttribute`
+    /// Produce an `Attribute` from a `RawAttribute`.
     fn from_raw_ref(raw: &RawAttribute) -> Result<Self, StunParseError>
     where
         Self: Sized;
 
-    /// Produce an `Attribute` from a `RawAttribute`
+    /// Produce an `Attribute` from a `RawAttribute`.
     fn from_raw(raw: RawAttribute<'a>) -> Result<Self, StunParseError>
     where
         Self: Sized,
@@ -496,9 +500,9 @@ impl<A: Attribute + ?Sized> AttributeExt for A {
 pub trait AttributeWrite: Attribute {
     /// Write attribute to the provided destination buffer.
     ///
-    /// Panics if the destination buffer is not large enough
+    /// Panics if the destination buffer is not large enough.
     fn write_into_unchecked(&self, dest: &mut [u8]);
-    /// Produce a [`RawAttribute`] from this [`Attribute`]
+    /// Produce a [`RawAttribute`] from this [`Attribute`].
     fn to_raw(&self) -> RawAttribute<'_>;
 }
 
@@ -551,12 +555,12 @@ impl<A: AttributeWrite + ?Sized> AttributeWriteExt for A {
     }
 }
 
-/// The header and raw bytes of an unparsed [`Attribute`]
+/// The header and raw bytes of an unparsed [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawAttribute<'a> {
-    /// The [`AttributeHeader`] of this [`RawAttribute`]
+    /// The [`AttributeHeader`] of this [`RawAttribute`].
     pub header: AttributeHeader,
-    /// The raw bytes of this [`RawAttribute`]
+    /// The raw bytes of this [`RawAttribute`].
     pub value: Data<'a>,
 }
 
@@ -621,7 +625,7 @@ impl core::fmt::Display for RawAttribute<'_> {
 }
 
 impl<'a> RawAttribute<'a> {
-    /// Create a new [`RawAttribute`]
+    /// Create a new [`RawAttribute`].
     pub fn new(atype: AttributeType, data: &'a [u8]) -> Self {
         Self {
             header: AttributeHeader {
@@ -632,7 +636,7 @@ impl<'a> RawAttribute<'a> {
         }
     }
 
-    /// Create a new owned [`RawAttribute`]
+    /// Create a new owned [`RawAttribute`].
     pub fn new_owned(atype: AttributeType, data: Box<[u8]>) -> Self {
         Self {
             header: AttributeHeader {
@@ -705,7 +709,7 @@ impl<'a> RawAttribute<'a> {
         check_len(self.value.len(), allowed_range)
     }
 
-    /// Consume this [`RawAttribute`] and return a new owned [`RawAttribute`]
+    /// Consume this [`RawAttribute`] and return a new owned [`RawAttribute`].
     pub fn into_owned<'b>(self) -> RawAttribute<'b> {
         RawAttribute {
             header: self.header,
@@ -715,19 +719,21 @@ impl<'a> RawAttribute<'a> {
 }
 
 impl Attribute for RawAttribute<'_> {
-    /// Returns the [`AttributeType`] of this [`RawAttribute`]
+    /// Returns the [`AttributeType`] of this [`RawAttribute`].
     fn get_type(&self) -> AttributeType {
         self.header.get_type()
     }
 
-    /// Returns the length of this [`RawAttribute`]
+    /// Returns the length in bytes of this [`RawAttribute`].
     fn length(&self) -> u16 {
         self.value.len() as u16
     }
 }
 
 impl AttributeWrite for RawAttribute<'_> {
-    /// Write this [`RawAttribute`] into a byte slice.  Returns the number of bytes written.
+    /// Write this [`RawAttribute`] into a byte slice.
+    ///
+    /// Returns the number of bytes written.
     fn write_into_unchecked(&self, dest: &mut [u8]) {
         let len = self.padded_len();
         self.header.write_into(dest);

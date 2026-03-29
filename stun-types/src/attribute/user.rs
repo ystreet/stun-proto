@@ -19,7 +19,7 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-/// The username [`Attribute`]
+/// The username [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Username {
     user: String,
@@ -77,13 +77,13 @@ impl TryFrom<&RawAttribute<'_>> for Username {
 }
 
 impl Username {
-    /// Create a new [`Username`] [`Attribute`]
+    /// Create a new [`Username`] [`Attribute`].
     ///
     /// # Errors
     ///
     /// - When the length of the username is longer than allowed in a STUN
-    ///   [`Message`](crate::message::Message)
-    /// - TODO: If converting through SASLPrep fails
+    ///   [`Message`](crate::message::Message).
+    /// - TODO: If converting through SASLPrep fails.
     ///
     /// # Examples
     ///
@@ -105,7 +105,7 @@ impl Username {
         })
     }
 
-    /// The username stored in a [`Username`] [`Attribute`]
+    /// The username stored in a [`Username`] [`Attribute`].
     ///
     /// # Examples
     ///
@@ -125,7 +125,7 @@ impl core::fmt::Display for Username {
     }
 }
 
-/// The Userhash [`Attribute`]
+/// The Userhash [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Userhash {
     hash: [u8; 32],
@@ -177,7 +177,7 @@ impl TryFrom<&RawAttribute<'_>> for Userhash {
 }
 
 impl Userhash {
-    /// Create a new Userhash [`Attribute`]
+    /// Create a new Userhash [`Attribute`].
     ///
     /// # Examples
     ///
@@ -191,7 +191,7 @@ impl Userhash {
         Self { hash }
     }
 
-    /// Retrieve the hash value
+    /// Retrieve the hash value.
     ///
     /// # Examples
     ///
@@ -205,7 +205,7 @@ impl Userhash {
         &self.hash
     }
 
-    /// Compute the hash of a specified block of data as required by STUN
+    /// Compute the hash of a specified block of data as required by STUN.
     ///
     /// # Examples
     /// ```

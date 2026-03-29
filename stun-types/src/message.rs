@@ -109,7 +109,7 @@ use hmac::HmacCore;
 /// The value of the magic cookie (in network byte order) as specified in RFC5389, and RFC8489.
 pub const MAGIC_COOKIE: u32 = 0x2112A442;
 
-/// The method in a STUN [`Message`]
+/// The method in a STUN [`Message`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Method(u16);
 
@@ -133,11 +133,11 @@ impl Method {
         mnames.insert(self, name);
     }
 
-    /// Create a new [`Method`] from an existing value
+    /// Create a new [`Method`] from an existing value.
     ///
-    /// Note: the value passed in is not encoded as in a stun message
+    /// Note: the value passed in is not encoded as in a stun message.
     ///
-    /// Panics if the value is out of range (>= 0xf000)
+    /// Panics if the value is out of range (>= 0xf000).
     ///
     /// # Examples
     /// ```
@@ -151,9 +151,9 @@ impl Method {
         Self(val)
     }
 
-    /// Return the integer value of this [`Method`]
+    /// Return the integer value of this [`Method`].
     ///
-    /// Note: the value returned is not encoded as in a stun message
+    /// Note: the value returned is not encoded as in a stun message.
     ///
     /// # Examples
     /// ```
@@ -164,7 +164,7 @@ impl Method {
         self.0
     }
 
-    /// Returns a human readable name of this `Method` or "unknown"
+    /// Returns a human readable name of this `Method` or "unknown".
     ///
     /// # Examples
     /// ```
@@ -199,81 +199,81 @@ pub const BINDING: Method = Method::new(0x0001);
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum StunParseError {
-    /// Not a STUN message.
+    /// Not a STUN message..
     #[error("The provided data is not a STUN message")]
     NotStun,
-    /// The message has been truncated
+    /// The message has been truncated.
     #[error("Not enough data available to parse the packet, expected {}, actual {}", .expected, .actual)]
     Truncated {
-        /// The expeced number of bytes
+        /// The expeced number of bytes.
         expected: usize,
-        /// The encountered number of bytes
+        /// The encountered number of bytes.
         actual: usize,
     },
-    /// The message has been truncated
+    /// The message has been truncated.
     #[error("Too many bytes for this data, expected {}, actual {}", .expected, .actual)]
     TooLarge {
-        /// The expeced number of bytes
+        /// The expeced number of bytes.
         expected: usize,
-        /// The encountered number of bytes
+        /// The encountered number of bytes.
         actual: usize,
     },
-    /// An attribute was not found in the message
+    /// An attribute was not found in the message.
     #[error("Missing attribute {}", .0)]
     MissingAttribute(AttributeType),
-    /// An attribute was found after the message integrity attribute
+    /// An attribute was found after the message integrity attribute.
     #[error("An attribute {} was encountered after a message integrity attribute", .0)]
     AttributeAfterIntegrity(AttributeType),
-    /// An attribute was found after the message integrity attribute
+    /// An attribute was found after the message integrity attribute.
     #[error("An attribute {} was encountered after a fingerprint attribute", .0)]
     AttributeAfterFingerprint(AttributeType),
     /// Fingerprint does not match the data.
     #[error("Fingerprint does not match")]
     FingerprintMismatch,
-    /// The provided data does not match the message
+    /// The provided data does not match the message.
     #[error("The provided data does not match the message")]
     DataMismatch,
-    /// The attribute contains invalid data
+    /// The attribute contains invalid data.
     #[error("The attribute contains invalid data")]
     InvalidAttributeData,
-    /// The attribute does not parse this data
+    /// The attribute does not parse this data.
     #[error("Cannot parse with this attribute")]
     WrongAttributeImplementation,
 }
 
-/// Errors produced when writing a STUN message
+/// Errors produced when writing a STUN message.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum StunWriteError {
-    /// The message already has this attribute
+    /// The message already has this attribute.
     #[error("The attribute already exists in the message")]
     AttributeExists(AttributeType),
-    /// The fingerprint attribute already exists. Cannot write any further attributes
+    /// The fingerprint attribute already exists. Cannot write any further attributes.
     #[error("The message already contains a fingerprint attribute")]
     FingerprintExists,
-    /// A message integrity attribute already exists. Cannot write any further attributes
+    /// A message integrity attribute already exists. Cannot write any further attributes.
     #[error("The message already contains a message intregrity attribute")]
     MessageIntegrityExists,
-    /// The message has been truncated
+    /// The message has been truncated.
     #[error("Too many bytes for this data, expected {}, actual {}", .expected, .actual)]
     TooLarge {
-        /// The expeced number of bytes
+        /// The expeced number of bytes.
         expected: usize,
-        /// The encountered number of bytes
+        /// The encountered number of bytes.
         actual: usize,
     },
-    /// The message has been truncated
+    /// The message has been truncated.
     #[error("Not enough data available to parse the packet, expected {}, actual {}", .expected, .actual)]
     TooSmall {
-        /// The expected number of bytes
+        /// The expected number of bytes.
         expected: usize,
-        /// The encountered number of bytes
+        /// The encountered number of bytes.
         actual: usize,
     },
-    /// Failed to compute integrity
+    /// Failed to compute integrity.
     #[error("Failed to compute integrity")]
     IntegrityFailed,
-    /// Out of range input provided
+    /// Out of range input provided.
     #[error("Out of range input provided")]
     OutOfRange {
         /// The value provided.
@@ -285,7 +285,7 @@ pub enum StunWriteError {
     },
 }
 
-/// Errors produced when validating a STUN message
+/// Errors produced when validating a STUN message.
 #[derive(Debug, thiserror::Error, Copy, Clone)]
 pub enum ValidateError {
     /// The message failed to parse the relevant integrity attributes.
@@ -311,7 +311,7 @@ pub struct LongTermCredentials {
 }
 
 impl LongTermCredentials {
-    /// Create a new set of [`LongTermCredentials`]
+    /// Create a new set of [`LongTermCredentials`].
     ///
     /// # Examples
     ///
@@ -348,7 +348,7 @@ impl LongTermCredentials {
     }
 }
 
-/// Structure for holding the required credentials for signing STUN messages
+/// Structure for holding the required long term credentials for signing STUN messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct LongTermKeyCredentials {
@@ -358,7 +358,7 @@ pub struct LongTermKeyCredentials {
 }
 
 impl LongTermKeyCredentials {
-    /// Create a new set of [`LongTermCredentials`]
+    /// Create a new set of [`LongTermCredentials`].
     ///
     /// # Examples
     ///
@@ -381,17 +381,17 @@ impl LongTermKeyCredentials {
         }
     }
 
-    /// The configured username
+    /// The configured username.
     pub fn username(&self) -> &str {
         &self.username
     }
 
-    /// The configured password
+    /// The configured password.
     pub fn password(&self) -> &str {
         &self.password
     }
 
-    /// The configured realm
+    /// The configured realm.
     pub fn realm(&self) -> &str {
         &self.realm
     }
@@ -423,7 +423,7 @@ impl LongTermKeyCredentials {
     }
 }
 
-/// Structure for holding the required credentials for handling short-term STUN credentials
+/// Structure for holding the required credentials for handling short-term STUN credentials.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ShortTermCredentials {
@@ -431,7 +431,7 @@ pub struct ShortTermCredentials {
 }
 
 impl ShortTermCredentials {
-    /// Create a new set of [`ShortTermCredentials`]
+    /// Create a new set of [`ShortTermCredentials`].
     ///
     /// # Examples
     ///
@@ -444,7 +444,7 @@ impl ShortTermCredentials {
         Self { password }
     }
 
-    /// The configured password
+    /// The configured password.
     pub fn password(&self) -> &str {
         &self.password
     }
@@ -665,7 +665,7 @@ impl core::fmt::Display for MessageType {
 }
 
 impl MessageType {
-    /// Create a new [`MessageType`] from the provided [`MessageClass`] and method
+    /// Create a new [`MessageType`] from the provided [`MessageClass`] and method.
     ///
     /// # Examples
     ///
@@ -684,7 +684,7 @@ impl MessageType {
         Self(class_bits | method_bits)
     }
 
-    /// Retrieves the class of a [`MessageType`]
+    /// Retrieves the class of a [`MessageType`].
     ///
     /// # Examples
     ///
@@ -704,7 +704,7 @@ impl MessageType {
         }
     }
 
-    /// Returns whether class of a [`MessageType`] is equal to the provided [`MessageClass`]
+    /// Returns whether class of a [`MessageType`] is equal to the provided [`MessageClass`].
     ///
     /// # Examples
     ///
@@ -717,7 +717,7 @@ impl MessageType {
         self.class() == cls
     }
 
-    /// Returns whether the class of a [`MessageType`] indicates a response [`Message`]
+    /// Returns whether the class of a [`MessageType`] indicates a response [`Message`].
     ///
     /// # Examples
     ///
@@ -736,7 +736,7 @@ impl MessageType {
         self.class().is_response()
     }
 
-    /// Returns the method of a [`MessageType`]
+    /// Returns the method of a [`MessageType`].
     ///
     /// # Examples
     ///
@@ -749,7 +749,7 @@ impl MessageType {
         Method::new(self.0 & 0xf | (self.0 & 0xe0) >> 1 | (self.0 & 0x3e00) >> 2)
     }
 
-    /// Returns whether the method of a [`MessageType`] is equal to the provided value
+    /// Returns whether the method of a [`MessageType`] is equal to the provided value.
     ///
     /// # Examples
     ///
@@ -762,12 +762,12 @@ impl MessageType {
         self.method() == method
     }
 
-    /// Convert a [`MessageType`] to network bytes
+    /// Convert a [`MessageType`] to network bytes.
     pub fn write_into(&self, dest: &mut [u8]) {
         BigEndian::write_u16(dest, self.0);
     }
 
-    /// Convert a [`MessageType`] to network bytes
+    /// Convert a [`MessageType`] to network bytes.
     pub fn to_bytes(self) -> Vec<u8> {
         let mut ret = vec![0; 2];
         BigEndian::write_u16(&mut ret[0..2], self.0);
@@ -837,9 +837,11 @@ impl core::fmt::Display for TransactionId {
     }
 }
 
-/// The fixed length header of a STUN message.  Allows reading the message header for a quick
-/// check if this message is a valid STUN message.  Can also be used to expose the length of the
-/// complete message without needing to receive the entire message.
+/// The fixed length header of a STUN message.
+///
+/// Allows reading the message header for a quick check if this message is a valid STUN message.
+/// Can also be used to expose the length of the complete message without needing to receive
+/// the entire message.
 #[derive(Debug)]
 pub struct MessageHeader {
     mtype: MessageType,
@@ -851,7 +853,7 @@ impl MessageHeader {
     /// The length of the STUN message header.
     pub const LENGTH: usize = 20;
 
-    /// Deserialize a `MessageHeader`
+    /// Deserialize a `MessageHeader`.
     ///
     /// # Examples
     ///
@@ -895,12 +897,12 @@ impl MessageHeader {
         self.length
     }
 
-    /// The [`TransactionId`] of this [`MessageHeader`]
+    /// The [`TransactionId`] of this [`MessageHeader`].
     pub fn transaction_id(&self) -> TransactionId {
         self.transaction_id
     }
 
-    /// The [`MessageType`] of this [`MessageHeader`]
+    /// The [`MessageType`] of this [`MessageHeader`].
     pub fn get_type(&self) -> MessageType {
         self.mtype
     }
@@ -922,10 +924,10 @@ impl MessageHeader {
     }
 }
 
-/// The structure that encapsulates the entirety of a STUN message
+/// The structure that encapsulates the entirety of a STUN message.
 ///
 /// Contains the [`MessageType`], a transaction ID, and a list of STUN
-/// [`Attribute`]
+/// [`Attribute`].
 #[derive(Debug, Clone, Copy)]
 pub struct Message<'a> {
     data: &'a [u8],
@@ -963,7 +965,7 @@ pub enum IntegrityAlgorithm {
 }
 
 impl<'a> Message<'a> {
-    /// Create a new [`Message`] with the provided [`MessageType`] and transaction ID
+    /// Create a new [`Message`] with the provided [`MessageType`] and transaction ID.
     ///
     /// Note you probably want to use one of the other helper constructors instead.
     ///
@@ -989,7 +991,7 @@ impl<'a> Message<'a> {
         write
     }
 
-    /// Create a new request [`Message`] of the provided method
+    /// Create a new request [`Message`] of the provided method.
     ///
     /// # Examples
     ///
@@ -1010,7 +1012,7 @@ impl<'a> Message<'a> {
         )
     }
 
-    /// Create a new success [`Message`] response from the provided request
+    /// Create a new success [`Message`] response from the provided request.
     ///
     /// # Panics
     ///
@@ -1042,7 +1044,7 @@ impl<'a> Message<'a> {
         )
     }
 
-    /// Create a new error [`Message`] response from the provided request
+    /// Create a new error [`Message`] response from the provided request.
     ///
     /// # Panics
     ///
@@ -1095,7 +1097,7 @@ impl<'a> Message<'a> {
         )
     }
 
-    /// Retrieve the [`MessageType`] of a [`Message`]
+    /// Retrieve the [`MessageType`] of a [`Message`].
     ///
     /// # Examples
     ///
@@ -1112,7 +1114,7 @@ impl<'a> Message<'a> {
         MessageType::try_from(&self.data[..2]).unwrap()
     }
 
-    /// Retrieve the [`MessageClass`] of a [`Message`]
+    /// Retrieve the [`MessageClass`] of a [`Message`].
     ///
     /// # Examples
     ///
@@ -1142,9 +1144,9 @@ impl<'a> Message<'a> {
         self.class() == cls
     }
 
-    /// Returns whether the [`Message`] is a response
+    /// Returns whether the [`Message`] is a response.
     ///
-    /// This means that the [`Message`] has a class of either success or error
+    /// This means that the [`Message`] has a class of either success or error.
     ///
     /// # Examples
     ///
@@ -1167,7 +1169,7 @@ impl<'a> Message<'a> {
         self.class().is_response()
     }
 
-    /// Retrieves the method of the [`Message`]
+    /// Retrieves the method of the [`Message`].
     ///
     /// # Examples
     ///
@@ -1182,7 +1184,7 @@ impl<'a> Message<'a> {
         self.get_type().method()
     }
 
-    /// Returns whether the [`Message`] is of the specified method
+    /// Returns whether the [`Message`] is of the specified method.
     ///
     /// # Examples
     ///
@@ -1215,7 +1217,7 @@ impl<'a> Message<'a> {
         BigEndian::read_u128(&self.data[4..]).into()
     }
 
-    /// Deserialize a `Message` from its network bytes.
+    /// Deserialize a STUN `Message` from its network bytes.
     ///
     /// This function will ensure that any fingerprint contained within matches the message
     /// contents and return errors on failure.
@@ -1337,10 +1339,7 @@ impl<'a> Message<'a> {
         Ok(Message { data: orig_data })
     }
 
-    /// Validates the MESSAGE_INTEGRITY attribute with the provided credentials
-    ///
-    /// The Original data that was used to construct this [`Message`] must be provided in order
-    /// to successfully validate the [`Message`]
+    /// Validates the MESSAGE_INTEGRITY attribute with the provided credentials.
     ///
     /// # Examples
     ///
@@ -1382,7 +1381,7 @@ impl<'a> Message<'a> {
         self.validate_integrity_with_hmac(algo, &msg_hmac, &key)
     }
 
-    /// Validates the MESSAGE_INTEGRITY attribute with the provided credentials key.
+    /// Validates the MESSAGE_INTEGRITY attribute with the provided credential [`IntegrityKey`].
     pub fn validate_integrity_with_key(
         &self,
         key: &IntegrityKey,
@@ -1542,7 +1541,7 @@ impl<'a> Message<'a> {
     ///
     /// # Examples
     ///
-    /// Retrieve a`RawAttribute`
+    /// Retrieve a`RawAttribute`.
     ///
     /// ```
     /// # use stun_types::attribute::{RawAttribute, Attribute};
@@ -1681,8 +1680,9 @@ impl<'a> Message<'a> {
     }
 
     /// Check that a message [`Message`] only contains required attributes that are supported and
-    /// have at least some set of required attributes.  Returns an appropriate error message on
-    /// failure to meet these requirements.
+    /// have at least some set of required attributes.
+    ///
+    /// Returns an appropriate error message on failure to meet these requirements.
     ///
     /// # Examples
     ///
@@ -1770,7 +1770,7 @@ impl<'a> Message<'a> {
     }
 
     /// Generate an error message with an [`ErrorCode`] attribute signalling 'Unknown Attribute'
-    /// and an [`UnknownAttributes`] attribute containing the attributes that are unknown.
+    /// and an [`UnknownAttributes`] attribute containing the attributes that are unknown..
     ///
     /// # Examples
     ///
@@ -1806,7 +1806,7 @@ impl<'a> Message<'a> {
         out
     }
 
-    /// Generate an error message with an [`ErrorCode`] attribute signalling a 'Bad Request'
+    /// Generate an error message with an [`ErrorCode`] attribute signalling a 'Bad Request'.
     ///
     /// # Examples
     ///
@@ -2010,7 +2010,7 @@ impl<'a> Iterator for MessageAttributesIter<'a> {
 #[allow(clippy::len_without_is_empty)]
 /// Trait for implementing a writer for [`Message`]s.
 pub trait MessageWrite {
-    /// The output of this [`MessageWrite`]
+    /// The output of this [`MessageWrite`].
     type Output;
     /// Return the maximum size of the output.  If the output data is not bound to a fixed size,
     /// `None` should be returned.
@@ -2042,7 +2042,7 @@ pub trait MessageWrite {
 
 /// Extension trait for [`MessageWrite`] providing helper functions.
 pub trait MessageWriteExt: MessageWrite {
-    /// Retrieve the [`MessageClass`] of a [`Message`]
+    /// Retrieve the [`MessageClass`] of a [`Message`].
     ///
     /// # Examples
     ///
@@ -2057,7 +2057,7 @@ pub trait MessageWriteExt: MessageWrite {
         MessageType::from_bytes(self.data()).unwrap()
     }
 
-    /// Retrieve the [`MessageClass`] of a [`Message`]
+    /// Retrieve the [`MessageClass`] of a [`Message`].
     ///
     /// # Examples
     ///
@@ -2072,7 +2072,7 @@ pub trait MessageWriteExt: MessageWrite {
         self.get_type().class()
     }
 
-    /// Returns whether the [`Message`] is of the specified [`MessageClass`]
+    /// Returns whether the [`Message`] is of the specified [`MessageClass`].
     ///
     /// # Examples
     ///
@@ -2087,9 +2087,9 @@ pub trait MessageWriteExt: MessageWrite {
         self.class() == cls
     }
 
-    /// Returns whether the [`Message`] is a response
+    /// Returns whether the [`Message`] is a response.
     ///
-    /// This means that the [`Message`] has a class of either success or error
+    /// This means that the [`Message`] has a class of either success or error.
     ///
     /// # Examples
     ///
@@ -2112,7 +2112,7 @@ pub trait MessageWriteExt: MessageWrite {
         self.class().is_response()
     }
 
-    /// Retrieves the method of the [`Message`]
+    /// Retrieves the method of the [`Message`].
     ///
     /// # Examples
     ///
@@ -2127,7 +2127,7 @@ pub trait MessageWriteExt: MessageWrite {
         self.get_type().method()
     }
 
-    /// Returns whether the [`Message`] is of the specified method
+    /// Returns whether the [`Message`] is of the specified method.
     ///
     /// # Examples
     ///
@@ -2143,7 +2143,7 @@ pub trait MessageWriteExt: MessageWrite {
         self.method() == method
     }
 
-    /// Retrieves the 96-bit transaction ID of the [`Message`]
+    /// Retrieves the 96-bit transaction ID of the [`Message`].
     ///
     /// # Examples
     ///
@@ -2160,13 +2160,13 @@ pub trait MessageWriteExt: MessageWrite {
         BigEndian::read_u128(&self.data()[4..]).into()
     }
 
-    /// Adds MESSAGE_INTEGRITY attribute to a [`Message`] using the provided credentials
+    /// Adds MESSAGE_INTEGRITY attribute to a [`Message`] using the provided credentials.
     ///
     /// # Errors
     ///
-    /// - If a [`MessageIntegrity`] attribute is already present
-    /// - If a [`MessageIntegritySha256`] attribute is already present
-    /// - If a [`Fingerprint`] attribute is already present
+    /// - If a [`MessageIntegrity`] attribute is already present.
+    /// - If a [`MessageIntegritySha256`] attribute is already present.
+    /// - If a [`Fingerprint`] attribute is already present.
     ///
     /// # Examples
     ///
@@ -2259,11 +2259,11 @@ pub trait MessageWriteExt: MessageWrite {
         Ok(())
     }
 
-    /// Adds [`Fingerprint`] attribute to a [`Message`]
+    /// Adds [`Fingerprint`] attribute to a [`Message`].
     ///
     /// # Errors
     ///
-    /// - If a [`Fingerprint`] attribute is already present
+    /// - If a [`Fingerprint`] attribute is already present.
     ///
     /// # Examples
     ///
@@ -2295,25 +2295,23 @@ pub trait MessageWriteExt: MessageWrite {
         Ok(())
     }
 
-    /// Add a `Attribute` to this `Message`.  Only one `AttributeType` can be added for each
-    /// `Attribute.  Attempting to add multiple `Atribute`s of the same `AttributeType` will fail.
+    /// Add a `Attribute` to this `Message`.
     ///
     /// # Errors
     ///
-    /// - If the attribute already exists within the message
     /// - If attempting to add attributes when [`MessageIntegrity`], [`MessageIntegritySha256`] or
     /// [`Fingerprint`] atributes already exist.
     ///
     /// # Panics
     ///
-    /// - if a [`MessageIntegrity`] or [`MessageIntegritySha256`] attribute is attempted to be added.  Use
-    /// `Message::add_message_integrity` instead.
-    /// - if a [`Fingerprint`] attribute is attempted to be added. Use
-    /// `Message::add_fingerprint` instead.
+    /// - if a [`MessageIntegrity`] or [`MessageIntegritySha256`] attribute is attempted to be
+    ///   added. Use `Message::add_message_integrity` instead.
+    /// - if a [`Fingerprint`] attribute is attempted to be added. Use `Message::add_fingerprint`
+    ///   instead.
     ///
     /// # Examples
     ///
-    /// Add an `Attribute`
+    /// Add an `Attribute`.
     ///
     /// ```
     /// # use stun_types::attribute::RawAttribute;
@@ -2384,7 +2382,7 @@ impl MessageWriteVec {
         Self::default()
     }
 
-    /// Allocate a new [`MessageWriteVec`] with a preallocated capacity
+    /// Allocate a new [`MessageWriteVec`] with a preallocated capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             output: Vec::with_capacity(capacity),

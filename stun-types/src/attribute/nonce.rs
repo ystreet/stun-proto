@@ -19,7 +19,7 @@ use super::{
     AttributeWriteExt, RawAttribute,
 };
 
-/// The Nonce [`Attribute`]
+/// The Nonce [`Attribute`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Nonce {
     nonce: String,
@@ -78,7 +78,7 @@ impl TryFrom<&RawAttribute<'_>> for Nonce {
 }
 
 impl Nonce {
-    /// Create a new Nonce [`Attribute`]
+    /// Create a new Nonce [`Attribute`].
     ///
     /// # Examples
     ///
@@ -99,7 +99,7 @@ impl Nonce {
         })
     }
 
-    /// Retrieve the nonce value
+    /// Retrieve the nonce value.
     ///
     /// # Examples
     ///
