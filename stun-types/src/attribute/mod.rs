@@ -241,6 +241,7 @@ pub fn add_display_impl(atype: AttributeType, imp: AttributeDisplay) {
 /// assert_eq!(display_str, "MyAttribute");
 /// # }
 /// ```
+#[cfg(feature = "std")]
 #[macro_export]
 macro_rules! attribute_display {
     ($typ:ty) => {{
