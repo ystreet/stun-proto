@@ -3211,12 +3211,8 @@ mod tests {
         msg.add_message_integrity(&credentials.clone().into(), IntegrityAlgorithm::Sha256)
             .unwrap();
         msg.add_fingerprint().unwrap();
-        let mut bytes = msg.finish();
-        let software = Software::new("s").unwrap();
-        let software_bytes = RawAttribute::from(&software).to_bytes();
-        let software_len = software_bytes.len();
-        bytes.extend(software_bytes);
-        bytes[3] += software_len as u8;
+        let key = credentials.make_key();
+        let bytes = msg.finish();
         let msg = Message::from_bytes(&bytes).unwrap();
         assert!(msg.has_attribute(MessageIntegrity::TYPE));
         assert!(msg.has_attribute(MessageIntegritySha256::TYPE));
@@ -3225,6 +3221,33 @@ mod tests {
             msg.validate_integrity(&credentials.clone().into()).unwrap(),
             IntegrityAlgorithm::Sha256
         );
+        assert_eq!(
+            msg.validate_integrity_with_key(&key).unwrap(),
+            IntegrityAlgorithm::Sha256
+        );
+    }
+
+    #[test]
+    fn validate_integrity_missing_attribute() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        msg.add_fingerprint().unwrap();
+        let credentials = ShortTermCredentials::new("pass".to_owned());
+        let key = credentials.make_key();
+        let bytes = msg.finish();
+        let msg = Message::from_bytes(&bytes).unwrap();
+        assert!(matches!(
+            msg.validate_integrity(&credentials.clone().into()),
+            Err(ValidateError::Parse(StunParseError::MissingAttribute(
+                MessageIntegrity::TYPE
+            )))
+        ));
+        assert!(matches!(
+            msg.validate_integrity_with_key(&key),
+            Err(ValidateError::Parse(StunParseError::MissingAttribute(
+                MessageIntegrity::TYPE
+            )))
+        ));
     }
 
     #[test]
