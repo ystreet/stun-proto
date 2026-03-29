@@ -943,14 +943,21 @@ mod tests {
     #[test]
     #[cfg(feature = "std")]
     fn test_external_display_impl() {
+        use crate::message::TransactionId;
+
         let _log = crate::tests::test_init_log();
         let atype = AttributeType::new(0xFFFF);
+        assert_eq!(atype.name(), "unknown");
+        let data = [4, 0];
+        let attr = RawAttribute::new(atype, &data);
+        assert_eq!(
+            alloc::format!("{attr}"),
+            "RawAttribute (type: AttributeType(65535), len: 2, data: Borrowed(DataSlice([4, 0])))"
+        );
         let imp = |attr: &RawAttribute<'_>,
                    f: &mut core::fmt::Formatter<'_>|
          -> core::fmt::Result { write!(f, "Custom {}", attr.value[0]) };
         add_display_impl(atype, imp);
-        let data = [4, 0];
-        let attr = RawAttribute::new(atype, &data);
         let display_str = alloc::format!("{}", attr);
         assert_eq!(display_str, "Custom 4");
 
@@ -958,5 +965,11 @@ mod tests {
         assert_eq!(atype.name(), "SOME-NAME");
 
         attribute_display!(Fingerprint);
+
+        let id = TransactionId::generate();
+        let xor_addr = XorMappedAddress::new("127.0.0.1:10000".parse().unwrap(), id);
+        let raw = xor_addr.to_raw();
+        let raw = RawAttribute::new(raw.get_type(), &raw.value[..3]);
+        assert_eq!(alloc::format!("{raw}"), "32(0x20: XOR-MAPPED-ADDRESS)(Malformed): len: 3, data: Borrowed(DataSlice([0, 1, 6])))");
     }
 }
