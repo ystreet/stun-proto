@@ -46,6 +46,8 @@ pub struct StunAgent {
     remote_addr: Option<SocketAddr>,
     validated_peers: BTreeSet<SocketAddr>,
     outstanding_requests: BTreeMap<TransactionId, StunRequestState>,
+    request_timeouts: Vec<Duration>,
+    last_retransmit_timeout: Duration,
 }
 
 /// Builder struct for a [`StunAgent`].
@@ -54,6 +56,7 @@ pub struct StunAgentBuilder {
     transport: TransportType,
     local_addr: SocketAddr,
     remote_addr: Option<SocketAddr>,
+    rto: RequestRto,
 }
 
 impl StunAgentBuilder {
@@ -63,9 +66,40 @@ impl StunAgentBuilder {
         self
     }
 
+    /// Configure the default timeouts and retransmissions for each STUN request.
+    ///
+    /// - `initial` - the initial time between consecutive transmissions. If 0, or 1, then only a
+    ///   single request will be performed.
+    /// - `max` - the maximum amount of time between consecutive retransmits.
+    /// - `retransmits` - the total number of transmissions of the request.
+    /// - `final_retransmit_timeout` - the amount of time after the final transmission to wait
+    ///   for a response before considering the request as having timed out.
+    ///
+    /// As specified in RFC 8489, `initial_rto` should be >= 500ms (unless specific information is
+    /// available on the RTT, `max` is `Duration::MAX`, `retransmits` has a default value of 7,
+    /// and `last_retransmit_timeout` should be `16 * initial_rto`.
+    ///
+    /// STUN transactions over TCP will only send a single request and have a timeout of the sum of
+    /// the timeouts of a UDP transaction.
+    pub fn request_retransmits(
+        mut self,
+        initial: Duration,
+        max: Duration,
+        retransmits: u32,
+        final_retransmit_timeout: Duration,
+    ) -> Self {
+        self.rto.initial = initial;
+        self.rto.max = max;
+        self.rto.retransmits = retransmits;
+        self.rto.last_retransmit = final_retransmit_timeout;
+        self
+    }
+
     /// Build the [`StunAgent`].
     pub fn build(self) -> StunAgent {
         let id = STUN_AGENT_COUNT.fetch_add(1, Ordering::SeqCst);
+        let (request_timeouts, last_retransmit_timeout) =
+            self.rto.calculate_timeouts(self.transport);
         StunAgent {
             id,
             transport: self.transport,
@@ -73,6 +107,8 @@ impl StunAgentBuilder {
             remote_addr: self.remote_addr,
             validated_peers: Default::default(),
             outstanding_requests: Default::default(),
+            request_timeouts,
+            last_retransmit_timeout,
         }
     }
 }
@@ -84,6 +120,7 @@ impl StunAgent {
             transport,
             local_addr,
             remote_addr: None,
+            rto: Default::default(),
         }
     }
 
@@ -182,6 +219,8 @@ impl StunAgent {
                     to,
                     transaction_id,
                     integrity_algorithm,
+                    self.request_timeouts.clone(),
+                    self.last_retransmit_timeout,
                 ))
             }
             alloc::collections::btree_map::Entry::Occupied(_entry) => {
@@ -477,6 +516,46 @@ enum StunRequestPollRet {
 }
 
 #[derive(Debug)]
+struct RequestRto {
+    initial: Duration,
+    max: Duration,
+    retransmits: u32,
+    last_retransmit: Duration,
+}
+
+impl Default for RequestRto {
+    fn default() -> Self {
+        Self {
+            initial: Duration::from_millis(500),
+            max: Duration::MAX,
+            retransmits: 7,
+            last_retransmit: Duration::from_millis(8),
+        }
+    }
+}
+
+impl RequestRto {
+    fn calculate_timeouts(&self, transport: TransportType) -> (Vec<Duration>, Duration) {
+        match transport {
+            TransportType::Udp => {
+                let timeouts = (0..self.retransmits.max(1) - 1)
+                    .map(|i| (self.initial * 2u32.pow(i)).min(self.max))
+                    .collect::<Vec<_>>();
+                (timeouts, self.last_retransmit)
+            }
+            TransportType::Tcp => {
+                let timeouts = vec![];
+                let last_retransmit_timeout = self.last_retransmit
+                    + (0..self.retransmits.max(1) - 1).fold(Duration::ZERO, |acc, i| {
+                        acc + (self.initial * 2u32.pow(i)).min(self.max)
+                    });
+                (timeouts, last_retransmit_timeout)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 struct StunRequestState {
     transaction_id: TransactionId,
     request_integrity: Option<IntegrityAlgorithm>,
@@ -484,8 +563,8 @@ struct StunRequestState {
     transport: TransportType,
     from: SocketAddr,
     to: SocketAddr,
-    timeouts_ms: Vec<u64>,
-    last_retransmit_timeout_ms: u64,
+    timeouts: Vec<Duration>,
+    last_retransmit_timeout: Duration,
     recv_cancelled: bool,
     send_cancelled: bool,
     timeout_i: usize,
@@ -493,6 +572,7 @@ struct StunRequestState {
 }
 
 impl StunRequestState {
+    #[allow(clippy::too_many_arguments)]
     fn new<T: AsRef<[u8]>>(
         request: T,
         transport: TransportType,
@@ -500,13 +580,22 @@ impl StunRequestState {
         to: SocketAddr,
         transaction_id: TransactionId,
         integrity_algorithm: Option<IntegrityAlgorithm>,
+        timeouts: Vec<Duration>,
+        last_retransmit_timeout: Duration,
     ) -> Self {
         let data = request.as_ref();
-        let (timeouts_ms, last_retransmit_timeout_ms) = if transport == TransportType::Tcp {
-            (vec![], 39500)
+        /*
+        let (timeouts, last_retransmit_timeout) = if transport == TransportType::Tcp {
+            (vec![], Duration::from_millis(39500))
         } else {
-            (vec![500, 1000, 2000, 4000, 8000, 16000], 8000)
-        };
+            (
+                [500, 1000, 2000, 4000, 8000, 16000]
+                    .into_iter()
+                    .map(Duration::from_millis)
+                    .collect(),
+                Duration::from_millis(8000),
+            )
+        };*/
         Self {
             transaction_id,
             bytes: data.to_vec(),
@@ -514,9 +603,9 @@ impl StunRequestState {
             from,
             to,
             request_integrity: integrity_algorithm,
-            timeouts_ms,
+            timeouts,
             timeout_i: 0,
-            last_retransmit_timeout_ms,
+            last_retransmit_timeout,
             recv_cancelled: false,
             send_cancelled: false,
             last_send_time: None,
@@ -529,15 +618,15 @@ impl StunRequestState {
             trace!("not sent yet -> send immediately");
             return Some(now);
         };
-        if self.timeout_i >= self.timeouts_ms.len() {
-            let next_send = last_send + Duration::from_millis(self.last_retransmit_timeout_ms);
+        if self.timeout_i >= self.timeouts.len() {
+            let next_send = last_send + self.last_retransmit_timeout;
             trace!("final retransmission, final timeout ends at {next_send:?}");
             if next_send > now {
                 return Some(next_send);
             }
             return None;
         }
-        let next_send = last_send + Duration::from_millis(self.timeouts_ms[self.timeout_i]);
+        let next_send = last_send + self.timeouts[self.timeout_i];
         Some(next_send)
     }
 
@@ -557,7 +646,7 @@ impl StunRequestState {
             return StunRequestPollRet::TimedOut;
         };
         if next_send >= now {
-            if self.send_cancelled && self.timeout_i >= self.timeouts_ms.len() {
+            if self.send_cancelled && self.timeout_i >= self.timeouts.len() {
                 // this cancellation may need a different value
                 return StunRequestPollRet::Cancelled;
             }
@@ -672,12 +761,9 @@ impl StunRequestMut<'_> {
         self.agent
     }
 
-    /// Configure timeouts for the STUN transaction.  As specified in RFC 8489, `initial_rto`
-    /// should be >= 500ms, `retransmits` has a default value of 7, and `last_retransmit_timeout`
-    /// should be 16 * `initial_rto`.
+    /// Configure the timeouts and retransmissions for the STUN request.
     ///
-    /// STUN transactions over TCP will only send a single request and have a timeout of the sum of
-    /// the timeouts of a UDP transaction.
+    /// This the same as calling `[configure_timeout_with_max`] with a `max` of `Duration::MAX`.
     pub fn configure_timeout(
         &mut self,
         initial_rto: Duration,
@@ -692,14 +778,21 @@ impl StunRequestMut<'_> {
         );
     }
 
-    /// Configure timeouts for the STUN transaction.  As specified in RFC 8489, `initial_rto`
-    /// should be >= 500ms, `retransmits` has a default value of 7, and `last_retransmit_timeout`
-    /// should be 16 * `initial_rto`.
+    /// Configure the timeouts and retransmissions for the STUN request.
+    ///
+    /// - `initial` - the initial time between consecutive transmissions. If 0, or 1, then only a
+    ///   single request will be performed.
+    /// - `max` - the maximum amount of time between consecutive retransmits.
+    /// - `retransmits` - the total number of transmissions of the request.
+    /// - `final_retransmit_timeout` - the amount of time after the final transmission to wait
+    ///   for a response before considering the request as having timed out.
+    ///
+    /// As specified in RFC 8489, `initial_rto` should be >= 500ms (unless specific information is
+    /// available on the RTT, `max` is `Duration::MAX`, `retransmits` has a default value of 7,
+    /// and `last_retransmit_timeout` should be `16 * initial_rto`.
     ///
     /// STUN transactions over TCP will only send a single request and have a timeout of the sum of
     /// the timeouts of a UDP transaction.
-    ///
-    ///
     pub fn configure_timeout_with_max(
         &mut self,
         initial_rto: Duration,
@@ -708,22 +801,15 @@ impl StunRequestMut<'_> {
         max_rto: Duration,
     ) {
         if let Some(state) = self.agent.mut_request_state(self.transaction_id) {
-            match state.transport {
-                TransportType::Udp => {
-                    state.timeouts_ms = (0..retransmits)
-                        .map(|i| (initial_rto * 2u32.pow(i)).min(max_rto).as_millis() as u64)
-                        .collect::<Vec<_>>();
-                    state.last_retransmit_timeout_ms = last_retransmit_timeout.as_millis() as u64;
-                }
-                TransportType::Tcp => {
-                    state.timeouts_ms = vec![];
-                    state.last_retransmit_timeout_ms = (last_retransmit_timeout
-                        + (0..retransmits).fold(Duration::ZERO, |acc, i| {
-                            acc + (initial_rto * 2u32.pow(i)).min(max_rto)
-                        }))
-                    .as_millis() as u64;
-                }
+            let (timeouts, final_wait) = RequestRto {
+                initial: initial_rto,
+                max: max_rto,
+                retransmits,
+                last_retransmit: last_retransmit_timeout,
             }
+            .calculate_timeouts(state.transport);
+            state.timeouts = timeouts;
+            state.last_retransmit_timeout = final_wait;
         }
     }
 }
@@ -959,7 +1045,7 @@ pub(crate) mod tests {
         let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
         transaction.configure_timeout_with_max(
             Duration::from_secs(1),
-            3,
+            4,
             Duration::from_secs(10),
             Duration::from_secs(2),
         );
@@ -1047,18 +1133,17 @@ pub(crate) mod tests {
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
         let mut agent = StunAgent::builder(TransportType::Tcp, local_addr)
             .remote_addr(remote_addr)
+            .request_retransmits(
+                Duration::from_secs(1),
+                Duration::from_secs(2),
+                4,
+                Duration::from_secs(3),
+            )
             .build();
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
         let transaction_id = msg.transaction_id();
         let mut now = Instant::ZERO;
         agent.send_request(msg.finish(), remote_addr, now).unwrap();
-        let mut transaction = agent.mut_request_transaction(transaction_id).unwrap();
-        transaction.configure_timeout_with_max(
-            Duration::from_secs(1),
-            3,
-            Duration::from_secs(3),
-            Duration::from_secs(2),
-        );
         let StunAgentPollRet::WaitUntil(wait) = agent.poll(now) else {
             unreachable!();
         };
@@ -1368,6 +1453,52 @@ pub(crate) mod tests {
                 Transmit::new(Data::from(data.as_ref()), TransportType::Udp, from, to)
             ),
             String::from("Transmit(UDP: 127.0.0.1:1000 -> 127.0.0.1:2000 of 2 bytes)")
+        );
+    }
+
+    #[test]
+    fn request_retransmits() {
+        let _log = crate::tests::test_init_log();
+        let rto = RequestRto {
+            initial: Duration::from_millis(1),
+            max: Duration::MAX,
+            retransmits: 0,
+            last_retransmit: Duration::from_secs(1),
+        };
+        let (timeouts, last_transmit_timeout) = rto.calculate_timeouts(TransportType::Udp);
+        assert_eq!(timeouts, vec![]);
+        assert_eq!(last_transmit_timeout, Duration::from_secs(1));
+        let (timeouts, last_transmit_timeout) = rto.calculate_timeouts(TransportType::Tcp);
+        assert_eq!(timeouts, vec![]);
+        assert_eq!(last_transmit_timeout, Duration::from_secs(1));
+
+        let rto = RequestRto {
+            initial: Duration::from_millis(1),
+            max: Duration::MAX,
+            retransmits: 1,
+            last_retransmit: Duration::from_secs(1),
+        };
+        let (timeouts, last_transmit_timeout) = rto.calculate_timeouts(TransportType::Udp);
+        assert_eq!(timeouts, vec![]);
+        assert_eq!(last_transmit_timeout, Duration::from_secs(1));
+        let (timeouts, last_transmit_timeout) = rto.calculate_timeouts(TransportType::Tcp);
+        assert_eq!(timeouts, vec![]);
+        assert_eq!(last_transmit_timeout, Duration::from_secs(1));
+
+        let rto = RequestRto {
+            initial: Duration::from_millis(1),
+            max: Duration::MAX,
+            retransmits: 2,
+            last_retransmit: Duration::from_secs(1),
+        };
+        let (timeouts, last_transmit_timeout) = rto.calculate_timeouts(TransportType::Udp);
+        assert_eq!(timeouts, vec![Duration::from_millis(1)]);
+        assert_eq!(last_transmit_timeout, Duration::from_secs(1));
+        let (timeouts, last_transmit_timeout) = rto.calculate_timeouts(TransportType::Tcp);
+        assert_eq!(timeouts, vec![]);
+        assert_eq!(
+            last_transmit_timeout,
+            Duration::from_secs(1) + Duration::from_millis(1)
         );
     }
 }
