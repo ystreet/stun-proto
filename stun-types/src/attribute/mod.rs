@@ -878,6 +878,28 @@ mod tests {
     }
 
     #[test]
+    fn raw_attribute_write_into_small() {
+        let mut out = [0; 8];
+        let _log = crate::tests::test_init_log();
+        let orig = RawAttribute::new(1.into(), &[80, 160]);
+        assert_eq!(orig.get_type(), 1.into());
+        assert!(matches!(
+            orig.write_header(&mut out[..3]),
+            Err(StunWriteError::TooSmall {
+                expected: 4,
+                actual: 3,
+            })
+        ));
+        assert!(matches!(
+            orig.write_into(&mut out[..7]),
+            Err(StunWriteError::TooSmall {
+                expected: 8,
+                actual: 7,
+            })
+        ));
+    }
+
+    #[test]
     fn test_check_len() {
         let _log = crate::tests::test_init_log();
         assert!(check_len(4, ..).is_ok());
