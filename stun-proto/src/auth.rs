@@ -1807,7 +1807,7 @@ mod tests {
             test.initial_auth(now),
             Err(LongTermClientAuthError {
                 reason,
-                integrity,
+                integrity: _,
             }) if reason == LongTermClientAuthErrorReason::UnsupportedFeature
         ));
     }
@@ -1824,7 +1824,7 @@ mod tests {
             test.initial_auth(now),
             Err(LongTermClientAuthError {
                 reason,
-                integrity,
+                integrity: _,
             }) if reason == LongTermClientAuthErrorReason::UnsupportedFeature
         ));
     }
@@ -1842,7 +1842,7 @@ mod tests {
             test.initial_auth(now),
             Err(LongTermClientAuthError {
                 reason,
-                integrity,
+                integrity: _,
             }) if reason == LongTermClientAuthErrorReason::UnsupportedFeature
         ));
     }
@@ -1860,7 +1860,7 @@ mod tests {
             test.initial_auth(now),
             Err(LongTermClientAuthError {
                 reason,
-                integrity,
+                integrity: _,
             }) if reason == LongTermClientAuthErrorReason::UnsupportedFeature
         ));
     }
@@ -2527,7 +2527,7 @@ mod tests {
             ret,
             Err(LongTermServerAuthError {
                 reason,
-                integrity,
+                integrity: _,
             }) if reason == LongTermServerAuthErrorReason::Unauthorized
         ));
     }
@@ -2560,7 +2560,7 @@ mod tests {
             ret,
             Err(LongTermServerAuthError {
                 reason,
-                integrity,
+                integrity: _,
             }) if reason == LongTermServerAuthErrorReason::BadRequest
         ));
     }
@@ -2624,7 +2624,7 @@ mod tests {
             ret,
             Err(LongTermClientAuthError {
                 reason,
-                integrity,
+                integrity: _,
             }) if reason == LongTermClientAuthErrorReason::Unauthorized
         ));
     }
