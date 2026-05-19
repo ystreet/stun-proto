@@ -92,6 +92,7 @@ extern crate std;
 
 pub mod agent;
 pub mod auth;
+pub mod stats;
 
 pub use sans_io_time::Instant;
 pub use stun_types as types;

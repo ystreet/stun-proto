@@ -56,9 +56,10 @@ fn handle_incoming_data(
     data: &[u8],
     from: SocketAddr,
     stun_agent: &mut StunAgent,
+    now: Instant,
 ) -> Option<(Vec<u8>, SocketAddr)> {
     let msg = Message::from_bytes(data).ok()?;
-    if !stun_agent.handle_stun_message(&msg, from) {
+    if !stun_agent.handle_stun_message_with_time(&msg, from, now) {
         return None;
     }
     if msg.has_class(MessageClass::Request) {
@@ -119,9 +120,12 @@ fn main() -> io::Result<()> {
             loop {
                 let mut data = [0; 1500];
                 let (len, from) = warn_on_err(udp_socket.recv_from(&mut data), (0, local_addr));
-                if let Some((response, to)) =
-                    handle_incoming_data(&data[..len], from, &mut udp_stun_agent)
-                {
+                if let Some((response, to)) = handle_incoming_data(
+                    &data[..len],
+                    from,
+                    &mut udp_stun_agent,
+                    Instant::from_std(base_instant),
+                ) {
                     warn_on_err(udp_socket.send_to(&response, to), 0);
                 }
             }
@@ -144,12 +148,11 @@ fn main() -> io::Result<()> {
                 debug!("TCP connection with {remote_addr} closed");
                 return;
             }
+            let now = Instant::from_std(base_instant);
             if let Some((response, to)) =
-                handle_incoming_data(&data[..size], remote_addr, &mut tcp_stun_agent)
+                handle_incoming_data(&data[..size], remote_addr, &mut tcp_stun_agent, now)
             {
-                if let Ok(transmit) =
-                    tcp_stun_agent.send(response, to, Instant::from_std(base_instant))
-                {
+                if let Ok(transmit) = tcp_stun_agent.send(response, to, now) {
                     warn_on_err(stream.write_all(&transmit.data), ());
                 }
             }
