@@ -25,6 +25,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::time::Duration;
 
+use crate::stats::StunAgentStats;
 use crate::Instant;
 
 use stun_types::attribute::*;
@@ -33,7 +34,7 @@ use stun_types::message::*;
 
 use stun_types::TransportType;
 
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 static STUN_AGENT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
@@ -48,6 +49,7 @@ pub struct StunAgent {
     outstanding_requests: BTreeMap<TransactionId, StunRequestState>,
     request_timeouts: Vec<Duration>,
     last_retransmit_timeout: Duration,
+    stats: Option<StunAgentStats>,
 }
 
 /// Builder struct for a [`StunAgent`].
@@ -57,6 +59,7 @@ pub struct StunAgentBuilder {
     local_addr: SocketAddr,
     remote_addr: Option<SocketAddr>,
     rto: RequestRto,
+    stats: bool,
 }
 
 impl StunAgentBuilder {
@@ -95,11 +98,26 @@ impl StunAgentBuilder {
         self
     }
 
+    /// Enable statistics tracking on the built [`StunAgent`].
+    ///
+    /// When enabled, the agent tracks round-trip times, bytes sent and received,
+    /// transaction counts, and timeout/cancellation counts. Access the collected
+    /// statistics via [`StunAgent::stats`] or [`StunAgent::stats_mut`].
+    pub fn stats(mut self, stats: bool) -> Self {
+        self.stats = stats;
+        self
+    }
+
     /// Build the [`StunAgent`].
     pub fn build(self) -> StunAgent {
         let id = STUN_AGENT_COUNT.fetch_add(1, Ordering::SeqCst);
         let (request_timeouts, last_retransmit_timeout) =
             self.rto.calculate_timeouts(self.transport);
+        let stats = if self.stats {
+            Some(StunAgentStats::default())
+        } else {
+            None
+        };
         StunAgent {
             id,
             transport: self.transport,
@@ -109,6 +127,7 @@ impl StunAgentBuilder {
             outstanding_requests: Default::default(),
             request_timeouts,
             last_retransmit_timeout,
+            stats,
         }
     }
 }
@@ -121,6 +140,7 @@ impl StunAgent {
             local_addr,
             remote_addr: None,
             rto: Default::default(),
+            stats: false,
         }
     }
 
@@ -137,6 +157,16 @@ impl StunAgent {
     /// The remote address of this [`StunAgent`].
     pub fn remote_addr(&self) -> Option<SocketAddr> {
         self.remote_addr
+    }
+
+    /// Returns the statistics for this agent if stats collection is enabled.
+    pub fn stats(&self) -> Option<&StunAgentStats> {
+        self.stats.as_ref()
+    }
+
+    /// Returns the mutable statistics for this agent if stats collection is enabled.
+    pub fn stats_mut(&mut self) -> Option<&mut StunAgentStats> {
+        self.stats.as_mut()
     }
 
     /// Perform any operations needed to be able to send data to a peer.
@@ -171,8 +201,16 @@ impl StunAgent {
             "transaction_id",
             tracing::field::display(hdr.transaction_id()),
         );
-        assert!(!hdr.get_type().has_class(MessageClass::Request));
+        let cls = hdr.get_type().class();
+        assert_ne!(cls, MessageClass::Request);
         trace!("Sending {} to {to}", hdr.get_type());
+        if let Some(s) = &mut self.stats {
+            if cls == MessageClass::Indication {
+                s.record_indication_sent(data.len() as u64);
+            } else {
+                s.record_response_sent(data.len() as u64);
+            }
+        }
         Ok(Transmit::new(msg, self.transport, self.local_addr, to))
     }
 
@@ -212,6 +250,9 @@ impl StunAgent {
                     })
                     .last();
                 trace!("Adding request to {to} with integrity algorithm: {integrity_algorithm:?}");
+                if let Some(s) = &mut self.stats {
+                    s.record_request_sent(data.len() as u64);
+                }
                 entry.insert(StunRequestState::new(
                     msg,
                     self.transport,
@@ -269,6 +310,9 @@ impl StunAgent {
     ///
     /// The return value indicates whether the message passes internal checks and should be acted
     /// upon.
+    ///
+    /// This function is provided for backwards compatibility and new code should use
+    /// [`StunAgent::handle_stun_message_with_time`] in order to compute round trip statistics.
     #[tracing::instrument(
         name = "stun_handle_message"
         skip(self, msg, from),
@@ -276,14 +320,67 @@ impl StunAgent {
             transaction_id = %msg.transaction_id(),
         )
     )]
+    #[deprecated = "Use handle_stun_message_with_time() to be able to retrieve round trip statistics"]
+    // FIXME: 3.0: remove
     pub fn handle_stun_message(&mut self, msg: &Message<'_>, from: SocketAddr) -> bool {
-        if msg.is_response()
-            && self
-                .take_outstanding_request(&msg.transaction_id())
-                .is_none()
-        {
+        self.handle_stun_message_internal(msg, from, None)
+    }
+
+    /// Provide data received on a socket from a peer for handling by the [`StunAgent`] after it
+    /// has successfully passed authentication.
+    ///
+    /// For responses, this will cause the associated request to be removed from the agent if it
+    /// exists. If statistics are enabled, then `time` is used to compute round trip statistics.
+    ///
+    /// The return value indicates whether the message passes internal checks and should be acted
+    /// upon.
+    pub fn handle_stun_message_with_time(
+        &mut self,
+        msg: &Message<'_>,
+        from: SocketAddr,
+        now: Instant,
+    ) -> bool {
+        self.handle_stun_message_internal(msg, from, Some(now))
+    }
+
+    fn handle_stun_message_internal(
+        &mut self,
+        msg: &Message<'_>,
+        from: SocketAddr,
+        now: Option<Instant>,
+    ) -> bool {
+        let outstanding = if msg.is_response() {
+            self.take_outstanding_request(&msg.transaction_id())
+        } else {
+            None
+        };
+        if msg.is_response() && outstanding.is_none() {
             trace!("original request disappeared");
             return false;
+        }
+        if let Some(s) = &mut self.stats {
+            let msg_len = msg.as_bytes().len() as u64;
+            match msg.class() {
+                MessageClass::Request => s.record_request_received(msg_len),
+                MessageClass::Indication => s.record_indication_received(msg_len),
+                MessageClass::Error | MessageClass::Success => {
+                    if let Some(state) = &outstanding {
+                        if let Some(rtt) = now
+                            .zip(
+                                state
+                                    .last_send_time
+                                    // Only requests that did not require a retransmit count towards rtt.
+                                    .filter(|_| state.timeout_i == 0)
+                                    .zip(state.first_send_time),
+                            )
+                            .map(|(now, (last, _first))| now - last)
+                        {
+                            s.record_rtt(rtt);
+                        }
+                    }
+                    s.record_response_received(msg_len);
+                }
+            }
         }
         self.validated_peer(from);
         true
@@ -386,11 +483,17 @@ impl StunAgent {
         }
         if let Some(transaction) = timeout {
             if let Some(_state) = self.outstanding_requests.remove(&transaction) {
+                if let Some(s) = &mut self.stats {
+                    s.record_timeout();
+                }
                 return StunAgentPollRet::TransactionTimedOut(transaction);
             }
         }
         if let Some(transaction) = cancelled {
             if let Some(_state) = self.outstanding_requests.remove(&transaction) {
+                if let Some(s) = &mut self.stats {
+                    s.record_cancelled();
+                }
                 return StunAgentPollRet::TransactionCancelled(transaction);
             }
         }
@@ -404,10 +507,17 @@ impl StunAgent {
         skip(self),
     )]
     pub fn poll_transmit(&mut self, now: Instant) -> Option<Transmit<&[u8]>> {
-        self.outstanding_requests
+        let transmit = self
+            .outstanding_requests
             .values_mut()
             .filter_map(|request| request.poll_transmit(now))
-            .next()
+            .next();
+        if let Some(t) = &transmit {
+            if let Some(s) = &mut self.stats {
+                s.record_retransmit_bytes(t.data.as_ref().len() as u64);
+            }
+        }
+        transmit
     }
 }
 
@@ -568,6 +678,7 @@ struct StunRequestState {
     recv_cancelled: bool,
     send_cancelled: bool,
     timeout_i: usize,
+    first_send_time: Option<Instant>,
     last_send_time: Option<Instant>,
 }
 
@@ -584,18 +695,6 @@ impl StunRequestState {
         last_retransmit_timeout: Duration,
     ) -> Self {
         let data = request.as_ref();
-        /*
-        let (timeouts, last_retransmit_timeout) = if transport == TransportType::Tcp {
-            (vec![], Duration::from_millis(39500))
-        } else {
-            (
-                [500, 1000, 2000, 4000, 8000, 16000]
-                    .into_iter()
-                    .map(Duration::from_millis)
-                    .collect(),
-                Duration::from_millis(8000),
-            )
-        };*/
         Self {
             transaction_id,
             bytes: data.to_vec(),
@@ -608,6 +707,7 @@ impl StunRequestState {
             last_retransmit_timeout,
             recv_cancelled: false,
             send_cancelled: false,
+            first_send_time: None,
             last_send_time: None,
         }
     }
@@ -671,6 +771,9 @@ impl StunRequestState {
         }
         if self.last_send_time.is_some() {
             self.timeout_i += 1;
+        }
+        if self.first_send_time.is_none() {
+            self.first_send_time = Some(now);
         }
         self.last_send_time = Some(now);
         if self.send_cancelled {
@@ -901,7 +1004,7 @@ pub(crate) mod tests {
         let response = Message::builder_error(&request, MessageWriteVec::new());
         let resp_data = response.finish();
         let response = Message::from_bytes(&resp_data).unwrap();
-        assert!(agent.handle_stun_message(&response, remote_addr));
+        assert!(agent.handle_stun_message_with_time(&response, remote_addr, now));
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
 
@@ -914,6 +1017,8 @@ pub(crate) mod tests {
         let _log = crate::tests::test_init_log();
         let local_addr = "127.0.0.1:2000".parse().unwrap();
         let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let now = Instant::ZERO;
+
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
             .remote_addr(remote_addr)
             .build();
@@ -941,7 +1046,7 @@ pub(crate) mod tests {
         let resp_data = response.finish();
         let response = Message::from_bytes(&resp_data).unwrap();
         // response without a request is dropped.
-        assert!(!agent.handle_stun_message(&response, remote_addr))
+        assert!(!agent.handle_stun_message_with_time(&response, remote_addr, now))
     }
 
     #[test]
@@ -949,6 +1054,7 @@ pub(crate) mod tests {
         let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
+        let now = Instant::ZERO;
 
         let mut auth = ShortTermAuth::new();
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
@@ -991,7 +1097,7 @@ pub(crate) mod tests {
             .request_transaction(response.transaction_id())
             .unwrap();
         assert_eq!(request.integrity(), Some(IntegrityAlgorithm::Sha1));
-        assert!(agent.handle_stun_message(&response, remote_addr));
+        assert!(agent.handle_stun_message_with_time(&response, remote_addr, now));
 
         assert_eq!(response.transaction_id(), transaction_id);
         assert!(agent.request_transaction(transaction_id).is_none());
@@ -1166,6 +1272,7 @@ pub(crate) mod tests {
         let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
+        let now = Instant::ZERO;
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
@@ -1192,7 +1299,7 @@ pub(crate) mod tests {
             .request_transaction(response.transaction_id())
             .unwrap();
         assert_eq!(request.integrity(), None);
-        assert!(agent.handle_stun_message(&response, to));
+        assert!(agent.handle_stun_message_with_time(&response, to, now));
         assert_eq!(response.transaction_id(), transaction_id);
         assert!(agent.request_transaction(transaction_id).is_none());
         assert!(agent.mut_request_transaction(transaction_id).is_none());
@@ -1204,6 +1311,7 @@ pub(crate) mod tests {
         let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
+        let now = Instant::ZERO;
 
         let mut auth = ShortTermAuth::new();
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
@@ -1245,8 +1353,8 @@ pub(crate) mod tests {
         assert!(!agent.is_validated_peer(remote_addr));
 
         // however providing signifying success will cause peer validation to succeed
-        assert!(agent.handle_stun_message(&response, remote_addr));
-        assert!(!agent.handle_stun_message(&response, remote_addr));
+        assert!(agent.handle_stun_message_with_time(&response, remote_addr, now));
+        assert!(!agent.handle_stun_message_with_time(&response, remote_addr, now));
         assert!(agent.is_validated_peer(remote_addr));
     }
 
@@ -1255,6 +1363,7 @@ pub(crate) mod tests {
         let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
+        let now = Instant::ZERO;
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
         assert!(!agent.is_validated_peer(remote_addr));
@@ -1274,10 +1383,10 @@ pub(crate) mod tests {
         let data = response.finish();
         let to = transmit.to;
         let response = Message::from_bytes(&data).unwrap();
-        assert!(agent.handle_stun_message(&response, to));
+        assert!(agent.handle_stun_message_with_time(&response, to, now));
 
         let response = Message::from_bytes(&data).unwrap();
-        assert!(!agent.handle_stun_message(&response, to));
+        assert!(!agent.handle_stun_message_with_time(&response, to, now));
     }
 
     #[test]
@@ -1356,6 +1465,7 @@ pub(crate) mod tests {
         let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
+        let now = Instant::ZERO;
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
@@ -1383,7 +1493,7 @@ pub(crate) mod tests {
 
         let data = response.finish();
         let response = Message::from_bytes(&data).unwrap();
-        assert!(agent.handle_stun_message(&response, to));
+        assert!(agent.handle_stun_message_with_time(&response, to, now));
 
         assert!(agent.is_validated_peer(to));
     }
@@ -1393,6 +1503,7 @@ pub(crate) mod tests {
         let _log = crate::tests::test_init_log();
         let local_addr = "10.0.0.1:12345".parse().unwrap();
         let remote_addr = "10.0.0.2:3478".parse().unwrap();
+        let now = Instant::ZERO;
 
         let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
 
@@ -1400,7 +1511,7 @@ pub(crate) mod tests {
         let data = msg.finish();
         let stun = Message::from_bytes(&data).unwrap();
         error!("{stun:?}");
-        assert!(agent.handle_stun_message(&stun, remote_addr));
+        assert!(agent.handle_stun_message_with_time(&stun, remote_addr, now));
         agent.validated_peer(remote_addr);
         assert!(agent.is_validated_peer(remote_addr));
     }
@@ -1500,5 +1611,223 @@ pub(crate) mod tests {
             last_transmit_timeout,
             Duration::from_secs(1) + Duration::from_millis(1)
         );
+    }
+
+    #[test]
+    fn stats_send_receive_request() {
+        let _log = crate::tests::test_init_log();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let now = Instant::ZERO;
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
+            .stats(true)
+            .build();
+
+        assert!(agent.stats().is_some());
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.requests_sent(), 0);
+        assert_eq!(stats.responses_received(), 0);
+        assert_eq!(stats.bytes_sent(), 0);
+        assert_eq!(stats.rtt_count(), 0);
+
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let transmit = agent.send_request(msg.finish(), remote_addr, now).unwrap();
+        let request_data = transmit.data.as_ref().to_vec();
+
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.requests_sent(), 1);
+        assert_eq!(stats.bytes_sent(), request_data.len() as u64);
+
+        // Build and handle response with RTT tracking
+        let request = Message::from_bytes(&request_data).unwrap();
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
+        let xor_addr =
+            XorMappedAddress::new("10.0.0.1:12345".parse().unwrap(), request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
+        let response_data = response.finish();
+        let response = Message::from_bytes(&response_data).unwrap();
+
+        let receive_time = Duration::from_millis(10);
+        assert!(agent.poll_transmit(now + receive_time).is_none());
+        assert!(agent.handle_stun_message_with_time(&response, remote_addr, now + receive_time));
+
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.responses_received(), 1);
+        assert_eq!(stats.bytes_received(), response_data.len() as u64);
+        assert_eq!(stats.rtt_count(), 1);
+        assert_eq!(stats.rtt_min(), Some(receive_time));
+        assert_eq!(stats.rtt_max(), Some(receive_time));
+        assert_eq!(stats.rtt_average(), Some(receive_time));
+
+        assert!(agent.handle_stun_message_with_time(&request, remote_addr, now));
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.requests_sent(), 1);
+        assert_eq!(
+            stats.bytes_received(),
+            (request_data.len() + response_data.len()) as u64
+        );
+
+        agent.send(&response, remote_addr, now).unwrap();
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.responses_sent(), 1);
+        assert_eq!(
+            stats.bytes_sent(),
+            (request_data.len() + response_data.len()) as u64
+        );
+    }
+
+    #[test]
+    fn stats_disabled_by_default() {
+        let _log = crate::tests::test_init_log();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+        assert!(agent.stats().is_none());
+    }
+
+    #[test]
+    fn stats_timeout_and_cancel() {
+        let _log = crate::tests::test_init_log();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
+            .stats(true)
+            .build();
+
+        // Send a request that will timeout
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        agent
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
+            .unwrap();
+
+        let mut now = Instant::ZERO;
+        loop {
+            let _ = agent.poll_transmit(now);
+            match agent.poll(now) {
+                StunAgentPollRet::WaitUntil(new_now) => now = new_now,
+                StunAgentPollRet::TransactionTimedOut(_) => break,
+                _ => unreachable!(),
+            }
+        }
+
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.transactions_timed_out(), 1);
+
+        // Send another request that we'll cancel
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let cancel_id = msg.transaction_id();
+        agent.send_request(msg.finish(), remote_addr, now).unwrap();
+
+        let mut req = agent.mut_request_transaction(cancel_id).unwrap();
+        req.cancel();
+
+        let ret = agent.poll(now);
+        assert!(matches!(ret, StunAgentPollRet::TransactionCancelled(_)));
+
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.transactions_cancelled(), 1);
+    }
+
+    #[test]
+    fn stats_rtt_only_no_retransmit() {
+        let _log = crate::tests::test_init_log();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
+            .request_retransmits(
+                Duration::from_millis(1),
+                Duration::MAX,
+                2,
+                Duration::from_millis(1),
+            )
+            .stats(true)
+            .build();
+
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let transmit = agent
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
+            .unwrap();
+        let request_data = transmit.data.as_ref().to_vec();
+        let from_addr = transmit.from;
+
+        // Retransmit once by polling
+        let retransmit_time = Instant::ZERO + Duration::from_millis(1);
+        let _retransmit = agent.poll_transmit(retransmit_time).unwrap();
+
+        // Now build and handle response
+        let request = Message::from_bytes(&request_data).unwrap();
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
+        let xor_addr = XorMappedAddress::new(from_addr, request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
+        let response_data = response.finish();
+        let response = Message::from_bytes(&response_data).unwrap();
+
+        let receive_time = retransmit_time + Duration::from_millis(10);
+        assert!(agent.handle_stun_message_with_time(&response, remote_addr, receive_time));
+
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.responses_received(), 1);
+        assert_eq!(stats.rtt_count(), 0);
+    }
+
+    #[test]
+    fn stats_error_response() {
+        let _log = crate::tests::test_init_log();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let now = Instant::ZERO;
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
+            .stats(true)
+            .build();
+
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let transmit = agent
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
+            .unwrap();
+        let request_data = transmit.data.as_ref().to_vec();
+
+        let request = Message::from_bytes(&request_data).unwrap();
+        let mut error_response = Message::builder_error(&request, MessageWriteVec::new());
+        let error_code = ErrorCode::builder(ErrorCode::BAD_REQUEST).build().unwrap();
+        error_response.add_attribute(&error_code).unwrap();
+        let error_data = error_response.finish();
+        let error_msg = Message::from_bytes(&error_data).unwrap();
+
+        assert!(agent.handle_stun_message_with_time(&error_msg, remote_addr, now));
+
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.responses_received(), 1);
+        assert_eq!(stats.bytes_received(), error_data.len() as u64);
+    }
+
+    #[test]
+    fn stats_send_receive_indication() {
+        let _log = crate::tests::test_init_log();
+        let local_addr = "127.0.0.1:2000".parse().unwrap();
+        let remote_addr = "127.0.0.1:1000".parse().unwrap();
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr)
+            .stats(true)
+            .build();
+        let now = Instant::ZERO;
+
+        // Send a request that will timeout
+        let msg = Message::builder_indication(BINDING, MessageWriteVec::new());
+        let msg_data = msg.finish();
+        agent
+            .send(msg_data.clone(), remote_addr, Instant::ZERO)
+            .unwrap();
+
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.indications_sent(), 1);
+        assert_eq!(stats.bytes_sent(), msg_data.len() as u64);
+
+        let msg = Message::from_bytes(&msg_data).unwrap();
+        assert!(agent.handle_stun_message_with_time(&msg, remote_addr, now));
+
+        let stats = agent.stats().unwrap();
+        assert_eq!(stats.indications_received(), 1);
+        assert_eq!(stats.bytes_received(), msg_data.len() as u64);
     }
 }
