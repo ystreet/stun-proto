@@ -409,14 +409,12 @@ impl StunAgent {
     /// - [`poll()`](StunAgent::poll) returns [`StunAgentPollRet::TransactionCancelled`] or
     ///   [`StunAgentPollRet::TransactionTimedOut`] for the request.
     pub fn request_transaction(&self, transaction_id: TransactionId) -> Option<StunRequest<'_>> {
-        if self.outstanding_requests.contains_key(&transaction_id) {
-            Some(StunRequest {
+        self.request_state(transaction_id)
+            .map(|request| StunRequest {
                 agent: self,
-                transaction_id,
+                peer_address: request.to,
+                request_integrity: request.request_integrity,
             })
-        } else {
-            None
-        }
     }
 
     /// Retrieve a mutable reference to an outstanding STUN request. Outstanding requests are kept
@@ -428,10 +426,14 @@ impl StunAgent {
         &mut self,
         transaction_id: TransactionId,
     ) -> Option<StunRequestMut<'_>> {
-        if self.outstanding_requests.contains_key(&transaction_id) {
+        if let Some(request) = self.mut_request_state(transaction_id) {
+            let peer_address = request.to;
+            let request_integrity = request.request_integrity;
             Some(StunRequestMut {
                 agent: self,
                 transaction_id,
+                peer_address,
+                request_integrity,
             })
         } else {
             None
@@ -799,20 +801,24 @@ impl StunRequestState {
 #[derive(Debug, Clone)]
 pub struct StunRequest<'a> {
     agent: &'a StunAgent,
-    transaction_id: TransactionId,
+    peer_address: SocketAddr,
+    request_integrity: Option<IntegrityAlgorithm>,
 }
 
 impl StunRequest<'_> {
     /// The remote address the request is sent to.
     pub fn peer_address(&self) -> SocketAddr {
-        let state = self.agent.request_state(self.transaction_id).unwrap();
-        state.to
+        self.peer_address
     }
 
     /// The integrity algorithm present on the request.
     pub fn integrity(&self) -> Option<IntegrityAlgorithm> {
-        let state = self.agent.request_state(self.transaction_id).unwrap();
-        state.request_integrity
+        self.request_integrity
+    }
+
+    /// The [`StunAgent`] this request is being sent with.
+    pub fn agent(&self) -> &StunAgent {
+        self.agent
     }
 }
 
@@ -821,19 +827,19 @@ impl StunRequest<'_> {
 pub struct StunRequestMut<'a> {
     agent: &'a mut StunAgent,
     transaction_id: TransactionId,
+    peer_address: SocketAddr,
+    request_integrity: Option<IntegrityAlgorithm>,
 }
 
 impl StunRequestMut<'_> {
     /// The remote address the request is sent to.
     pub fn peer_address(&self) -> SocketAddr {
-        let state = self.agent.request_state(self.transaction_id).unwrap();
-        state.to
+        self.peer_address
     }
 
     /// The integrity algorithm present on the request.
     pub fn integrity(&self) -> Option<IntegrityAlgorithm> {
-        let state = self.agent.request_state(self.transaction_id).unwrap();
-        state.request_integrity
+        self.request_integrity
     }
 
     /// Do not retransmit further. This will still allow for a reply to occur within the configured
@@ -1352,7 +1358,7 @@ pub(crate) mod tests {
         // unvalidated peer data should be dropped
         assert!(!agent.is_validated_peer(remote_addr));
 
-        // however providing signifying success will cause peer validation to succeed
+        // however signifying success will cause peer validation to succeed
         assert!(agent.handle_stun_message_with_time(&response, remote_addr, now));
         assert!(!agent.handle_stun_message_with_time(&response, remote_addr, now));
         assert!(agent.is_validated_peer(remote_addr));
@@ -1829,5 +1835,61 @@ pub(crate) mod tests {
         let stats = agent.stats().unwrap();
         assert_eq!(stats.indications_received(), 1);
         assert_eq!(stats.bytes_received(), msg_data.len() as u64);
+    }
+
+    #[test]
+    fn request_removal_from_mut_agent() {
+        let _log = crate::tests::test_init_log();
+        let local_addr = "10.0.0.1:12345".parse().unwrap();
+        let remote_addr = "10.0.0.2:3478".parse().unwrap();
+        let now = Instant::ZERO;
+
+        let mut agent = StunAgent::builder(TransportType::Udp, local_addr).build();
+
+        let msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        let transaction_id = msg.transaction_id();
+        let transmit = agent
+            .send_request(msg.finish(), remote_addr, Instant::ZERO)
+            .unwrap();
+
+        let request = Message::from_bytes(&transmit.data).unwrap();
+
+        let mut response = Message::builder_success(&request, MessageWriteVec::new());
+        let xor_addr = XorMappedAddress::new(transmit.from, request.transaction_id());
+        response.add_attribute(&xor_addr).unwrap();
+
+        let data = response.finish();
+        let to = transmit.to;
+        trace!("data: {data:?}");
+        let response = Message::from_bytes(&data).unwrap();
+        assert_eq!(response.transaction_id(), transaction_id);
+
+        // handling the success response while holding the outstanding request should not panic and
+        // still result in valid retrieval of configuration.
+        let mut request = agent
+            .mut_request_transaction(response.transaction_id())
+            .unwrap();
+        assert_eq!(request.integrity(), None);
+        assert_eq!(request.peer_address(), to);
+        assert!(request
+            .mut_agent()
+            .handle_stun_message_with_time(&response, to, now));
+
+        assert_eq!(request.integrity(), None);
+        assert_eq!(request.peer_address(), to);
+        // attempting to modify the request is ignored.
+        request.cancel_retransmissions();
+        request.cancel();
+        request.configure_timeout(Duration::from_secs(1), 3, Duration::from_secs(2));
+
+        // the request is no longer stored by the agent.
+        assert!(request
+            .agent()
+            .request_transaction(transaction_id)
+            .is_none());
+        assert!(request
+            .mut_agent()
+            .mut_request_transaction(transaction_id)
+            .is_none());
     }
 }
