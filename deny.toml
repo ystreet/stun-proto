@@ -20,6 +20,10 @@ confidence-threshold = 0.9
 multiple-versions = "deny"
 wildcards = "allow"
 highlight = "all"
+skip-tree = [
+    { crate = "syn@3", reason = "rand, tracing-attributes, serde, thiserror depend on two different versions of syn" },
+    { crate = "syn@2", reason = "rand, tracing-attributes, serde, thiserror depend on two different versions of syn" },
+]
 
 [sources]
 unknown-registry = "deny"
