@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "stun-fuzz"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "arbitrary",
  "libfuzzer-sys",
@@ -791,7 +791,7 @@ dependencies = [
 
 [[package]]
 name = "stun-proto"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "base64",
  "byteorder",
@@ -809,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "stun-types"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "arbitrary",
  "byteorder",
