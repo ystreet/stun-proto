@@ -250,7 +250,7 @@ macro_rules! attribute_display {
                    f: &mut core::fmt::Formatter<'_>|
          -> core::fmt::Result {
             if let Ok(attr) = <$typ>::from_raw_ref(attr) {
-                write!(f, "{}", attr)
+                write!(f, "{attr}")
             } else {
                 write!(
                     f,
@@ -567,7 +567,7 @@ pub struct RawAttribute<'a> {
 macro_rules! display_attr {
     ($this:ident, $f:ident, $CamelType:ty) => {{
         if let Ok(attr) = <$CamelType>::from_raw_ref($this) {
-            write!($f, "{}", attr)
+            write!($f, "{attr}")
         } else {
             write!(
                 $f,
@@ -617,7 +617,7 @@ impl core::fmt::Display for RawAttribute<'_> {
                     "RawAttribute (type: {:?}, len: {}, data: {:?})",
                     self.header.get_type(),
                     self.header.length(),
-                    &self.value
+                    self.value
                 )
             }
         }
