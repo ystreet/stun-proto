@@ -877,7 +877,7 @@ impl MessageHeader {
         let tid = BigEndian::read_u128(&data[4..]);
         let cookie = (tid >> 96) as u32;
         if cookie != MAGIC_COOKIE {
-            warn!(
+            debug!(
                 "malformed cookie constant {:?} != stored data {:?}",
                 MAGIC_COOKIE, cookie
             );
