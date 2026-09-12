@@ -155,7 +155,7 @@ fn bench_auth_long_term(c: &mut Criterion) {
         move |b, software| {
             b.iter_batched(
                 || request(software),
-                |msg| client.sign_outgoing_message(msg).unwrap(),
+                |msg| unsafe { client.sign_outgoing_message_unchecked(msg) },
                 BatchSize::SmallInput,
             )
         },
@@ -242,7 +242,7 @@ fn bench_auth_long_term(c: &mut Criterion) {
         move |b, &software| {
             b.iter_batched(
                 || request(software),
-                |msg| server.sign_outgoing_message(msg, client_addr).unwrap(),
+                |msg| unsafe { server.sign_outgoing_message_unchecked(msg, client_addr) },
                 BatchSize::SmallInput,
             )
         },
