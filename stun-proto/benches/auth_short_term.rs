@@ -38,7 +38,7 @@ fn bench_auth_short_term(c: &mut Criterion) {
         move |b, software| {
             b.iter_batched(
                 || request(software),
-                |msg| auth.sign_outgoing_message(msg),
+                |msg| unsafe { auth.sign_outgoing_message_unchecked(msg) },
                 BatchSize::SmallInput,
             )
         },
@@ -64,7 +64,7 @@ fn bench_auth_short_term(c: &mut Criterion) {
         move |b, software| {
             b.iter_batched(
                 || request(software),
-                |msg| auth.sign_outgoing_message(msg),
+                |msg| unsafe { auth.sign_outgoing_message_unchecked(msg) },
                 BatchSize::SmallInput,
             )
         },
@@ -119,7 +119,7 @@ fn bench_auth_short_term(c: &mut Criterion) {
         move |b, software| {
             b.iter_batched(
                 || request(software),
-                |msg| auth.sign_outgoing_message(msg),
+                |msg| unsafe { auth.sign_outgoing_message_unchecked(msg) },
                 BatchSize::SmallInput,
             )
         },

@@ -75,6 +75,7 @@ impl ShortTermAuth {
     pub fn message_signature_bytes(&self) -> usize {
         self.signature_bytes
     }
+
     /// Sign an outgoing STUN message.
     #[tracing::instrument(skip(self, msg), err(Debug))]
     pub fn sign_outgoing_message<W: MessageWrite>(
@@ -86,6 +87,25 @@ impl ShortTermAuth {
             Ok(msg)
         } else {
             Ok(msg)
+        }
+    }
+
+    /// Sign an outgoing STUN message.
+    ///
+    /// # Safety
+    ///
+    /// 1. The provided writer has enough room to store the new allocated message integrity
+    ///    attribute applicable for the relevant algorithm.
+    /// 2. That another integrity algorithm attribute has not already been added to the message.
+    /// 3. That the [`Fingerprint`](crate::types::attribute::Fingerprint) attribute has not been
+    ///    added to the message.
+    #[tracing::instrument(skip(self, msg))]
+    pub unsafe fn sign_outgoing_message_unchecked<W: MessageWrite>(&mut self, mut msg: W) -> W {
+        if let Some((_creds, algo, key)) = self.credentials.as_ref() {
+            unsafe { msg.add_message_integrity_with_key_unchecked(key, *algo) };
+            msg
+        } else {
+            msg
         }
     }
 
@@ -395,6 +415,47 @@ impl LongTermClientAuth {
             Ok(msg)
         } else {
             Ok(msg)
+        }
+    }
+
+    /// Sign an outgoing STUN message.
+    ///
+    /// # Safety
+    ///
+    /// 1. The provided writer has enough room to store the new allocated message integrity
+    ///    attribute applicable for the relevant algorithm along with any other attributes required
+    ///    such as `Nonce`/`Realm`/`Username`/etc.
+    /// 2. That another integrity algorithm attribute has not already been added to the message.
+    /// 3. That the [`Fingerprint`](crate::types::attribute::Fingerprint) attribute has not been
+    ///    added to the message.
+    #[tracing::instrument(name = "client_sign_outgoing_message", skip(self, msg))]
+    pub unsafe fn sign_outgoing_message_unchecked<W: MessageWrite>(&mut self, mut msg: W) -> W {
+        if let Some(auth) = self.auth.auth() {
+            if msg.has_class(MessageClass::Request) {
+                msg.add_attribute(&Nonce::new(&auth.nonce).unwrap())
+                    .unwrap();
+                msg.add_attribute(&Realm::new(&auth.realm).unwrap())
+                    .unwrap();
+                match &auth.user {
+                    User::Name(name) => msg.add_attribute(&Username::new(name).unwrap()).unwrap(),
+                    User::Hash(hash) => msg.add_attribute(&Userhash::new(*hash)).unwrap(),
+                }
+            }
+            if !auth.password_algos.is_empty() {
+                msg.add_attribute(&PasswordAlgorithms::new(&auth.password_algos))
+                    .unwrap();
+            }
+            if auth.algo != IntegrityAlgorithm::Sha1 || !auth.password_algos.is_empty() {
+                msg.add_attribute(&PasswordAlgorithm::new(match auth.algo {
+                    IntegrityAlgorithm::Sha1 => PasswordAlgorithmValue::MD5,
+                    IntegrityAlgorithm::Sha256 => PasswordAlgorithmValue::SHA256,
+                }))
+                .unwrap();
+            }
+            unsafe { msg.add_message_integrity_with_key_unchecked(&auth.key, auth.algo) };
+            msg
+        } else {
+            msg
         }
     }
 
@@ -1019,6 +1080,62 @@ impl LongTermServerAuth {
         Ok(msg)
     }
 
+    /// Sign an outgoing STUN message.
+    ///
+    /// # Safety
+    ///
+    /// 1. The provided writer has enough room to store the new allocated message integrity
+    ///    attribute applicable for the relevant algorithm along with any other attributes required
+    ///    such as `Nonce`/`Realm`/`Username`/etc.
+    /// 2. That another integrity algorithm attribute has not already been added to the message.
+    /// 3. That the [`Fingerprint`](crate::types::attribute::Fingerprint) attribute has not been
+    ///    added to the message.
+    #[tracing::instrument(name = "server_sign_outgoing_message", skip(self, msg))]
+    pub unsafe fn sign_outgoing_message_unchecked<W: MessageWrite>(
+        &mut self,
+        mut msg: W,
+        to: SocketAddr,
+    ) -> W {
+        // this is an address we have received data from succesfully and generated a nonce.
+        let Some(nonce) = self.nonces.nonces.get_mut(&to) else {
+            return msg;
+        };
+        if msg.is_response() {
+            msg.add_attribute(&Nonce::new(&nonce.value).unwrap())
+                .unwrap();
+            msg.add_attribute(&Realm::new(&self.realm).unwrap())
+                .unwrap();
+        }
+        if let Some((user, algo)) = self.clients.get(&to) {
+            // we have a successful client for this connection and should therefore have succesful
+            // auth.
+            let auth = self.users.get(user).unwrap();
+            let key = auth.keys.get(algo).unwrap();
+            if *algo != IntegrityAlgorithm::Sha1 {
+                msg.add_attribute(&PasswordAlgorithm::new(match algo {
+                    IntegrityAlgorithm::Sha1 => unreachable!(),
+                    IntegrityAlgorithm::Sha256 => PasswordAlgorithmValue::SHA256,
+                }))
+                .unwrap();
+            }
+            msg.add_message_integrity_with_key_unchecked(key, *algo);
+        } else if msg.is_response() {
+            let algos = self
+                .nonces
+                .generate_config
+                .supported_integrity
+                .iter()
+                .map(|algo| match algo {
+                    IntegrityAlgorithm::Sha1 => PasswordAlgorithmValue::MD5,
+                    IntegrityAlgorithm::Sha256 => PasswordAlgorithmValue::SHA256,
+                })
+                .collect::<smallvec::SmallVec<_>>();
+            msg.add_attribute(&PasswordAlgorithms::new(&algos)).unwrap();
+            nonce.password_algorithms = algos;
+        }
+        msg
+    }
+
     /// Validate an incoming message according to the rules of the STUN long term credentials
     /// mechanism for servers.
     #[tracing::instrument(
@@ -1335,10 +1452,67 @@ mod tests {
         );
         assert!(auth.integrity_key().is_some());
         assert_eq!(auth.message_signature_bytes(), 24);
+    }
+
+    fn dup_message_write<O>(msg: &dyn MessageWrite<Output = O>) -> MessageWriteVec {
+        let msg = Message::from_bytes(msg.data()).unwrap();
+        let mut ret = Message::builder(
+            MessageType::from_class_method(msg.class(), msg.method()),
+            msg.transaction_id(),
+            MessageWriteVec::new(),
+        );
+        for (_offset, attr) in msg.iter_attributes() {
+            ret.add_attribute(&attr).unwrap();
+        }
+        ret
+    }
+
+    fn short_term_sign<B: MessageWrite>(auth: &mut ShortTermAuth, write: B) -> B {
+        let orig = dup_message_write(&write);
+        let unchecked = dup_message_write(&write);
+        let unchecked = unsafe { auth.sign_outgoing_message_unchecked(unchecked) }.finish();
+        let orig = auth.sign_outgoing_message(orig).unwrap().finish();
+        assert_eq!(orig, unchecked);
+        auth.sign_outgoing_message(write).unwrap()
+    }
+
+    fn long_term_client_sign<B: MessageWrite>(auth: &mut LongTermClientAuth, write: B) -> B {
+        let orig = dup_message_write(&write);
+        let unchecked = dup_message_write(&write);
+        let unchecked = unsafe { auth.sign_outgoing_message_unchecked(unchecked) }.finish();
+        let orig = auth.sign_outgoing_message(orig).unwrap().finish();
+        assert_eq!(orig, unchecked);
+        auth.sign_outgoing_message(write).unwrap()
+    }
+
+    fn long_term_server_sign<B: MessageWrite>(
+        auth: &mut LongTermServerAuth,
+        write: B,
+        client_addr: SocketAddr,
+    ) -> B {
+        let orig = dup_message_write(&write);
+        let unchecked = dup_message_write(&write);
+        let unchecked =
+            unsafe { auth.sign_outgoing_message_unchecked(unchecked, client_addr) }.finish();
+        let orig = auth
+            .sign_outgoing_message(orig, client_addr)
+            .unwrap()
+            .finish();
+        assert_eq!(orig, unchecked);
+        auth.sign_outgoing_message(write, client_addr).unwrap()
+    }
+
+    #[test]
+    fn short_term_sign_with_credentials() {
+        let _log = crate::tests::test_init_log();
+
+        let mut auth = ShortTermAuth::new();
+        let credentials = ShortTermCredentials::new(String::from("password"));
+        auth.set_credentials(credentials.clone(), IntegrityAlgorithm::Sha1);
 
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = auth.sign_outgoing_message(msg).unwrap();
-        let request = msg.finish();
+        let request = short_term_sign(&mut auth, msg);
+
         let request = Message::from_bytes(&request).unwrap();
         assert_eq!(
             request.validate_integrity(&credentials.into()).unwrap(),
@@ -1361,8 +1535,7 @@ mod tests {
         assert_eq!(auth.message_signature_bytes(), 0);
 
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = auth.sign_outgoing_message(msg).unwrap();
-        let request = msg.finish();
+        let request = short_term_sign(&mut auth, msg);
         let request = Message::from_bytes(&request).unwrap();
         assert!(msg_has_no_auth(&request));
 
@@ -1398,8 +1571,7 @@ mod tests {
         assert_eq!(auth.message_signature_bytes(), 0);
 
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = auth.sign_outgoing_message(msg).unwrap();
-        let request = msg.finish();
+        let request = long_term_client_sign(&mut auth, msg);
         let request = Message::from_bytes(&request).unwrap();
         assert!(msg_has_no_auth(&request));
 
@@ -1479,8 +1651,8 @@ mod tests {
         assert_eq!(auth.anonymous_username(), Feature::Auto);
 
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = auth.sign_outgoing_message(msg, client_addr).unwrap();
-        let request = msg.finish();
+        let request = long_term_server_sign(&mut auth, msg, client_addr);
+
         let request = Message::from_bytes(&request).unwrap();
         assert!(msg_has_no_auth(&request));
 
@@ -1543,7 +1715,7 @@ mod tests {
             now: Instant,
         ) -> Result<LongTermClientValidation, LongTermClientAuthError> {
             let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-            let msg = self.client.sign_outgoing_message(msg).unwrap().finish();
+            let msg = long_term_client_sign(&mut self.client, msg);
             let msg = Message::from_bytes(&msg).unwrap();
             assert!(matches!(
                 self.server
@@ -1554,11 +1726,8 @@ mod tests {
                 })
             ));
             let response = server_unauthorized_response(&msg);
-            let response = self
-                .server
-                .sign_outgoing_message(response, self.client_addr)
-                .unwrap()
-                .finish();
+            let response =
+                long_term_server_sign(&mut self.server, response, self.client_addr).finish();
             let response = Message::from_bytes(&response).unwrap();
             self.client.validate_incoming_message(&response)
         }
@@ -1569,7 +1738,7 @@ mod tests {
             integrity: IntegrityAlgorithm,
         ) -> Result<LongTermClientValidation, LongTermClientAuthError> {
             let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-            let msg = self.client.sign_outgoing_message(msg).unwrap().finish();
+            let msg = long_term_client_sign(&mut self.client, msg);
             let msg = Message::from_bytes(&msg).unwrap();
             assert!(!msg_has_no_auth(&msg));
             assert!(matches!(
@@ -1579,11 +1748,8 @@ mod tests {
             ));
 
             let response = Message::builder_success(&msg, MessageWriteVec::new());
-            let response = self
-                .server
-                .sign_outgoing_message(response, self.client_addr)
-                .unwrap();
-            let response = response.finish();
+            let response =
+                long_term_server_sign(&mut self.server, response, self.client_addr).finish();
             let response = Message::from_bytes(&response).unwrap();
             self.client.validate_incoming_message(&response)
         }
@@ -1611,7 +1777,7 @@ mod tests {
 
         let mut test = LongTermTest::new();
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(msg_has_no_auth(&msg));
     }
@@ -1886,7 +2052,7 @@ mod tests {
 
         let now = now + MINIMUM_NONCE_EXPIRY_DURATION + Duration::from_secs(1);
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(!msg_has_no_auth(&msg));
         assert!(matches!(
@@ -2038,11 +2204,7 @@ mod tests {
         response
             .add_attribute(&ErrorCode::builder(ErrorCode::BAD_REQUEST).build().unwrap())
             .unwrap();
-        let response = test
-            .server
-            .sign_outgoing_message(response, test.client_addr)
-            .unwrap()
-            .finish();
+        let response = long_term_server_sign(&mut test.server, response, test.client_addr);
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
@@ -2157,11 +2319,7 @@ mod tests {
                     .unwrap(),
             )
             .unwrap();
-        let response = test
-            .server
-            .sign_outgoing_message(response, test.client_addr)
-            .unwrap()
-            .finish();
+        let response = long_term_server_sign(&mut test.server, response, test.client_addr);
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
@@ -2226,11 +2384,7 @@ mod tests {
             TransactionId::generate(),
             MessageWriteVec::new(),
         );
-        let response = test
-            .server
-            .sign_outgoing_message(response, test.client_addr)
-            .unwrap()
-            .finish();
+        let response = long_term_server_sign(&mut test.server, response, test.client_addr);
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
@@ -2256,7 +2410,7 @@ mod tests {
             Ok(LongTermClientValidation::ResendRequest(None))
         ));
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(!msg_has_no_auth(&msg));
         assert!(matches!(
@@ -2269,11 +2423,7 @@ mod tests {
         ));
 
         let response = server_unauthorized_response(&msg);
-        let response = test
-            .server
-            .sign_outgoing_message(response, test.client_addr)
-            .unwrap()
-            .finish();
+        let response = long_term_server_sign(&mut test.server, response, test.client_addr);
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
@@ -2325,7 +2475,7 @@ mod tests {
             Ok(LongTermClientValidation::ResendRequest(None))
         ));
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(!msg_has_no_auth(&msg));
         assert!(matches!(
@@ -2338,11 +2488,7 @@ mod tests {
         ));
 
         let response = server_unauthorized_response(&msg);
-        let response = test
-            .server
-            .sign_outgoing_message(response, test.client_addr)
-            .unwrap()
-            .finish();
+        let response = long_term_server_sign(&mut test.server, response, test.client_addr);
         let response = Message::from_bytes(&response).unwrap();
         assert!(matches!(
             test.client.validate_incoming_message(&response),
@@ -2392,7 +2538,7 @@ mod tests {
         test.server
             .remove_user(test.client.credentials.as_ref().unwrap().username());
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(!msg_has_no_auth(&msg));
         assert!(matches!(
@@ -2423,10 +2569,7 @@ mod tests {
         ));
 
         let request = Message::builder_request(BINDING, MessageWriteVec::new());
-        let request = test
-            .server
-            .sign_outgoing_message(request, test.client_addr)
-            .unwrap();
+        let request = long_term_server_sign(&mut test.server, request, test.client_addr);
         let request = request.finish();
         let request = Message::from_bytes(&request).unwrap();
         trace!("sending request to client {request}");
@@ -2436,7 +2579,7 @@ mod tests {
         ));
 
         let response = Message::builder_success(&request, MessageWriteVec::new());
-        let response = test.client.sign_outgoing_message(response).unwrap();
+        let response = long_term_client_sign(&mut test.client, response);
         let response = response.finish();
         let response = Message::from_bytes(&response).unwrap();
         trace!("sending response to server {response}");
@@ -2458,7 +2601,7 @@ mod tests {
         test.server
             .add_supported_integrity(IntegrityAlgorithm::Sha256);
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(matches!(
             test.server
@@ -2469,11 +2612,7 @@ mod tests {
             })
         ));
         let response = server_unauthorized_response(&msg);
-        let response = test
-            .server
-            .sign_outgoing_message(response, test.client_addr)
-            .unwrap()
-            .finish();
+        let response = long_term_server_sign(&mut test.server, response, test.client_addr);
         let response = Message::from_bytes(&response).unwrap();
         let response = modify_response(&response);
         let response = Message::from_bytes(&response).unwrap();
@@ -2482,7 +2621,7 @@ mod tests {
             Ok(LongTermClientValidation::ResendRequest(None)),
         ));
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(!msg_has_no_auth(&msg));
         test.server
@@ -2575,7 +2714,7 @@ mod tests {
         test.server
             .add_supported_integrity(IntegrityAlgorithm::Sha256);
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(matches!(
             test.server
@@ -2586,11 +2725,7 @@ mod tests {
             })
         ));
         let response = server_unauthorized_response(&msg);
-        let response = test
-            .server
-            .sign_outgoing_message(response, test.client_addr)
-            .unwrap()
-            .finish();
+        let response = long_term_server_sign(&mut test.server, response, test.client_addr).finish();
         let response = Message::from_bytes(&response).unwrap();
         let response = modify_response(&response);
         let response = Message::from_bytes(&response).unwrap();
@@ -2640,7 +2775,7 @@ mod tests {
         test.server
             .add_supported_integrity(IntegrityAlgorithm::Sha256);
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         assert!(matches!(
             test.server
@@ -2651,11 +2786,7 @@ mod tests {
             })
         ));
         let response = server_unauthorized_response(&msg);
-        let response = test
-            .server
-            .sign_outgoing_message(response, test.client_addr)
-            .unwrap()
-            .finish();
+        let response = long_term_server_sign(&mut test.server, response, test.client_addr).finish();
         let response = Message::from_bytes(&response).unwrap();
         let mut new_response = Message::builder(
             response.get_type(),
@@ -2696,7 +2827,7 @@ mod tests {
             Ok(LongTermClientValidation::ResendRequest(None))
         ));
         let msg = Message::builder_request(BINDING, MessageWriteVec::new());
-        let msg = test.client.sign_outgoing_message(msg).unwrap().finish();
+        let msg = long_term_client_sign(&mut test.client, msg);
         let msg = Message::from_bytes(&msg).unwrap();
         let mut new_request =
             Message::builder(msg.get_type(), msg.transaction_id(), MessageWriteVec::new());
