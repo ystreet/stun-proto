@@ -2336,9 +2336,44 @@ pub trait MessageWriteExt: MessageWrite {
             }
         };
 
-        add_message_integrity_unchecked(self, key, algorithm);
+        unsafe { self.add_message_integrity_with_key_unchecked(key, algorithm) };
 
         Ok(())
+    }
+
+    /// Adds MESSAGE_INTEGRITY attribute to a [`Message`] using the provided credential key.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    ///
+    /// 1. The provided writer has enough room to store the new allocated message integrity
+    ///    attribute applicable for the relevant algorithm.
+    /// 2. That another integrity algorithm attribute has not already been added to the message.
+    /// 3. That the [`Fingerprint`] attribute has not been added to the message.
+    unsafe fn add_message_integrity_with_key_unchecked(
+        &mut self,
+        key: &IntegrityKey,
+        algorithm: IntegrityAlgorithm,
+    ) {
+        // message-integrity is computed using all the data up to (exclusive of) the
+        // MESSAGE-INTEGRITY but with a length field including the MESSAGE-INTEGRITY attribute...
+        match algorithm {
+            IntegrityAlgorithm::Sha1 => {
+                self.push_attribute_unchecked(&MessageIntegrity::new([0; 20]));
+                let len = self.len();
+                let data = self.mut_data();
+                let integrity = MessageIntegrity::compute(&[&data[..len - 24]], key).unwrap();
+                data[len - 20..].copy_from_slice(&integrity);
+            }
+            IntegrityAlgorithm::Sha256 => {
+                self.push_attribute_unchecked(&MessageIntegritySha256::new(&[0; 32]).unwrap());
+                let len = self.len();
+                let data = self.mut_data();
+                let integrity = MessageIntegritySha256::compute(&[&data[..len - 36]], key).unwrap();
+                data[len - 32..].copy_from_slice(&integrity);
+            }
+        }
     }
 
     /// Adds [`Fingerprint`] attribute to a [`Message`].
@@ -2372,9 +2407,29 @@ pub trait MessageWriteExt: MessageWrite {
         }
 
         check_attribute_can_fit(self, &Fingerprint::new([0; 4]))?;
-        add_fingerprint_unchecked(self);
+        unsafe { self.add_fingerprint_unchecked() };
 
         Ok(())
+    }
+
+    /// Adds [`Fingerprint`] attribute to a [`Message`].
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    ///
+    /// 1. The provided writer has enough room to store the new allocated message integrity
+    ///    attribute applicable for the relevant algorithm.
+    /// 2. That the [`Fingerprint`] attribute has not been added to the message.
+    unsafe fn add_fingerprint_unchecked(&mut self) {
+        // fingerprint is computed using all the data up to (exclusive of) the FINGERPRINT
+        // but with a length field including the FINGERPRINT attribute...
+        self.push_attribute_unchecked(&Fingerprint::new([0; 4]));
+        let len = self.len();
+        let data = self.mut_data();
+        let fingerprint = Fingerprint::compute(&[&data[..len - 8]]);
+        let fingerprint = Fingerprint::new(fingerprint);
+        fingerprint.write_into(&mut data[len - 8..]).unwrap();
     }
 
     /// Add a `Attribute` to this `Message`.
@@ -2642,42 +2697,6 @@ fn check_attribute_can_fit<O, T: MessageWrite<Output = O> + ?Sized>(
         }
     }
     Ok(expected)
-}
-
-fn add_message_integrity_unchecked<O, T: MessageWrite<Output = O> + ?Sized>(
-    this: &mut T,
-    key: &IntegrityKey,
-    algorithm: IntegrityAlgorithm,
-) {
-    // message-integrity is computed using all the data up to (exclusive of) the
-    // MESSAGE-INTEGRITY but with a length field including the MESSAGE-INTEGRITY attribute...
-    match algorithm {
-        IntegrityAlgorithm::Sha1 => {
-            this.push_attribute_unchecked(&MessageIntegrity::new([0; 20]));
-            let len = this.len();
-            let data = this.mut_data();
-            let integrity = MessageIntegrity::compute(&[&data[..len - 24]], key).unwrap();
-            data[len - 20..].copy_from_slice(&integrity);
-        }
-        IntegrityAlgorithm::Sha256 => {
-            this.push_attribute_unchecked(&MessageIntegritySha256::new(&[0; 32]).unwrap());
-            let len = this.len();
-            let data = this.mut_data();
-            let integrity = MessageIntegritySha256::compute(&[&data[..len - 36]], key).unwrap();
-            data[len - 32..].copy_from_slice(&integrity);
-        }
-    }
-}
-
-fn add_fingerprint_unchecked<O, T: MessageWrite<Output = O> + ?Sized>(this: &mut T) {
-    // fingerprint is computed using all the data up to (exclusive of) the FINGERPRINT
-    // but with a length field including the FINGERPRINT attribute...
-    this.push_attribute_unchecked(&Fingerprint::new([0; 4]));
-    let len = this.len();
-    let data = this.mut_data();
-    let fingerprint = Fingerprint::compute(&[&data[..len - 8]]);
-    let fingerprint = Fingerprint::new(fingerprint);
-    fingerprint.write_into(&mut data[len - 8..]).unwrap();
 }
 
 #[cfg(test)]
@@ -3031,11 +3050,12 @@ mod tests {
             let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
             msg.add_message_integrity(&credentials, algorithm).unwrap();
             // duplicate integrity attribute. Don't do this in real code!
-            add_message_integrity_unchecked(
-                &mut msg,
-                &credentials.make_key(IntegrityAlgorithm::Sha1),
-                algorithm,
-            );
+            unsafe {
+                msg.add_message_integrity_with_key_unchecked(
+                    &credentials.make_key(IntegrityAlgorithm::Sha1),
+                    algorithm,
+                )
+            };
             let bytes = msg.finish();
             let integrity_type = match algorithm {
                 IntegrityAlgorithm::Sha1 => MessageIntegrity::TYPE,
@@ -3068,7 +3088,7 @@ mod tests {
         let _log = crate::tests::test_init_log();
         let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
         msg.add_fingerprint().unwrap();
-        add_fingerprint_unchecked(&mut msg);
+        unsafe { msg.add_fingerprint_unchecked() };
         let bytes = msg.finish();
         let msg = Message::from_bytes(&bytes).unwrap();
         assert!(msg.nth_raw_attribute(Fingerprint::TYPE, 0).is_some());
