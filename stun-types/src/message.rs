@@ -931,6 +931,7 @@ impl MessageHeader {
 #[derive(Debug, Clone, Copy)]
 pub struct Message<'a> {
     data: &'a [u8],
+    integrity_offset: Option<usize>,
 }
 
 impl core::fmt::Display for Message<'_> {
@@ -1273,6 +1274,7 @@ impl<'a> Message<'a> {
         let mut seen_ending_attributes = [AttributeType::new(0); 3];
         let mut seen_ending_len = 0;
         let mut data_offset = MessageHeader::LENGTH;
+        let mut integrity_offset = None;
         for attr in MessageRawAttributesIter::new(data) {
             let (_offset, attr) = attr.inspect_err(|e| {
                 warn!("failed to parse message attribute at offset {data_offset}: {e}",);
@@ -1283,14 +1285,20 @@ impl<'a> Message<'a> {
             if seen_ending_len > 0 && !ending_attributes.contains(&attr.get_type()) {
                 if seen_ending_attributes.contains(&Fingerprint::TYPE) {
                     warn!("unexpected attribute {} after FINGERPRINT", attr.get_type());
-                    return Ok(Message { data: orig_data });
+                    return Ok(Message {
+                        data: orig_data,
+                        integrity_offset,
+                    });
                 } else {
                     // only attribute valid after MESSAGE_INTEGRITY is FINGERPRINT
                     warn!(
                         "unexpected attribute {} after MESSAGE_INTEGRITY",
                         attr.get_type()
                     );
-                    return Ok(Message { data: orig_data });
+                    return Ok(Message {
+                        data: orig_data,
+                        integrity_offset,
+                    });
                 }
             }
 
@@ -1298,18 +1306,25 @@ impl<'a> Message<'a> {
                 if seen_ending_attributes.contains(&attr.get_type()) {
                     if seen_ending_attributes.contains(&Fingerprint::TYPE) {
                         warn!("unexpected attribute {} after FINGERPRINT", attr.get_type());
-                        return Ok(Message { data: orig_data });
+                        return Ok(Message {
+                            data: orig_data,
+                            integrity_offset,
+                        });
                     } else {
                         // only attribute valid after MESSAGE_INTEGRITY is FINGERPRINT
                         warn!(
                             "unexpected attribute {} after MESSAGE_INTEGRITY",
                             attr.get_type()
                         );
-                        return Ok(Message { data: orig_data });
+                        return Ok(Message {
+                            data: orig_data,
+                            integrity_offset,
+                        });
                     }
                 } else {
                     seen_ending_attributes[seen_ending_len] = attr.get_type();
                     seen_ending_len += 1;
+                    integrity_offset.get_or_insert(data_offset);
                     // need credentials to validate the integrity of the message
                 }
             }
@@ -1336,7 +1351,10 @@ impl<'a> Message<'a> {
             }
             data_offset += padded_len;
         }
-        Ok(Message { data: orig_data })
+        Ok(Message {
+            data: orig_data,
+            integrity_offset,
+        })
     }
 
     /// Validates the MESSAGE_INTEGRITY attribute with the provided credentials.
@@ -1362,23 +1380,48 @@ impl<'a> Message<'a> {
         &self,
         credentials: &MessageIntegrityCredentials,
     ) -> Result<IntegrityAlgorithm, ValidateError> {
-        let raw_sha1 = self.raw_attribute(MessageIntegrity::TYPE);
-        let raw_sha256 = self.raw_attribute(MessageIntegritySha256::TYPE);
-        let (algo, msg_hmac) = match (raw_sha1, raw_sha256) {
-            (_, Some(sha256)) => {
-                let integrity = MessageIntegritySha256::try_from(&sha256)?;
-                (IntegrityAlgorithm::Sha256, integrity.hmac().to_vec())
+        let offset =
+            self.integrity_offset
+                .ok_or(ValidateError::Parse(StunParseError::MissingAttribute(
+                    MessageIntegrity::TYPE,
+                )))?;
+
+        let iter = MessageAttributesIter::at_offset(self.data, offset);
+        let mut raw_sha1 = None;
+        let mut raw_sha256 = None;
+        for (offset, raw_attr) in iter {
+            match raw_attr.get_type() {
+                MessageIntegrity::TYPE => {
+                    raw_sha1 = Some((offset, raw_attr));
+                }
+                MessageIntegritySha256::TYPE => {
+                    raw_sha256 = Some((offset, raw_attr));
+                }
+                _ => (),
             }
-            (Some(sha1), None) => {
-                let integrity = MessageIntegrity::try_from(&sha1)?;
-                (IntegrityAlgorithm::Sha1, integrity.hmac().to_vec())
+        }
+
+        let integrity_sha1;
+        let integrity_sha256;
+        let (algo, msg_hmac, offset) = match (raw_sha1, raw_sha256) {
+            (_, Some((offset, sha256))) => {
+                integrity_sha256 = MessageIntegritySha256::try_from(&sha256)?;
+                (IntegrityAlgorithm::Sha256, integrity_sha256.hmac(), offset)
+            }
+            (Some((offset, sha1)), None) => {
+                integrity_sha1 = MessageIntegrity::try_from(&sha1)?;
+                (
+                    IntegrityAlgorithm::Sha1,
+                    integrity_sha1.hmac().as_slice(),
+                    offset,
+                )
             }
             (None, None) => {
                 return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into())
             }
         };
         let key = credentials.make_key(algo);
-        self.validate_integrity_with_hmac(algo, &msg_hmac, &key)
+        self.validate_integrity_with_hmac(algo, msg_hmac, &key, offset)
     }
 
     /// Validates the MESSAGE_INTEGRITY attribute with the provided credential [`IntegrityKey`].
@@ -1386,36 +1429,61 @@ impl<'a> Message<'a> {
         &self,
         key: &IntegrityKey,
     ) -> Result<IntegrityAlgorithm, ValidateError> {
-        let raw_sha1 = self.raw_attribute(MessageIntegrity::TYPE);
-        let raw_sha256 = self.raw_attribute(MessageIntegritySha256::TYPE);
-        let (algo, msg_hmac) = if let Some(algo) = key.key_algorithm {
-            match (algo, raw_sha1, raw_sha256) {
-                (IntegrityAlgorithm::Sha256, _, Some(sha256)) => {
-                    let integrity = MessageIntegritySha256::try_from(&sha256)?;
-                    (algo, integrity.hmac().to_vec())
+        let offset =
+            self.integrity_offset
+                .ok_or(ValidateError::Parse(StunParseError::MissingAttribute(
+                    MessageIntegrity::TYPE,
+                )))?;
+
+        let iter = MessageAttributesIter::at_offset(self.data, offset);
+        let mut raw_sha1 = None;
+        let mut raw_sha256 = None;
+        for (offset, raw_attr) in iter {
+            match raw_attr.get_type() {
+                MessageIntegrity::TYPE => {
+                    raw_sha1 = Some((offset, raw_attr));
                 }
-                (IntegrityAlgorithm::Sha1, Some(sha1), _) => {
-                    let integrity = MessageIntegrity::try_from(&sha1)?;
-                    (algo, integrity.hmac().to_vec())
+                MessageIntegritySha256::TYPE => {
+                    raw_sha256 = Some((offset, raw_attr));
+                }
+                _ => (),
+            }
+        }
+
+        let integrity_sha1;
+        let integrity_sha256;
+        let (algo, msg_hmac, offset) = if let Some(algo) = key.key_algorithm {
+            match (algo, raw_sha1, raw_sha256) {
+                (IntegrityAlgorithm::Sha256, _, Some((offset, sha256))) => {
+                    integrity_sha256 = MessageIntegritySha256::try_from(&sha256)?;
+                    (algo, integrity_sha256.hmac(), offset)
+                }
+                (IntegrityAlgorithm::Sha1, Some((offset, sha1)), _) => {
+                    integrity_sha1 = MessageIntegrity::try_from(&sha1)?;
+                    (algo, integrity_sha1.hmac().as_slice(), offset)
                 }
                 _ => return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into()),
             }
         } else {
             match (raw_sha1, raw_sha256) {
-                (_, Some(sha256)) => {
-                    let integrity = MessageIntegritySha256::try_from(&sha256)?;
-                    (IntegrityAlgorithm::Sha256, integrity.hmac().to_vec())
+                (_, Some((offset, sha256))) => {
+                    integrity_sha256 = MessageIntegritySha256::try_from(&sha256)?;
+                    (IntegrityAlgorithm::Sha256, integrity_sha256.hmac(), offset)
                 }
-                (Some(sha1), None) => {
-                    let integrity = MessageIntegrity::try_from(&sha1)?;
-                    (IntegrityAlgorithm::Sha1, integrity.hmac().to_vec())
+                (Some((offset, sha1)), None) => {
+                    integrity_sha1 = MessageIntegrity::try_from(&sha1)?;
+                    (
+                        IntegrityAlgorithm::Sha1,
+                        integrity_sha1.hmac().as_slice(),
+                        offset,
+                    )
                 }
                 (None, None) => {
                     return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into())
                 }
             }
         };
-        self.validate_integrity_with_hmac(algo, &msg_hmac, key)
+        self.validate_integrity_with_hmac(algo, msg_hmac, key, offset)
     }
 
     #[tracing::instrument(
@@ -1431,6 +1499,7 @@ impl<'a> Message<'a> {
         algo: IntegrityAlgorithm,
         msg_hmac: &[u8],
         key: &IntegrityKey,
+        integrity_offset: usize,
     ) -> Result<IntegrityAlgorithm, ValidateError> {
         if key.key_algorithm.is_some_and(|key_algo| key_algo != algo) {
             debug!(
@@ -1439,12 +1508,12 @@ impl<'a> Message<'a> {
             );
             return Err(StunParseError::DataMismatch.into());
         }
-        // find the location of the original MessageIntegrity attribute: XXX: maybe encode this into
-        // the attribute instead?
-        let data = self.data;
-        debug_assert!(data.len() >= MessageHeader::LENGTH);
-        let mut data = &data[MessageHeader::LENGTH..];
-        let mut data_offset = MessageHeader::LENGTH;
+        // find the location of the original MessageIntegrity attribute.
+        debug_assert!(self.data.len() >= MessageHeader::LENGTH);
+        debug_assert!(integrity_offset >= MessageHeader::LENGTH);
+        debug_assert!(integrity_offset < self.data.len());
+        let mut data = &self.data[integrity_offset..];
+        let mut data_offset = integrity_offset;
         while !data.is_empty() {
             let attr = RawAttribute::from_bytes(data)?;
             if algo == IntegrityAlgorithm::Sha1 && attr.get_type() == MessageIntegrity::TYPE {
@@ -1879,9 +1948,13 @@ struct MessageRawAttributesIter<'a> {
 
 impl<'a> MessageRawAttributesIter<'a> {
     fn new(data: &'a [u8]) -> Self {
+        Self::at_offset(data, MessageHeader::LENGTH)
+    }
+
+    fn at_offset(data: &'a [u8], offset: usize) -> Self {
         Self {
             data,
-            data_i: MessageHeader::LENGTH,
+            data_i: offset,
         }
     }
 }
@@ -1952,6 +2025,15 @@ impl<'a> MessageAttributesIter<'a> {
         Self {
             header_parsed: false,
             inner: MessageRawAttributesIter::new(data),
+            seen_message_integrity: false,
+            last_attr_type: AttributeType::new(0),
+        }
+    }
+
+    fn at_offset(data: &'a [u8], offset: usize) -> Self {
+        Self {
+            header_parsed: true,
+            inner: MessageRawAttributesIter::at_offset(data, offset),
             seen_message_integrity: false,
             last_attr_type: AttributeType::new(0),
         }
