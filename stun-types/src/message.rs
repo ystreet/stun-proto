@@ -93,6 +93,7 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
+use core::num::NonZeroUsize;
 #[cfg(feature = "std")]
 use std::sync::{Mutex, OnceLock};
 
@@ -931,7 +932,7 @@ impl MessageHeader {
 #[derive(Debug, Clone, Copy)]
 pub struct Message<'a> {
     data: &'a [u8],
-    integrity_offset: Option<usize>,
+    integrity_offset: Option<NonZeroUsize>,
 }
 
 impl core::fmt::Display for Message<'_> {
@@ -1324,7 +1325,7 @@ impl<'a> Message<'a> {
                 } else {
                     seen_ending_attributes[seen_ending_len] = attr.get_type();
                     seen_ending_len += 1;
-                    integrity_offset.get_or_insert(data_offset);
+                    integrity_offset.get_or_insert(NonZeroUsize::new(data_offset).unwrap());
                     // need credentials to validate the integrity of the message
                 }
             }
@@ -1380,11 +1381,12 @@ impl<'a> Message<'a> {
         &self,
         credentials: &MessageIntegrityCredentials,
     ) -> Result<IntegrityAlgorithm, ValidateError> {
-        let offset =
-            self.integrity_offset
-                .ok_or(ValidateError::Parse(StunParseError::MissingAttribute(
-                    MessageIntegrity::TYPE,
-                )))?;
+        let offset = self
+            .integrity_offset
+            .ok_or(ValidateError::Parse(StunParseError::MissingAttribute(
+                MessageIntegrity::TYPE,
+            )))?
+            .get();
 
         let iter = MessageAttributesIter::at_offset(self.data, offset);
         let mut raw_sha1 = None;
@@ -1429,11 +1431,12 @@ impl<'a> Message<'a> {
         &self,
         key: &IntegrityKey,
     ) -> Result<IntegrityAlgorithm, ValidateError> {
-        let offset =
-            self.integrity_offset
-                .ok_or(ValidateError::Parse(StunParseError::MissingAttribute(
-                    MessageIntegrity::TYPE,
-                )))?;
+        let offset = self
+            .integrity_offset
+            .ok_or(ValidateError::Parse(StunParseError::MissingAttribute(
+                MessageIntegrity::TYPE,
+            )))?
+            .get();
 
         let iter = MessageAttributesIter::at_offset(self.data, offset);
         let mut raw_sha1 = None;
