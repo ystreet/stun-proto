@@ -594,7 +594,7 @@ impl LongTermClientAuth {
                             }
                         }
                         ErrorCode::STALE_NONCE => {
-                            if let Some((new_nonce, new_realm)) = is_valid_stale_nonce(msg) {
+                            if let Some((new_nonce, new_realm)) = nonce.zip(realm) {
                                 self.auth.replace_nonce(
                                     new_nonce.nonce().to_string(),
                                     new_realm.realm().to_string(),
@@ -1377,26 +1377,6 @@ impl LongTermServerAuth {
     pub fn remove_client(&mut self, client: SocketAddr) {
         self.clients.remove(&client);
     }
-}
-
-fn is_valid_stale_nonce(msg: &Message<'_>) -> Option<(Nonce, Realm)> {
-    if !msg.has_class(MessageClass::Error) {
-        return None;
-    }
-    let Ok(error) = msg.attribute::<ErrorCode>() else {
-        return None;
-    };
-    if error.code() != ErrorCode::STALE_NONCE {
-        return None;
-    }
-    let Ok(nonce) = msg.attribute::<Nonce>() else {
-        return None;
-    };
-    let Ok(realm) = msg.attribute::<Realm>() else {
-        return None;
-    };
-
-    Some((nonce, realm))
 }
 
 fn rank_integrity(integrity: IntegrityAlgorithm) -> usize {
