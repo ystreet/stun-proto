@@ -8,6 +8,10 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use tracing::subscriber::DefaultGuard;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::Layer;
+
 use core::net::SocketAddr;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use stun_proto::auth::{
@@ -107,7 +111,27 @@ fn complete_auth(
     ));
 }
 
+fn test_init_log() -> DefaultGuard {
+    let level_filter = std::env::var("STUN_LOG")
+        .or(std::env::var("RUST_LOG"))
+        .ok()
+        .and_then(|var| var.parse::<tracing_subscriber::filter::Targets>().ok())
+        .unwrap_or_default();
+    let registry = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .with_file(true)
+            .with_line_number(true)
+            .with_level(true)
+            .with_target(false)
+            .with_test_writer()
+            .with_filter(level_filter),
+    );
+    tracing::subscriber::set_default(registry)
+}
+
 fn bench_auth_long_term(c: &mut Criterion) {
+    let _log = test_init_log();
+
     let client_addr = "10.0.0.1:1".parse().unwrap();
     let now = Instant::ZERO;
     let software = Software::new("stun-proto").unwrap();
@@ -119,180 +143,133 @@ fn bench_auth_long_term(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("Auth/LongTerm");
 
+    let mut client = LongTermClientAuth::new();
+    client.set_credentials(credentials.clone());
+    let mut server = LongTermServerAuth::new(realm.clone());
+    server.add_user(credentials.clone());
+    initial_auth(&mut client, &mut server, client_addr, now, &software);
     group.throughput(criterion::Throughput::Elements(1));
     group.bench_with_input(
         "Client/Request/Software/Sign",
-        &(&credentials, &realm, &software),
-        move |b, &(credentials, realm, software)| {
+        &software,
+        move |b, software| {
             b.iter_batched(
-                || {
-                    let mut client = LongTermClientAuth::new();
-                    client.set_credentials(credentials.clone());
-                    let mut server = LongTermServerAuth::new(realm.clone());
-                    server.add_user(credentials.clone());
-                    initial_auth(&mut client, &mut server, client_addr, now, software);
-                    (request(software), client)
-                },
-                |(msg, mut client)| {
-                    let msg = client.sign_outgoing_message(msg).unwrap();
-                    (msg, client)
-                },
+                || request(software),
+                |msg| client.sign_outgoing_message(msg).unwrap(),
                 BatchSize::SmallInput,
             )
         },
     );
 
-    group.bench_with_input(
-        "Server/Request/Software/Validate",
-        &(&credentials, &realm, &software),
-        move |b, &(credentials, realm, software)| {
-            b.iter_batched(
-                || {
-                    let mut client = LongTermClientAuth::new();
-                    client.set_credentials(credentials.clone());
-                    let mut server = LongTermServerAuth::new(realm.clone());
-                    server.add_user(credentials.clone());
-                    initial_auth(&mut client, &mut server, client_addr, now, software);
-                    let msg = client
-                        .sign_outgoing_message(request(software))
-                        .unwrap()
-                        .finish();
-                    (msg, server)
-                },
-                |(msg, mut server)| {
-                    let incoming = Message::from_bytes(&msg).unwrap();
-                    assert!(matches!(
-                        server
-                            .validate_incoming_message(&incoming, client_addr, now)
-                            .unwrap(),
-                        LongTermServerValidation::Validated(IntegrityAlgorithm::Sha1)
-                    ));
-                    (msg, server)
-                },
-                BatchSize::SmallInput,
-            )
-        },
-    );
+    let mut client = LongTermClientAuth::new();
+    client.set_credentials(credentials.clone());
+    let mut server = LongTermServerAuth::new(realm.clone());
+    server.add_user(credentials.clone());
+    initial_auth(&mut client, &mut server, client_addr, now, &software);
+    let msg = client
+        .sign_outgoing_message(request(&software))
+        .unwrap()
+        .finish();
+    group.bench_with_input("Server/Request/Software/Validate", &msg, move |b, msg| {
+        b.iter(|| {
+            let incoming = Message::from_bytes(msg).unwrap();
+            assert!(matches!(
+                server
+                    .validate_incoming_message(&incoming, client_addr, now)
+                    .unwrap(),
+                LongTermServerValidation::Validated(IntegrityAlgorithm::Sha1)
+            ));
+        })
+    });
 
+    let mut client = LongTermClientAuth::new();
+    client.set_credentials(wrong_username.clone());
+    let mut server = LongTermServerAuth::new(realm.clone());
+    server.add_user(credentials.clone());
+    initial_auth(&mut client, &mut server, client_addr, now, &software);
+    let msg = client
+        .sign_outgoing_message(request(&software))
+        .unwrap()
+        .finish();
     group.bench_with_input(
         "Server/Request/Software/Validate/WrongUsername",
-        &(&wrong_username, &credentials, &realm, &software),
-        move |b, &(wrong_credentials, credentials, realm, software)| {
-            b.iter_batched(
-                || {
-                    let mut client = LongTermClientAuth::new();
-                    client.set_credentials(wrong_credentials.clone());
-                    let mut server = LongTermServerAuth::new(realm.clone());
-                    server.add_user(credentials.clone());
-                    initial_auth(&mut client, &mut server, client_addr, now, software);
-                    let msg = client
-                        .sign_outgoing_message(request(software))
-                        .unwrap()
-                        .finish();
-                    (msg, server)
-                },
-                |(msg, mut server)| {
-                    let incoming = Message::from_bytes(&msg).unwrap();
-                    assert!(matches!(
-                        server
-                            .validate_incoming_message(&incoming, client_addr, now),
-                        Err(e) if e.reason() == LongTermServerAuthErrorReason::Unauthorized
-                    ));
-                    (msg, server)
-                },
-                BatchSize::SmallInput,
-            )
+        &msg,
+        move |b, msg| {
+            b.iter(|| {
+                let incoming = Message::from_bytes(msg).unwrap();
+                assert!(matches!(
+                    server
+                        .validate_incoming_message(&incoming, client_addr, now),
+                    Err(e) if e.reason() == LongTermServerAuthErrorReason::Unauthorized
+                ));
+            })
         },
     );
 
+    let mut client = LongTermClientAuth::new();
+    client.set_credentials(wrong_password.clone());
+    let mut server = LongTermServerAuth::new(realm.clone());
+    server.add_user(credentials.clone());
+    initial_auth(&mut client, &mut server, client_addr, now, &software);
+    let msg = client
+        .sign_outgoing_message(request(&software))
+        .unwrap()
+        .finish();
     group.bench_with_input(
         "Server/Request/Software/Validate/WrongPassword",
-        &(&wrong_password, &credentials, &realm, &software),
-        move |b, &(wrong_credentials, credentials, realm, software)| {
-            b.iter_batched(
-                || {
-                    let mut client = LongTermClientAuth::new();
-                    client.set_credentials(wrong_credentials.clone());
-                    let mut server = LongTermServerAuth::new(realm.clone());
-                    server.add_user(credentials.clone());
-                    initial_auth(&mut client, &mut server, client_addr, now, software);
-                    let msg = client
-                        .sign_outgoing_message(request(software))
-                        .unwrap()
-                        .finish();
-                    (msg, server)
-                },
-                |(msg, mut server)| {
-                    let incoming = Message::from_bytes(&msg).unwrap();
-                    assert!(matches!(
-                        server
-                            .validate_incoming_message(&incoming, client_addr, now),
-                        Err(e) if e.reason() == LongTermServerAuthErrorReason::Unauthorized
-                    ));
-                    (msg, server)
-                },
-                BatchSize::SmallInput,
-            )
+        &msg,
+        move |b, msg| {
+            b.iter(|| {
+                let incoming = Message::from_bytes(msg).unwrap();
+                assert!(matches!(
+                    server
+                        .validate_incoming_message(&incoming, client_addr, now),
+                    Err(e) if e.reason() == LongTermServerAuthErrorReason::Unauthorized
+                ));
+            })
         },
     );
 
+    let mut client = LongTermClientAuth::new();
+    client.set_credentials(credentials.clone());
+    let mut server = LongTermServerAuth::new(realm.clone());
+    server.add_user(credentials.clone());
+    initial_auth(&mut client, &mut server, client_addr, now, &software);
+    complete_auth(&mut client, &mut server, client_addr, now, &software);
     group.bench_with_input(
         "Server/Request/Software/Sign",
-        &(&credentials, &realm, &software),
-        move |b, &(credentials, realm, software)| {
+        &(&software),
+        move |b, &software| {
             b.iter_batched(
-                || {
-                    let mut client = LongTermClientAuth::new();
-                    client.set_credentials(credentials.clone());
-                    let mut server = LongTermServerAuth::new(realm.clone());
-                    server.add_user(credentials.clone());
-                    initial_auth(&mut client, &mut server, client_addr, now, software);
-                    complete_auth(&mut client, &mut server, client_addr, now, software);
-                    let msg = request(software);
-                    (msg, server)
-                },
-                |(msg, mut server)| {
-                    let msg = server.sign_outgoing_message(msg, client_addr).unwrap();
-                    (msg, server)
-                },
+                || request(software),
+                |msg| server.sign_outgoing_message(msg, client_addr).unwrap(),
                 BatchSize::SmallInput,
             )
         },
     );
 
-    group.bench_with_input(
-        "Client/Request/Software/Validate",
-        &(&credentials, &realm, &software),
-        move |b, &(credentials, realm, software)| {
-            b.iter_batched(
-                || {
-                    let mut client = LongTermClientAuth::new();
-                    client.set_credentials(credentials.clone());
-                    let mut server = LongTermServerAuth::new(realm.clone());
-                    server.add_user(credentials.clone());
-                    initial_auth(&mut client, &mut server, client_addr, now, software);
-                    complete_auth(&mut client, &mut server, client_addr, now, software);
-                    let msg = request(software);
-                    let msg = server
-                        .sign_outgoing_message(msg, client_addr)
-                        .unwrap()
-                        .finish();
-                    (msg, client)
-                },
-                |(msg, mut client)| {
-                    let incoming = Message::from_bytes(&msg).unwrap();
-                    assert!(matches!(
-                        client.validate_incoming_message(&incoming),
-                        Ok(LongTermClientValidation::Validated(
-                            IntegrityAlgorithm::Sha1
-                        ))
-                    ));
-                    (msg, client)
-                },
-                BatchSize::SmallInput,
-            )
-        },
-    );
+    let mut client = LongTermClientAuth::new();
+    client.set_credentials(credentials.clone());
+    let mut server = LongTermServerAuth::new(realm.clone());
+    server.add_user(credentials.clone());
+    initial_auth(&mut client, &mut server, client_addr, now, &software);
+    complete_auth(&mut client, &mut server, client_addr, now, &software);
+    let msg = request(&software);
+    let msg = server
+        .sign_outgoing_message(msg, client_addr)
+        .unwrap()
+        .finish();
+    group.bench_with_input("Client/Request/Software/Validate", &msg, move |b, msg| {
+        b.iter(|| {
+            let incoming = Message::from_bytes(msg).unwrap();
+            assert!(matches!(
+                client.validate_incoming_message(&incoming),
+                Ok(LongTermClientValidation::Validated(
+                    IntegrityAlgorithm::Sha1
+                ))
+            ));
+        })
+    });
 
     group.finish();
 }
