@@ -856,18 +856,50 @@ impl MessageHeader {
 
     /// Deserialize a `MessageHeader`.
     ///
+    /// If less than [`MessageHeader::LENGTH`] bytes are provided, the bytes that are available
+    /// are still validated.  [`StunParseError::NotStun`] is returned as soon as the data cannot be
+    /// the start of a STUN message, and [`StunParseError::Truncated`] is only returned when the
+    /// data may be the start of a STUN message.  This allows a STUN message that is received in
+    /// multiple pieces (e.g. over TCP) to be rejected as early as possible.
+    ///
     /// # Examples
     ///
     /// ```
-    /// # use stun_types::message::{MessageHeader, MessageType, MessageClass, BINDING};
+    /// # use stun_types::message::{MessageHeader, MessageType, MessageClass, BINDING, StunParseError};
     /// let msg_data = [0, 1, 0, 8, 33, 18, 164, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 232];
     /// let message = MessageHeader::from_bytes(&msg_data).unwrap();
     /// assert_eq!(message.get_type(), MessageType::from_class_method(MessageClass::Request, BINDING));
     /// assert_eq!(message.transaction_id(), 1000.into());
     /// assert_eq!(message.data_length(), 8);
+    ///
+    /// // The start of a STUN message header.
+    /// assert!(matches!(
+    ///     MessageHeader::from_bytes(&msg_data[..6]),
+    ///     Err(StunParseError::Truncated { expected: 20, actual: 6 })
+    /// ));
+    /// // Not the start of a STUN message header, the magic cookie does not match.
+    /// assert!(matches!(
+    ///     MessageHeader::from_bytes(&[0, 1, 0, 8, 33, 0]),
+    ///     Err(StunParseError::NotStun)
+    /// ));
     /// ```
     pub fn from_bytes(data: &[u8]) -> Result<Self, StunParseError> {
         if data.len() < 20 {
+            // validate the bytes that are available
+            if data.first().is_some_and(|&b| b & 0xc0 != 0) {
+                /* not a stun packet */
+                return Err(StunParseError::NotStun);
+            }
+            let cookie = &data[data.len().min(4)..data.len().min(8)];
+            let magic = MAGIC_COOKIE.to_be_bytes();
+            if cookie != &magic[..cookie.len()] {
+                debug!(
+                    "malformed cookie constant {:?} != stored data {:?}",
+                    &magic[..cookie.len()],
+                    cookie
+                );
+                return Err(StunParseError::NotStun);
+            }
             return Err(StunParseError::Truncated {
                 expected: 20,
                 actual: data.len(),
@@ -3136,6 +3168,61 @@ mod tests {
                 actual: 8
             })
         ));
+    }
+
+    #[test]
+    fn parse_truncated_message_header_prefix() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        msg.add_fingerprint().unwrap();
+        let bytes = msg.finish();
+        // any prefix of a STUN message header may be the start of a STUN message.
+        for len in 0..MessageHeader::LENGTH {
+            assert!(matches!(
+                MessageHeader::from_bytes(&bytes[..len]),
+                Err(StunParseError::Truncated {
+                    expected: 20,
+                    actual,
+                }) if actual == len
+            ));
+        }
+        assert!(MessageHeader::from_bytes(&bytes[..MessageHeader::LENGTH]).is_ok());
+    }
+
+    #[test]
+    fn parse_truncated_message_header_not_stun() {
+        let _log = crate::tests::test_init_log();
+        let mut msg = Message::builder_request(BINDING, MessageWriteVec::new());
+        msg.add_fingerprint().unwrap();
+        let bytes = msg.finish();
+        for len in 1..=MessageHeader::LENGTH {
+            // the two most significant bits of a STUN message are always zero.
+            for bit in [0x40, 0x80] {
+                let mut data = bytes[..len].to_vec();
+                data[0] |= bit;
+                assert!(matches!(
+                    MessageHeader::from_bytes(&data),
+                    Err(StunParseError::NotStun)
+                ));
+                assert!(matches!(
+                    Message::from_bytes(&data),
+                    Err(StunParseError::NotStun)
+                ));
+            }
+            // any available bytes of the magic cookie must match.
+            for i in 4..len.min(8) {
+                let mut data = bytes[..len].to_vec();
+                data[i] ^= 0xff;
+                assert!(matches!(
+                    MessageHeader::from_bytes(&data),
+                    Err(StunParseError::NotStun)
+                ));
+                assert!(matches!(
+                    Message::from_bytes(&data),
+                    Err(StunParseError::NotStun)
+                ));
+            }
+        }
     }
 
     #[test]
