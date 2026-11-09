@@ -25,8 +25,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use crate::stats::StunAgentStats;
 use crate::Instant;
+use crate::stats::StunAgentStats;
 
 use stun_types::attribute::*;
 use stun_types::data::Data;
@@ -1871,9 +1871,11 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(request.integrity(), None);
         assert_eq!(request.peer_address(), to);
-        assert!(request
-            .mut_agent()
-            .handle_stun_message_with_time(&response, to, now));
+        assert!(
+            request
+                .mut_agent()
+                .handle_stun_message_with_time(&response, to, now)
+        );
 
         assert_eq!(request.integrity(), None);
         assert_eq!(request.peer_address(), to);
@@ -1883,13 +1885,17 @@ pub(crate) mod tests {
         request.configure_timeout(Duration::from_secs(1), 3, Duration::from_secs(2));
 
         // the request is no longer stored by the agent.
-        assert!(request
-            .agent()
-            .request_transaction(transaction_id)
-            .is_none());
-        assert!(request
-            .mut_agent()
-            .mut_request_transaction(transaction_id)
-            .is_none());
+        assert!(
+            request
+                .agent()
+                .request_transaction(transaction_id)
+                .is_none()
+        );
+        assert!(
+            request
+                .mut_agent()
+                .mut_request_transaction(transaction_id)
+                .is_none()
+        );
     }
 }

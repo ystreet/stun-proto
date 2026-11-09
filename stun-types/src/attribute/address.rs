@@ -12,10 +12,10 @@ use core::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use byteorder::{BigEndian, ByteOrder};
 
-use crate::message::{StunParseError, TransactionId, MAGIC_COOKIE};
 use crate::AddressFamily;
+use crate::message::{MAGIC_COOKIE, StunParseError, TransactionId};
 
-use super::{check_len, AttributeType, RawAttribute};
+use super::{AttributeType, RawAttribute, check_len};
 
 /// Helper struct for `SocketAddr`s that are stored as an attribute.
 #[derive(Debug, Clone, PartialEq, Eq)]

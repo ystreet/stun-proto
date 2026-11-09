@@ -89,6 +89,7 @@
 #[cfg(feature = "std")]
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+#[cfg(feature = "std")]
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -103,9 +104,7 @@ use crate::attribute::*;
 
 use tracing::{debug, trace, warn};
 
-use hmac::digest::core_api::CoreWrapper;
 use hmac::digest::CtOutput;
-use hmac::HmacCore;
 
 /// The value of the magic cookie (in network byte order) as specified in RFC5389, and RFC8489.
 pub const MAGIC_COOKIE: u32 = 0x2112A442;
@@ -490,8 +489,8 @@ impl MessageIntegrityCredentials {
     }
 }
 
-type HmacSha1 = hmac::Hmac<sha1::Sha1>;
-type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+type HmacSha1 = hmac::HmacReset<sha1::Sha1>;
+type HmacSha256 = hmac::HmacReset<sha2::Sha256>;
 
 /// A cached key for a particular set of credentials.
 #[derive(Debug, Clone)]
@@ -544,15 +543,12 @@ impl IntegrityKey {
         // FIXME: ignore deprecation due to needing to update to generic-array 1.x
         #[allow(deprecated)]
         {
-            computed == Output::<sha1::Sha1Core>::from_slice(expected).into()
+            computed == Output::<sha1::Sha1>::from_slice(expected).into()
         }
     }
 
-    pub(crate) fn compute_sha1(
-        &self,
-        data: &[&[u8]],
-    ) -> CtOutput<CoreWrapper<HmacCore<CoreWrapper<sha1::Sha1Core>>>> {
-        use hmac::Mac;
+    pub(crate) fn compute_sha1(&self, data: &[&[u8]]) -> CtOutput<HmacSha1> {
+        use hmac::{KeyInit, Mac};
         #[cfg(feature = "std")]
         let mut sha1 = self.sha1.lock().unwrap();
         #[cfg(feature = "std")]
@@ -590,7 +586,7 @@ impl IntegrityKey {
 
     pub(crate) fn compute_sha256(&self, data: &[&[u8]]) -> [u8; 32] {
         trace!("computing sha256 using {data:?}");
-        use hmac::Mac;
+        use hmac::{KeyInit, Mac};
         #[cfg(feature = "std")]
         let mut sha256 = self.sha256.lock().unwrap();
         #[cfg(feature = "std")]
@@ -804,16 +800,16 @@ impl TransactionId {
     pub fn generate() -> TransactionId {
         #[cfg(not(feature = "std"))]
         {
-            use rand::TryRngCore;
+            use rand::TryRng;
             let mut dest = [0; 16];
-            rand::rngs::OsRng
+            rand::rngs::SysRng
                 .try_fill_bytes(&mut dest)
                 .expect("Cannot generate random data");
             u128::from_be_bytes(dest).into()
         }
         #[cfg(feature = "std")]
         {
-            use rand::Rng;
+            use rand::RngExt;
             let mut rng = rand::rng();
             rng.random::<u128>().into()
         }
@@ -1451,7 +1447,7 @@ impl<'a> Message<'a> {
                 )
             }
             (None, None) => {
-                return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into())
+                return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into());
             }
         };
         let key = credentials.make_key(algo);
@@ -1514,7 +1510,7 @@ impl<'a> Message<'a> {
                     )
                 }
                 (None, None) => {
-                    return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into())
+                    return Err(StunParseError::MissingAttribute(MessageIntegrity::TYPE).into());
                 }
             }
         };
@@ -2352,7 +2348,7 @@ pub trait MessageWriteExt: MessageWrite {
         match self.has_any_attribute(&atypes[..i]) {
             // can't validly add generic attributes after message integrity or fingerprint
             Some(MessageIntegrity::TYPE) => {
-                return Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE))
+                return Err(StunWriteError::AttributeExists(MessageIntegrity::TYPE));
             }
             Some(MessageIntegritySha256::TYPE) => {
                 return Err(StunWriteError::AttributeExists(
@@ -2508,10 +2504,14 @@ pub trait MessageWriteExt: MessageWrite {
         let ty = attr.get_type();
         match ty {
             MessageIntegrity::TYPE => {
-                panic!("Cannot write MessageIntegrity with `add_attribute`.  Use add_message_integrity() instead");
+                panic!(
+                    "Cannot write MessageIntegrity with `add_attribute`.  Use add_message_integrity() instead"
+                );
             }
             MessageIntegritySha256::TYPE => {
-                panic!("Cannot write MessageIntegritySha256 with `add_attribute`.  Use add_message_integrity() instead");
+                panic!(
+                    "Cannot write MessageIntegritySha256 with `add_attribute`.  Use add_message_integrity() instead"
+                );
             }
             Fingerprint::TYPE => {
                 panic!(
@@ -2528,7 +2528,7 @@ pub trait MessageWriteExt: MessageWrite {
             // can't validly add generic attributes after message integrity or fingerprint
             Some(MessageIntegrity::TYPE) => return Err(StunWriteError::MessageIntegrityExists),
             Some(MessageIntegritySha256::TYPE) => {
-                return Err(StunWriteError::MessageIntegrityExists)
+                return Err(StunWriteError::MessageIntegrityExists);
             }
             Some(Fingerprint::TYPE) => return Err(StunWriteError::FingerprintExists),
             _ => (),

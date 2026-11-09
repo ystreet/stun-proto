@@ -199,7 +199,7 @@ impl TryFrom<&RawAttribute<'_>> for MessageIntegritySha256 {
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
         raw.check_type_and_len(Self::TYPE, 16..=32)?;
-        if raw.value.len() % 4 != 0 {
+        if !raw.value.len().is_multiple_of(4) {
             return Err(StunParseError::InvalidAttributeData);
         }
         Ok(Self {
@@ -232,7 +232,7 @@ impl MessageIntegritySha256 {
                 actual: hmac.len(),
             });
         }
-        if hmac.len() % 4 != 0 {
+        if !hmac.len().is_multiple_of(4) {
             return Err(StunWriteError::IntegrityFailed);
         }
         Ok(Self {

@@ -111,7 +111,7 @@ impl Fingerprint {
     /// assert_eq!(Fingerprint::compute(&[&value]), [216, 45, 250, 14]);
     /// ```
     pub fn compute(data: &[&[u8]]) -> [u8; 4] {
-        use crc::{Crc, CRC_32_ISO_HDLC};
+        use crc::{CRC_32_ISO_HDLC, Crc};
         const CRC_ALGO: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
         let mut digest = CRC_ALGO.digest();
         for data in data {

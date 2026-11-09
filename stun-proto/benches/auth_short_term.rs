@@ -8,11 +8,11 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use stun_proto::auth::ShortTermAuth;
 use stun_types::attribute::*;
 use stun_types::message::{
-    IntegrityAlgorithm, Message, MessageWriteVec, ShortTermCredentials, ValidateError, BINDING,
+    BINDING, IntegrityAlgorithm, Message, MessageWriteVec, ShortTermCredentials, ValidateError,
 };
 use stun_types::prelude::*;
 

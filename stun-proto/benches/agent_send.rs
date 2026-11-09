@@ -8,15 +8,15 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use sans_io_time::Instant;
 use stun_proto::agent::StunAgent;
+use stun_types::TransportType;
 use stun_types::attribute::*;
 use stun_types::message::{
-    Message, MessageClass, MessageHeader, MessageType, MessageWriteVec, TransactionId, BINDING,
+    BINDING, Message, MessageClass, MessageHeader, MessageType, MessageWriteVec, TransactionId,
 };
 use stun_types::prelude::*;
-use stun_types::TransportType;
 
 fn bench_agent_send(c: &mut Criterion) {
     let local_addr = "127.0.0.1:1000".parse().unwrap();

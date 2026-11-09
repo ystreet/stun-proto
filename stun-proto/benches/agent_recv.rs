@@ -8,13 +8,13 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use sans_io_time::Instant;
 use stun_proto::agent::StunAgent;
-use stun_types::attribute::*;
-use stun_types::message::{Message, MessageHeader, MessageWriteVec, BINDING};
-use stun_types::prelude::{MessageWrite, MessageWriteExt};
 use stun_types::TransportType;
+use stun_types::attribute::*;
+use stun_types::message::{BINDING, Message, MessageHeader, MessageWriteVec};
+use stun_types::prelude::{MessageWrite, MessageWriteExt};
 
 fn bench_agent_recv(c: &mut Criterion) {
     let local_addr = "127.0.0.1:1000".parse().unwrap();
@@ -41,7 +41,7 @@ fn bench_agent_recv(c: &mut Criterion) {
             },
             |data| {
                 let msg = Message::from_bytes(&data).unwrap();
-                let _ = agent.handle_stun_message(&msg, local_addr);
+                let _ = agent.handle_stun_message_with_time(&msg, local_addr, Instant::ZERO);
             },
             BatchSize::SmallInput,
         )
