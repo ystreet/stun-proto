@@ -213,8 +213,8 @@ pub(crate) mod tests {
     use alloc::format;
     use alloc::string::{String, ToString};
     use tracing::subscriber::DefaultGuard;
-    use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::Layer;
+    use tracing_subscriber::layer::SubscriberExt;
 
     use super::*;
 

@@ -14,7 +14,7 @@ jobs:
 
     strategy:
       matrix:
-        toolchain: ['1.77', stable]
+        toolchain: ['1.87', stable]
         runs-on: [ubuntu-latest, macos-latest, windows-latest]
 
     runs-on: ${{ matrix.runs-on }}
@@ -29,13 +29,13 @@ jobs:
         override: true
     - name: Build using MSRV
       run: cp Cargo.lock.msrv Cargo.lock && cargo build --locked --verbose
-      if: matrix.toolchain == '1.77'
+      if: matrix.toolchain == '1.87'
     - name: Build
       run: cargo build --verbose
-      if: matrix.toolchain != '1.77'
+      if: matrix.toolchain != '1.87'
     - name: Build (without default features)
       run: cargo build --verbose --no-default-features
-      if: matrix.toolchain != '1.77'
+      if: matrix.toolchain != '1.87'
   test:
     strategy:
       matrix:

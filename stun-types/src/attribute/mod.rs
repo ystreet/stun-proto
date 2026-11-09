@@ -476,7 +476,7 @@ pub trait AttributeFromRaw<'a>: Attribute {
 
 /// Computes the padded length of an attribute value to a multiple of 4 bytes.
 pub fn pad_attribute_len(len: usize) -> usize {
-    if len % 4 == 0 {
+    if len.is_multiple_of(4) {
         len
     } else {
         len + 4 - len % 4
@@ -970,6 +970,9 @@ mod tests {
         let xor_addr = XorMappedAddress::new("127.0.0.1:10000".parse().unwrap(), id);
         let raw = xor_addr.to_raw();
         let raw = RawAttribute::new(raw.get_type(), &raw.value[..3]);
-        assert_eq!(alloc::format!("{raw}"), "32(0x20: XOR-MAPPED-ADDRESS)(Malformed): len: 3, data: Borrowed(DataSlice([0, 1, 6])))");
+        assert_eq!(
+            alloc::format!("{raw}"),
+            "32(0x20: XOR-MAPPED-ADDRESS)(Malformed): len: 3, data: Borrowed(DataSlice([0, 1, 6])))"
+        );
     }
 }

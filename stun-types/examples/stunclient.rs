@@ -19,9 +19,9 @@ use std::str::FromStr;
 
 use tracing::{info, trace};
 
+use stun_types::TransportType;
 use stun_types::attribute::*;
 use stun_types::message::*;
-use stun_types::TransportType;
 
 fn usage() {
     println!("stunclient [protocol] [address:port]");
@@ -55,16 +55,10 @@ fn parse_response(response: Message) -> Result<(), std::io::Error> {
         Ok(())
     } else if response.has_class(MessageClass::Error) {
         println!("got error response {:?}", response);
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Error response",
-        ))
+        Err(std::io::Error::other("Error response"))
     } else {
         println!("got unknown response {:?}", response);
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Unknown response",
-        ))
+        Err(std::io::Error::other("Unknown response"))
     }
 }
 
@@ -120,7 +114,7 @@ fn tcp_message(out: MessageWriteVec, to: SocketAddr) -> Result<(), std::io::Erro
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "Did not receive a STUN response",
-                ))
+                ));
             }
             Err(e) => trace!("parsing STUN message header produced: \'{e}\'"),
         }
@@ -160,8 +154,8 @@ fn udp_message(out: MessageWriteVec, to: SocketAddr) -> Result<(), std::io::Erro
 }
 
 fn init_logs() {
-    use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::Layer;
+    use tracing_subscriber::layer::SubscriberExt;
     let level_filter = std::env::var("STUN_LOG")
         .ok()
         .and_then(|var| var.parse::<tracing_subscriber::filter::Targets>().ok())

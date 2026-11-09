@@ -82,8 +82,8 @@ fn handle_incoming_data(
 }
 
 fn init_logs() {
-    use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::Layer;
+    use tracing_subscriber::layer::SubscriberExt;
     let level_filter = std::env::var("STUN_LOG")
         .ok()
         .and_then(|var| var.parse::<tracing_subscriber::filter::Targets>().ok())

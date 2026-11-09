@@ -8,7 +8,7 @@
 //
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use stun_types::attribute::{Attribute, Nonce, RawAttribute, Software, XorMappedAddress};
 use stun_types::message::TransactionId;
 

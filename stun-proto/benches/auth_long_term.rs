@@ -9,19 +9,19 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use tracing::subscriber::DefaultGuard;
-use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Layer;
+use tracing_subscriber::layer::SubscriberExt;
 
 use core::net::SocketAddr;
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use stun_proto::Instant;
 use stun_proto::auth::{
     LongTermClientAuth, LongTermClientValidation, LongTermServerAuth,
     LongTermServerAuthErrorReason, LongTermServerValidation,
 };
-use stun_proto::Instant;
 use stun_types::attribute::*;
 use stun_types::message::{
-    IntegrityAlgorithm, LongTermCredentials, Message, MessageWriteVec, BINDING,
+    BINDING, IntegrityAlgorithm, LongTermCredentials, Message, MessageWriteVec,
 };
 use stun_types::prelude::*;
 

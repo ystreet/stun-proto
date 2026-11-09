@@ -17,8 +17,8 @@ use byteorder::{BigEndian, ByteOrder};
 use crate::message::{IntegrityAlgorithm, StunParseError};
 
 use super::{
-    pad_attribute_len, Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType,
-    AttributeType, AttributeWrite, AttributeWriteExt, RawAttribute,
+    Attribute, AttributeExt, AttributeFromRaw, AttributeStaticType, AttributeType, AttributeWrite,
+    AttributeWriteExt, RawAttribute, pad_attribute_len,
 };
 
 /// The hashing algorithm for the password.
@@ -136,7 +136,7 @@ impl TryFrom<&RawAttribute<'_>> for PasswordAlgorithms {
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
         raw.check_type_and_len(Self::TYPE, 4..)?;
-        if raw.value.len() % 4 != 0 {
+        if !raw.value.len().is_multiple_of(4) {
             return Err(StunParseError::InvalidAttributeData);
         }
         let mut i = 0;
@@ -255,7 +255,7 @@ impl TryFrom<&RawAttribute<'_>> for PasswordAlgorithm {
 
     fn try_from(raw: &RawAttribute) -> Result<Self, Self::Error> {
         raw.check_type_and_len(Self::TYPE, 4..)?;
-        if raw.value.len() % 4 != 0 {
+        if !raw.value.len().is_multiple_of(4) {
             return Err(StunParseError::InvalidAttributeData);
         }
         let algorithm = PasswordAlgorithmValue::read(&raw.value)?;

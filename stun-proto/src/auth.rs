@@ -18,8 +18,8 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 
 use stun_types::attribute::{
-    pad_attribute_len, ErrorCode, MessageIntegrity, MessageIntegritySha256, Nonce,
-    PasswordAlgorithm, PasswordAlgorithmValue, PasswordAlgorithms, Realm, Userhash, Username,
+    ErrorCode, MessageIntegrity, MessageIntegritySha256, Nonce, PasswordAlgorithm,
+    PasswordAlgorithmValue, PasswordAlgorithms, Realm, Userhash, Username, pad_attribute_len,
 };
 use stun_types::message::{
     IntegrityAlgorithm, IntegrityKey, LongTermCredentials, Message, MessageClass,
@@ -525,7 +525,9 @@ impl LongTermClientAuth {
                                         };
                                         algo
                                     } else if security.password_algorithms() {
-                                        trace!("nonce indicates password algorithms attribute that does not exist on message");
+                                        trace!(
+                                            "nonce indicates password algorithms attribute that does not exist on message"
+                                        );
                                         return Err(LongTermClientAuthError {
                                             reason: LongTermClientAuthErrorReason::Unauthorized,
                                             integrity: None,
@@ -684,14 +686,13 @@ impl NonceConfiguration {
     fn generate_random_nonce_string() -> String {
         #[cfg(not(feature = "std"))]
         {
-            use rand::Rng;
-            use rand::TryRngCore;
-            let mut rng = rand::rngs::OsRng.unwrap_err();
+            use rand::RngExt;
+            let mut rng = rand::rand_core::UnwrapErr(rand::rngs::SysRng);
             String::from_iter((0..16).map(|_| rng.sample(rand::distr::Alphanumeric) as char))
         }
         #[cfg(feature = "std")]
         {
-            use rand::Rng;
+            use rand::RngExt;
             let mut rng = rand::rng();
             String::from_iter((0..16).map(|_| rng.sample(rand::distr::Alphanumeric) as char))
         }
@@ -744,14 +745,13 @@ struct RandomState {
 fn new_hashmap_keys() -> (u64, u64) {
     #[cfg(not(feature = "std"))]
     {
-        use rand::Rng;
-        use rand::TryRngCore;
-        let mut rng = rand::rngs::OsRng.unwrap_err();
+        use rand::RngExt;
+        let mut rng = rand::rand_core::UnwrapErr(rand::rngs::SysRng);
         rng.random()
     }
     #[cfg(feature = "std")]
     {
-        use rand::Rng;
+        use rand::RngExt;
         let mut rng = rand::rng();
         rng.random()
     }
@@ -996,7 +996,9 @@ impl LongTermServerAuth {
     /// Set the amount of time that nonces are valid for.
     pub fn set_nonce_expiry_duration(&mut self, expiry_duration: Duration) {
         if expiry_duration < MINIMUM_NONCE_EXPIRY_DURATION {
-            panic!("Attempted to set a nonce expiry duration ({expiry_duration:?}) of less than the allowed minimum ({MINIMUM_NONCE_EXPIRY_DURATION:?})");
+            panic!(
+                "Attempted to set a nonce expiry duration ({expiry_duration:?}) of less than the allowed minimum ({MINIMUM_NONCE_EXPIRY_DURATION:?})"
+            );
         }
         self.nonces.nonce_expiry_duration = expiry_duration;
     }
@@ -1118,7 +1120,7 @@ impl LongTermServerAuth {
                 }))
                 .unwrap();
             }
-            msg.add_message_integrity_with_key_unchecked(key, *algo);
+            unsafe { msg.add_message_integrity_with_key_unchecked(key, *algo) };
         } else if msg.is_response() {
             let algos = self
                 .nonces
@@ -1390,7 +1392,7 @@ fn rank_integrity(integrity: IntegrityAlgorithm) -> usize {
 mod tests {
     use stun_types::{
         attribute::{MessageIntegritySha256, Userhash},
-        message::{MessageType, MessageWriteVec, TransactionId, BINDING},
+        message::{BINDING, MessageType, MessageWriteVec, TransactionId},
     };
 
     use super::*;

@@ -355,7 +355,7 @@ impl TryFrom<&RawAttribute<'_>> for UnknownAttributes {
         if raw.header.atype != Self::TYPE {
             return Err(StunParseError::WrongAttributeImplementation);
         }
-        if raw.value.len() % 2 != 0 {
+        if !raw.value.len().is_multiple_of(2) {
             /* all attributes are 16-bits */
             return Err(StunParseError::Truncated {
                 expected: raw.value.len() + 1,
